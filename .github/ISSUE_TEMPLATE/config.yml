@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: 项目文档 / Documentation
+    url: https://github.com/ginsonko/codex-yinzi-media-workflow/tree/main/docs
+    about: 查看项目文档和开发指南 / View project documentation and development guides
+  - name: YinziAPI
+    url: https://www.yinziapi.top
+    about: 查看银子 API 服务信息 / View YinziAPI service information

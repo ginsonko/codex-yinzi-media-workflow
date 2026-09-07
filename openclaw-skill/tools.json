@@ -1,0 +1,12 @@
+{
+  "tools": [
+    {
+      "name": "http",
+      "description": "发送 HTTP 请求到 LocalMiniDrama 后端 API。用于所有 CRUD 操作、生成任务触发、状态查询等。base_url 从 skill 配置中获取，默认 http://localhost:5679，所有路径自动拼接 /api/v1 前缀。"
+    },
+    {
+      "name": "memory",
+      "description": "在 skill 会话中存储和读取当前项目的上下文信息。记住当前 drama_id、episode_id、当前步骤等，避免每轮都让用户重复指定。key 命名规范：local_drama_drama_id、local_drama_episode_id、local_drama_current_step。"
+    }
+  ]
+}

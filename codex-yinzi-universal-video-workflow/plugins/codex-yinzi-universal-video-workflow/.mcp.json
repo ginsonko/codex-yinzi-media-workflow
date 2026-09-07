@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "yinzi_video_workflow": {
+      "command": "node",
+      "args": ["./mcp/server.mjs"],
+      "cwd": ".",
+      "enabled": true,
+      "default_tools_approval_mode": "approve",
+      "startup_timeout_sec": 10,
+      "tool_timeout_sec": 3600
+    }
+  }
+}

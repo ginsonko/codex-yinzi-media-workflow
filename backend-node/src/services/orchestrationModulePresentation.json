@@ -1,0 +1,217 @@
+{
+  "session.create": {
+    "title": "创建任务",
+    "description_zh": "把目标和素材保存为可恢复的任务。",
+    "example": "为旅行素材建立一项 Vlog 任务"
+  },
+  "asset.scan": {
+    "title": "扫描素材",
+    "description_zh": "按数量和大小限制扫描文件夹，保留清单和未扫描原因。",
+    "example": "扫描商品目录中的图片与视频"
+  },
+  "asset.classify": {
+    "title": "理解素材",
+    "description_zh": "识别素材用途，并区分已知事实与推测。",
+    "example": "把照片分成人物、商品和场景"
+  },
+  "asset.bind": {
+    "title": "绑定素材",
+    "description_zh": "把权威素材关联到人物、商品和镜头。",
+    "example": "所有镜头沿用同一商品外观"
+  },
+  "plan.propose": {
+    "title": "制定计划",
+    "description_zh": "根据目标组合工具、阶段、依赖和验收标准。",
+    "example": "先配音再按语音时长剪辑"
+  },
+  "plan.confirm": {
+    "title": "确认计划",
+    "description_zh": "记录已批准的计划，同时保留修改历史。",
+    "example": "确认预算内的制作方案"
+  },
+  "node.run": {
+    "title": "执行步骤",
+    "description_zh": "记录实际开始的工作和执行者。",
+    "example": "开始渲染一个镜头"
+  },
+  "node.retry": {
+    "title": "恢复失败步骤",
+    "description_zh": "读取错误与已有成果后恢复确定可重试的步骤。",
+    "example": "只补失败的下载"
+  },
+  "manual.override": {
+    "title": "手动接管",
+    "description_zh": "修改、跳过或替换步骤并留下记录。",
+    "example": "换掉其中一个镜头"
+  },
+  "session.pause": {
+    "title": "暂停任务",
+    "description_zh": "停止后续编排，保留已提交工作和已有成果。",
+    "example": "先暂停，等我调整文案"
+  },
+  "session.resume": {
+    "title": "继续任务",
+    "description_zh": "从保存的计划和检查点继续。",
+    "example": "继续上次未完成的视频"
+  },
+  "session.checkpoint": {
+    "title": "保存恢复点",
+    "description_zh": "保存最新进度、决策与下一步。",
+    "example": "换会话后继续原来的工程"
+  },
+  "session.readback": {
+    "title": "读取任务状态",
+    "description_zh": "读取计划、节点、成果和回执。",
+    "example": "查看已经做到了哪里"
+  },
+  "research.request": {
+    "title": "资料研究",
+    "description_zh": "明确研究问题、信息来源和停止条件。",
+    "example": "参考同类商品广告结构"
+  },
+  "research.record-source": {
+    "title": "记录参考来源",
+    "description_zh": "保留网址、时间和可复核摘要。",
+    "example": "记录公开教程的关键步骤"
+  },
+  "research.extract-patterns": {
+    "title": "提炼创作规律",
+    "description_zh": "借鉴内容结构，保留素材授权边界。",
+    "example": "比较三种短视频开场"
+  },
+  "product.extract-facts": {
+    "title": "整理商品事实",
+    "description_zh": "区分商品卖点、已知参数和待确认信息。",
+    "example": "只使用包装上可验证的规格"
+  },
+  "creative.generate-directions": {
+    "title": "设计创意方向",
+    "description_zh": "根据事实与素材提出可执行创意。",
+    "example": "设计简洁、生活化的宣传方案"
+  },
+  "shot.plan-grid": {
+    "title": "规划分镜",
+    "description_zh": "设计镜头顺序、构图和主体连续性。",
+    "example": "做九宫格运镜参考"
+  },
+  "copy.generate": {
+    "title": "文案与旁白",
+    "description_zh": "撰写有事实依据的脚本、配音稿与字幕。",
+    "example": "把安装步骤写成一分钟教程"
+  },
+  "qa.claim-trace": {
+    "title": "核对内容质量",
+    "description_zh": "检查画面、文案和数据是否有证据支持。",
+    "example": "检查宣传图中安装入口是否准确"
+  },
+  "video.import": {
+    "title": "导入已有视频",
+    "description_zh": "把已有素材放入制作时间线。",
+    "example": "把旅行视频直接剪进成片"
+  },
+  "video.trim": {
+    "title": "裁剪片段",
+    "description_zh": "保留源文件，只调整片段起止时间。",
+    "example": "去掉前面两秒空镜"
+  },
+  "video.concat": {
+    "title": "拼接片段",
+    "description_zh": "将兼容片段拼成完整视频。",
+    "example": "合并开场、演示与结尾"
+  },
+  "video.speed": {
+    "title": "调整速度",
+    "description_zh": "调整画面速度并明确原声处理方式。",
+    "example": "把冗长操作加速到两倍"
+  },
+  "video.color": {
+    "title": "调色",
+    "description_zh": "保存可修改的调色参数或预设。",
+    "example": "统一室内外素材的色温"
+  },
+  "video.audio": {
+    "title": "处理声音",
+    "description_zh": "混音、保留原声或压低背景音。",
+    "example": "旁白出现时降低音乐音量"
+  },
+  "subtitle.create": {
+    "title": "生成字幕",
+    "description_zh": "按时间线生成字幕并保留原文。",
+    "example": "给教程加准确的中文字幕"
+  },
+  "image.generate": {
+    "title": "生成图片",
+    "description_zh": "调用已配置的生图模型并保留任务与费用回执。",
+    "example": "制作一张产品介绍海报"
+  },
+  "video.generate": {
+    "title": "生成视频",
+    "description_zh": "调用已配置的视频模型，记录提交、下载与恢复状态。",
+    "example": "把商品参考图变成广告片段"
+  },
+  "video.timeline-assemble": {
+    "title": "编排时间线",
+    "description_zh": "把实拍、生成片段、配音和字幕组织成片。",
+    "example": "将旅行素材剪成完整 Vlog"
+  },
+  "deliver.export": {
+    "title": "导出成品",
+    "description_zh": "输出成品和可追溯的工程资料。",
+    "example": "导出 MP4、字幕与素材包"
+  },
+  "director.blender-smoke": {
+    "title": "检查 Blender",
+    "description_zh": "读取安装能力并准备渲染计划。",
+    "example": "确认本机能否渲染参考镜头"
+  },
+  "director.blender-render": {
+    "title": "Blender 专业渲染",
+    "description_zh": "生成可编辑工程、参考图、GLB 预览与参考视频。",
+    "example": "用关键帧控制产品环绕镜头"
+  },
+  "provider.diagnose": {
+    "title": "诊断模型接口",
+    "description_zh": "根据脱敏错误定位协议问题。",
+    "example": "分析一次没有返回结果的提交"
+  },
+  "adapter.propose": {
+    "title": "设计接口适配",
+    "description_zh": "提出版本化的适配器改动方案。",
+    "example": "接入一种新视频协议"
+  },
+  "adapter.test-sandbox": {
+    "title": "隔离验证适配器",
+    "description_zh": "用样例和本地测试验证协议，不消耗生成额度。",
+    "example": "模拟上游超时和下载失败"
+  },
+  "patch.propose": {
+    "title": "提出修复方案",
+    "description_zh": "记录问题、修复范围和回滚位置。",
+    "example": "为字幕工具设计一个修复"
+  },
+  "patch.test": {
+    "title": "验证修复",
+    "description_zh": "保留测试和真实结果证据。",
+    "example": "检查长字幕和横竖屏输出"
+  },
+  "patch.apply": {
+    "title": "应用已授权修复",
+    "description_zh": "在授权范围内应用变更，保留恢复依据。",
+    "example": "更新已验收的本地工具"
+  },
+  "module.register": {
+    "title": "注册扩展工具",
+    "description_zh": "保存工具说明，目录刷新后自动显示；注册本身不执行代码。",
+    "example": "把新的剪辑脚本登记到工具目录"
+  },
+  "skill.export": {
+    "title": "导出工作流说明",
+    "description_zh": "导出当前能力合同与使用示例。",
+    "example": "为新任务保留完整使用说明"
+  },
+  "session.replay": {
+    "title": "回看执行过程",
+    "description_zh": "回看保存的决策和回执，不重复付费调用。",
+    "example": "复盘某段视频为什么这样剪"
+  }
+}

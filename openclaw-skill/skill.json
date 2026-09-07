@@ -1,0 +1,27 @@
+{
+  "name": "local-mini-drama",
+  "version": "1.1.0",
+  "description": "LocalMiniDrama 本地短剧助手 - AI短剧生成工具，从剧本到成片的全流程",
+  "author": "xuanyustudio",
+  "homepage": "https://github.com/xuanyustudio/LocalMiniDrama",
+  "trigger": "生成短剧|创建短剧|制作短剧|短剧创作|生成分镜|生成视频|生成图片|生成角色|生成场景|生成道具|导出工程|导入工程|导入小说|合成视频|短剧项目|短剧助手|帮我写剧本|写一个短剧|我要拍短剧|生成本集|继续制作|查看项目|查看剧本|查看分镜|角色库|场景库|道具库|AI配置|配置密钥|配置API",
+  "requiredTools": ["http", "memory"],
+  "config": {
+    "base_url": {
+      "type": "string",
+      "description": "LocalMiniDrama 后端地址",
+      "default": "http://localhost:5679"
+    },
+    "default_aspect_ratio": {
+      "type": "string",
+      "description": "默认画面比例",
+      "default": "16:9"
+    },
+    "default_video_duration": {
+      "type": "number",
+      "description": "默认单个视频片段时长（秒）",
+      "default": 5
+    }
+  },
+  "keywords": ["短剧", "AI视频", "剧本生成", "分镜", "AI短剧", "localminidrama"]
+}

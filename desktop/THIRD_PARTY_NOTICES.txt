@@ -1,0 +1,4 @@
+Codex 银子万能媒体工作流第三方说明
+
+参见仓库根目录 NOTICE.md、THIRD_PARTY_NOTICES.md 和 licenses/。
+上游 MIT 与第三方原许可证保留。FFmpeg 是独立 GPL 工具，不适用本项目非商业限制。

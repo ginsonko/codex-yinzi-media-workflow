@@ -1,0 +1,7 @@
+interface:
+  display_name: "Codex 银子万能视频工作流"
+  short_description: "让 Codex 动态规划并完成任意视频任务"
+  brand_color: "#6D5DFB"
+  default_prompt: "使用 $codex-yinzi-universal-video 分析我的素材和目标，建立可恢复的动态计划，确认付费步骤后执行并验收。"
+policy:
+  allow_implicit_invocation: true

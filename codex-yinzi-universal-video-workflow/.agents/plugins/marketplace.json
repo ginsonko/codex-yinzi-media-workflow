@@ -1,0 +1,20 @@
+{
+  "name": "yinzi-video-workflow",
+  "interface": {
+    "displayName": "银子万能视频工作流"
+  },
+  "plugins": [
+    {
+      "name": "codex-yinzi-universal-video-workflow",
+      "source": {
+        "source": "local",
+        "path": "./plugins/codex-yinzi-universal-video-workflow"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    }
+  ]
+}

@@ -1,0 +1,151 @@
+{
+  "name": "yinzi-ai-video-workflow-desktop",
+  "version": "0.1.4",
+  "description": "银子AI视频工作流桌面客户端",
+  "main": "main.js",
+  "author": "银子 (ginsonko)",
+  "license": "SEE LICENSE IN ../LICENSE",
+  "scripts": {
+    "prestart": "node scripts/copy-backend.js",
+    "start": "electron .",
+    "build:front": "cd ../frontweb && npm run build",
+    "copy-front": "node scripts/copy-front.js",
+    "clean:unpacked": "node scripts/clean-win-unpacked.js",
+    "test": "node --test test/*.test.js",
+    "prepare:icon": "node scripts/generate-icon.js",
+    "prepare:media": "node scripts/prepare-media-tools.js",
+    "verify:release": "node scripts/verify-release-inputs.js",
+    "pack": "npm run prepare-backend && npm run build:front && npm run copy-front && npm run prepare:icon && npm run prepare:media && npm run verify:release && npm run clean:unpacked && electron-builder --dir",
+    "dist": "npm run prepare-backend && npm run build:front && npm run copy-front && npm run prepare:icon && npm run prepare:media && npm run verify:release && npm run clean:unpacked && electron-builder --win --x64 --publish never",
+    "dist:universal": "node scripts/dist-universal.js",
+    "dist:universal:inner": "npm run prepare-backend && npm run build:front && npm run copy-front && npm run prepare:icon && npm run prepare:media && npm run verify:release && npm run clean:unpacked:universal && electron-builder --config electron-builder-universal.json --win --x64 --publish never",
+    "clean:unpacked:universal": "node scripts/clean-win-unpacked-universal.js",
+    "dist:cn": "node scripts/dist-cn.js",
+    "prepare:mac-resources": "node scripts/prepare-mac-resources.js",
+    "dist:mac": "node scripts/dist-mac.js",
+    "dist:mac:x64": "node scripts/dist-mac.js x64",
+    "dist:mac:arm64": "node scripts/dist-mac.js arm64",
+    "postinstall": "node scripts/copy-backend.js",
+    "prepare-backend": "node scripts/copy-backend.js"
+  },
+  "dependencies": {
+    "adm-zip": "0.6.0",
+    "better-sqlite3": "13.0.3",
+    "cors": "^2.8.5",
+    "express": "4.22.2",
+    "js-yaml": "4.3.1",
+    "jsonrepair": "^3.13.3",
+    "jsonwebtoken": "^9.0.3",
+    "multer": "2.2.0",
+    "node-edge-tts": "1.2.10",
+    "sharp": "0.35.3",
+    "uuid": "11.1.1"
+  },
+  "devDependencies": {
+    "electron": "43.4.0",
+    "electron-builder": "26.15.3",
+    "playwright-core": "^1.62.1",
+    "png-to-ico": "3.0.1",
+    "tar": "7.5.22"
+  },
+  "overrides": {
+    "body-parser": "1.20.6",
+    "path-to-regexp": "0.1.13",
+    "qs": "6.15.3"
+  },
+  "build": {
+    "npmRebuild": false,
+    "electronVersion": "43.4.0",
+    "appId": "top.yinziapi.ai-video-workflow",
+    "productName": "银子AI视频工作流",
+    "executableName": "银子AI视频工作流",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "main.js",
+      "runtime.js",
+      "package.json",
+      "LICENSE.txt",
+      "THIRD_PARTY_NOTICES.txt",
+      "backend-app/**/*",
+      "node_modules/**/*",
+      "!node_modules/**/*.unused-*/**",
+      "!node_modules/@img/sharp-wasm32/**",
+      "!node_modules/@emnapi/**"
+    ],
+    "asarUnpack": [
+      "node_modules/better-sqlite3/**",
+      "node_modules/sharp/**",
+      "node_modules/@img/**"
+    ],
+    "extraResources": [
+      {
+        "from": "frontweb-dist",
+        "to": "frontweb/dist",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
+        "from": "../example_drama",
+        "to": "example_drama",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
+        "from": "../backend-node/tools/ffmpeg",
+        "to": "ffmpeg",
+        "filter": [
+          "ffmpeg.exe",
+          "ffprobe.exe",
+          "LICENSE-FFMPEG-GPLv3.txt",
+          "README-FFMPEG-BUILD.txt"
+        ]
+      },
+      {
+        "from": "release-docs",
+        "to": "docs",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
+        "from": "../NOTICE.md",
+        "to": "NOTICE.md"
+      },
+      {
+        "from": "../THIRD_PARTY_NOTICES.md",
+        "to": "THIRD_PARTY_NOTICES.md"
+      },
+      {
+        "from": "../licenses",
+        "to": "licenses"
+      }
+    ],
+    "win": {
+      "target": [
+        "nsis",
+        "portable"
+      ],
+      "icon": "build/icon.ico",
+      "artifactName": "银子AI视频工作流-Portable-${version}-x64.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "preCompressedFileExtensions": [],
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": "always",
+      "createStartMenuShortcut": true,
+      "shortcutName": "银子AI视频工作流",
+      "artifactName": "银子AI视频工作流-Setup-${version}-x64.${ext}",
+      "deleteAppDataOnUninstall": false,
+      "installerLanguages": [
+        "zh_CN"
+      ],
+      "language": "2052"
+    }
+  }
+}

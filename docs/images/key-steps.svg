@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1260" height="490" viewBox="0 0 1260 490">
+<rect width="1260" height="490" rx="20" fill="#f3f6fa"/>
+<g font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif">
+<text x="45" y="60" font-size="28" fill="#15273c" font-weight="bold">从一个 Key，到你的创作工作台</text>
+<text x="45" y="94" font-size="16" fill="#53647a">操作说明图 · 不含真实账号或密钥 · 站点菜单以实际页面为准</text>
+<rect x="40" y="130" width="360" height="300" rx="16" fill="white" stroke="#d7e1ec"/>
+<rect x="450" y="130" width="360" height="300" rx="16" fill="white" stroke="#d7e1ec"/>
+<rect x="860" y="130" width="360" height="300" rx="16" fill="white" stroke="#d7e1ec"/>
+<g fill="#176d5c" font-size="20" font-weight="bold"><text x="65" y="172">1 · 登录并创建 Key</text><text x="475" y="172">2 · 复制完整内容</text><text x="885" y="172">3 · 回工作台粘贴</text></g>
+<g fill="#27394d" font-size="17"><text x="65" y="215">打开 yinziapi.top</text><text x="65" y="250">找到 API Key / 密钥管理</text><text x="65" y="285">选择“创建 Key”并按需设额度</text><text x="475" y="215">复制从 sk- 开始的完整字符串</text><text x="475" y="285">不包含引号、空格或说明文字</text><text x="475" y="320">不要分享截图或发到群里</text><text x="885" y="215">模型与 Key → 一键配置银子 API</text><text x="885" y="250">在 Key 输入框粘贴</text><text x="885" y="285">检测可用模型，再保存配置</text></g>
+<rect x="475" y="230" width="306" height="34" rx="6" fill="#eff4f9"/><text x="490" y="253" font-size="16" fill="#384c64">sk-你的完整密钥（示意）</text>
+<g font-size="16" fill="#53647a"><text x="65" y="376">没有账号时先注册</text><text x="475" y="376">优先自己在本机页面粘贴</text><text x="885" y="349">API Base URL：</text><text x="885" y="376">https://api.yinziapi.top/v1</text></g>
+<g fill="#93a3b5" font-size="28"><text x="413" y="282">→</text><text x="823" y="282">→</text></g>
+<text x="45" y="466" font-size="16" fill="#53647a">可以先跳过配置：Codex 写作、素材整理、已有媒体剪辑与本地预览仍可开始。</text></g></svg>

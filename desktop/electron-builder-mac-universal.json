@@ -1,0 +1,98 @@
+{
+  "appId": "top.yinziapi.ai-video-workflow.universal",
+  "productName": "银子AI视频工作流-通用版-老李兼容",
+  "executableName": "银子AI视频工作流-通用版-老李兼容",
+  "copyright": "Copyright (c) 2026 银子 (ginsonko) and contributors",
+  "npmRebuild": true,
+  "electronVersion": "43.4.0",
+  "directories": {
+    "output": "release-mac-universal",
+    "buildResources": "build"
+  },
+  "files": [
+    "main.js",
+    "runtime.js",
+    "package.json",
+    "LICENSE.txt",
+    "THIRD_PARTY_NOTICES.txt",
+    "backend-app/**/*",
+    "node_modules/**/*",
+    "!node_modules/.bin/**",
+    "!node_modules/**/*.unused-*/**",
+    "!node_modules/@img/sharp-wasm32/**",
+    "!node_modules/@emnapi/**",
+    "!node_modules/electron/**",
+    "!node_modules/electron-builder/**",
+    "!node_modules/app-builder-lib/**",
+    "!node_modules/builder-util/**",
+    "!node_modules/builder-util-runtime/**"
+  ],
+  "asarUnpack": [
+    "node_modules/better-sqlite3/**",
+    "node_modules/sharp/**",
+    "node_modules/@img/**"
+  ],
+  "extraResources": [
+    {
+      "from": "frontweb-dist",
+      "to": "frontweb/dist",
+      "filter": [
+        "**/*"
+      ]
+    },
+    {
+      "from": "../example_drama",
+      "to": "example_drama",
+      "filter": [
+        "**/*"
+      ]
+    },
+    {
+      "from": "mac-resources/${arch}/ffmpeg",
+      "to": "ffmpeg",
+      "filter": [
+        "**/*"
+      ]
+    },
+    {
+      "from": "release-docs",
+      "to": "docs",
+      "filter": [
+        "**/*"
+      ]
+    },
+    {
+      "from": "../NOTICE.md",
+      "to": "NOTICE.md"
+    },
+    {
+      "from": "../THIRD_PARTY_NOTICES.md",
+      "to": "THIRD_PARTY_NOTICES.md"
+    },
+    {
+      "from": "../licenses",
+      "to": "licenses"
+    }
+  ],
+  "mac": {
+    "target": [
+      "dmg",
+      "zip"
+    ],
+    "category": "public.app-category.video",
+    "icon": "build/icon.png",
+    "artifactName": "银子AI视频工作流-通用版-老李兼容-${version}-mac-${arch}.${ext}",
+    "minimumSystemVersion": "11.0",
+    "darkModeSupport": true,
+    "hardenedRuntime": true,
+    "gatekeeperAssess": false,
+    "extendInfo": {
+      "NSHumanReadableCopyright": "Copyright (c) 2026 银子 (ginsonko) and contributors"
+    }
+  },
+  "dmg": {
+    "title": "银子AI视频工作流-通用版-老李兼容 ${version}",
+    "artifactName": "银子AI视频工作流-通用版-老李兼容-${version}-mac-${arch}.${ext}",
+    "writeUpdateInfo": false
+  }
+}

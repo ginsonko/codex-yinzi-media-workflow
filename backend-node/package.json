@@ -1,0 +1,35 @@
+{
+  "name": "yinzi-ai-video-workflow-backend",
+  "version": "0.1.4",
+  "description": "Node.js backend for 银子AI视频工作流",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "test": "node --test test/*.test.js",
+    "migrate": "node src/db/migrate.js",
+    "migrate:07": "node scripts/run-migration-07.js"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {
+    "adm-zip": "0.6.0",
+    "better-sqlite3": "13.0.3",
+    "cors": "^2.8.5",
+    "express": "4.22.2",
+    "js-yaml": "4.3.1",
+    "jsonrepair": "^3.13.3",
+    "jsonwebtoken": "^9.0.3",
+    "multer": "2.2.0",
+    "node-edge-tts": "1.2.10",
+    "sharp": "0.35.3",
+    "uuid": "11.1.1"
+  },
+  "overrides": {
+    "body-parser": "1.20.6",
+    "path-to-regexp": "0.1.13",
+    "qs": "6.15.3"
+  },
+  "license": "SEE LICENSE IN ../LICENSE"
+}

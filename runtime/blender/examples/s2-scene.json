@@ -1,0 +1,21 @@
+{
+  "version": 2,
+  "aspect_ratio": "16:9",
+  "active_camera_id": "camera-1",
+  "objects": [
+    { "id": "floor", "kind": "plane", "name": "舞台地面", "position": [0, 0, 0], "scale": [6, 6, 1], "props": { "color": "#27323b", "roughness": 0.72 } },
+    { "id": "camera-1", "kind": "camera", "name": "推镜摄影机", "position": [5.5, -6, 3.4], "props": { "fov": 42, "aim_mode": "target", "target_id": "hero" } },
+    { "id": "key-light", "kind": "light", "name": "主光", "position": [3, -2, 6], "props": { "type": "AREA", "intensity": 1000, "size": 4, "color": "#fff0d0" } },
+    { "id": "hero", "kind": "character", "name": "主角", "position": [-0.8, 0, 0], "props": { "profile_id": "human.adult.female", "color": "#d87565", "motion": "walk" } },
+    { "id": "prop", "kind": "procedural", "name": "桌面道具", "position": [1.2, 0.45, -0.7], "props": { "recipe": { "label": "道具", "nodes": [ { "shape": "box", "position": [0, 0, 0], "scale": [1.2, 0.3, 0.7], "material": { "color": "#4a83b8", "roughness": 0.35 } }, { "shape": "sphere", "position": [0, 0.35, 0], "scale": [0.3, 0.3, 0.3], "material": { "color": "#f3c969", "emissive": "#332000", "emissive_intensity": 0.2 } } ] } } }
+  ],
+  "timeline": {
+    "duration": 5,
+    "keyframes": [
+      { "object_id": "camera-1", "time": 0, "position": [5.5, -6, 3.4] },
+      { "object_id": "camera-1", "time": 5, "position": [3.5, -4.2, 2.7] },
+      { "object_id": "hero", "time": 0, "position": [-0.8, 0, 0] },
+      { "object_id": "hero", "time": 5, "position": [0.3, 0, -0.15] }
+    ]
+  }
+}

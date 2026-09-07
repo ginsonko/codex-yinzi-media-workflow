@@ -1,0 +1,57 @@
+app:
+  name: 银子AI视频工作流 API
+  version: 0.1.4
+  debug: false
+  language: zh
+  distribution_profile: universal
+server:
+  port: 5679
+  host: 127.0.0.1
+  cors_origins:
+    - http://localhost:3012
+  read_timeout: 600
+  write_timeout: 600
+  insecure_tls: false
+database:
+  type: sqlite
+  path: ./data/drama_generator.db
+  max_idle: 10
+  max_open: 100
+storage:
+  type: local
+  local_path: ./data/storage
+  base_url: http://localhost:5679/static
+asset_import:
+  staging_ttl_hours: 24
+video:
+  generation_timeout_minutes: 30
+ai:
+  default_text_provider: openai
+  default_image_provider: openai
+  default_video_provider: doubao
+style:
+  default_style: ''
+  default_role_style: >-
+    full body and face clearly visible, character centered, consistent facial
+    features, high detail, masterpiece, best quality
+  default_scene_style: >-
+    wide establishing shot, highly detailed environment, sharp focus, rich
+    atmosphere, masterpiece, best quality
+  default_prop_style: >-
+    object centered, clean simple background, studio lighting, sharp focus, high
+    detail, masterpiece, best quality
+  default_image_ratio: '16:9'
+  default_video_ratio: '16:9'
+  default_prop_ratio: '1:1'
+  default_image_size: 1024x1024
+vendor_lock:
+  enabled: false
+  config_file: ai-configs-qudao.json
+image_proxy:
+  expire_hours: 2
+  use_for_video: true
+  upload_timeout_seconds: 180
+  upload_max_attempts: 2
+director:
+  blender:
+    executable: ""

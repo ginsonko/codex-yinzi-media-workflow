@@ -1,0 +1,32 @@
+name: Source checks
+on:
+  push:
+    branches: [main]
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  source:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            backend-node/package-lock.json
+            frontweb/package-lock.json
+      - run: node scripts/audit-public.mjs
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+        working-directory: backend-node
+      - run: npm ci --no-audit --no-fund
+        working-directory: frontweb
+      - run: node --test test/*.test.js
+        working-directory: backend-node
+      - run: node --test test/*.test.js
+        working-directory: frontweb
+      - run: npm run build
+        working-directory: frontweb
+      - run: node --test mcp/server.test.mjs scripts/runtime-launcher.test.mjs skills/yinzi-text-model/scripts/text-task.test.mjs
+        working-directory: codex-yinzi-universal-video-workflow/plugins/codex-yinzi-universal-video-workflow

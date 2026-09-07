@@ -1,0 +1,15 @@
+ALTER TABLE video_generations ADD COLUMN generation_status TEXT;
+ALTER TABLE video_generations ADD COLUMN download_status TEXT;
+ALTER TABLE video_generations ADD COLUMN remote_video_url TEXT;
+ALTER TABLE video_generations ADD COLUMN download_source_url TEXT;
+ALTER TABLE video_generations ADD COLUMN download_requires_auth INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE video_generations ADD COLUMN download_error TEXT;
+ALTER TABLE video_generations ADD COLUMN download_attempts INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE video_generations ADD COLUMN download_lease_owner TEXT;
+ALTER TABLE video_generations ADD COLUMN download_lease_expires_at TEXT;
+ALTER TABLE video_generations ADD COLUMN download_started_at TEXT;
+ALTER TABLE video_generations ADD COLUMN download_completed_at TEXT;
+ALTER TABLE video_generations ADD COLUMN provider_completed_at TEXT;
+ALTER TABLE video_generations ADD COLUMN video_config_id INTEGER;
+ALTER TABLE video_generations ADD COLUMN provider_protocol TEXT;
+ALTER TABLE video_generations ADD COLUMN provider_config_snapshot_json TEXT;

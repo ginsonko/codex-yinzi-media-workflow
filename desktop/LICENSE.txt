@@ -1,0 +1,72 @@
+Codex Yinzi Media Workflow Community Noncommercial License 1.0
+银子媒体工作流社区非商业来源标注许可证 1.0
+
+Copyright (c) 2026 银子 (ginsonko) and contributing authors.
+Source: https://github.com/ginsonko/codex-yinzi-media-workflow
+
+1. Scope / 适用范围
+This license applies to original additions and modifications whose copyright is
+held by the above authors and contributed under this license (the "Covered Work").
+Pre-existing LocalMiniDrama code, previously MIT-licensed contributions, and
+third-party software/assets retain their original licenses, as described in
+NOTICE.md and THIRD_PARTY_NOTICES.md. This license does not revoke, replace or
+restrict rights already granted for those components.
+本许可仅适用于有权按本许可授权的原创新增内容和修改；上游代码、此前已按 MIT
+发布的内容及第三方组件继续适用其原许可。详见 NOTICE.md。
+
+2. Noncommercial permission / 非商业授权
+You may use, study, reproduce, run locally, modify, and make derivative works of
+the Covered Work for personal noncommercial purposes. You may freely share the
+Covered Work, your noncommercial improvements, Skills, scripts, and derivative
+works with the community, provided you comply with sections 3 and 4.
+允许个人非商业使用、学习、复制、本地部署、改进、二次开发；允许向社区免费
+分享本项目、修改版、技能和脚本，须遵守下述来源标注和非商业条件。
+
+3. Attribution and sharing / 来源标注与分享
+Every distributed copy or derivative must retain this license and all applicable
+copyright and third-party notices, clearly credit "Codex 银子万能媒体工作流 / 银子
+(ginsonko)", link to the source repository above, and clearly identify modifications
+and their authors. Keep attribution in the README and documentation and, when a UI
+or service is distributed, in an accessible About / Credits / Help location.
+Redistribution of the Covered Work and derivative modifications must preserve these
+noncommercial and attribution conditions. Do not suggest endorsement by the original
+authors. Independently authored tools remain their authors' property; contributions
+accepted into this repository must grant compatible rights.
+分享和二开必须保留许可与版权声明，明确标注项目、作者、原仓库链接及修改说明；
+带界面的分发版还须在可访问的关于/帮助/致谢位置展示来源，不得暗示官方背书。
+
+4. Commercial use requires separate written permission / 商用须另行书面授权
+No license is granted for use primarily intended for commercial advantage or
+monetary compensation. Prohibited without separate written permission includes:
+selling, renting or sublicensing the Covered Work for a fee; paid or ad-supported
+hosting/SaaS; providing paid services, commissioned production, consulting or
+training using or bundling it; internal business deployment; and producing assets
+for commercial advertising, sales, monetized channels or client delivery.
+The absence of an immediate charge does not make a commercial deployment noncommercial.
+禁止未经另行书面授权的商业销售、收费托管/SaaS、商业内部部署、代运营/接单、
+收费培训打包，以及用本项目制作商业广告、商品销售、变现账号或客户交付内容。
+个人学习、个人实验和非商业社区分享允许；申请商用请联系仓库维护者。
+
+5. Outputs / 输出成果
+The authors claim no ownership of your inputs or generated output merely because
+this software was used. Section 4 governs use of the Covered Work in production;
+it does not transfer ownership of outputs. Third-party model/service/content terms
+and the rights in your inputs still apply.
+不会因你使用软件而取得你素材或成果的所有权；使用软件制作成果须遵守本许可，
+模型服务条款及素材本身的权利另行适用。
+
+6. Termination / 终止
+Rights granted by this license terminate upon breach. Cease the violating use or
+distribution; reinstatement requires written permission from the rights holder.
+违反许可时本许可授权终止；须停止违规使用或分发，恢复授权需权利人书面同意。
+
+7. Disclaimer / 免责声明
+THE COVERED WORK IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+NONINFRINGEMENT. TO THE MAXIMUM EXTENT PERMITTED BY LAW, AUTHORS ARE NOT LIABLE
+FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY ARISING FROM THE WORK OR ITS USE.
+本作品按现状提供；在法律允许的范围内，不保证适用性、无错误或不中断，作者
+不承担使用所造成的损失。法定不可排除的权利不受影响。
+
+The English terms govern in case of discrepancy; the Chinese text aids reading.
+This is a source-available noncommercial license, not an OSI-approved open-source license.
