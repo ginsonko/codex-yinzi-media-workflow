@@ -55,7 +55,7 @@ async function extractTailFrame(cfg, mediaPath, input = {}) {
     // the same PNG, leaving the final decoded frame rather than a near-tail seek.
     runFfmpeg([
       '-v', 'error', '-y', '-i', source.absolute_path,
-      '-map', '0:v:0', '-an', '-vsync', '0', '-update', '1', tempPath,
+      '-map', '0:v:0', '-an', '-fps_mode', 'passthrough', '-update', '1', tempPath,
     ], '无法提取上一镜头的最终解码帧');
     if (!fs.existsSync(tempPath)) throw new Error('严格首帧提取后没有生成文件');
 
@@ -87,7 +87,7 @@ function extractTemporaryFrame(cfg, mediaPath, position) {
   const source = validation.resolveLocalMediaPath(cfg, mediaPath);
   const target = path.join(os.tmpdir(), `production-boundary-${position}-${crypto.randomUUID()}.png`);
   const args = ['-v', 'error', '-y', '-i', source.absolute_path, '-map', '0:v:0', '-an'];
-  if (position === 'tail') args.push('-vsync', '0', '-update', '1');
+  if (position === 'tail') args.push('-fps_mode', 'passthrough', '-update', '1');
   else args.push('-frames:v', '1');
   args.push(target);
   runFfmpeg(args, `无法提取视频${position === 'tail' ? '尾帧' : '首帧'}`);
