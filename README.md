@@ -6,7 +6,7 @@
 
 ![创建模型 Key 并开始使用](docs/images/key-steps.svg)
 
-安装海报：[下载带完整 Codex 安装指令的 PNG](docs/images/onboarding-install-poster.png)。
+安装海报：[下载带完整 Codex 安装指令的 PNG](docs/images/onboarding-install-poster-cross-platform.png)。
 
 [快速安装](#三步开始) · [配置 Key 图文说明](docs/BEGINNER-KEY-SETUP.md) · [安装与故障排查](docs/INSTALLATION.md) · [跨平台安装](docs/CROSS-PLATFORM-INSTALL.md) · [分享 Skills](CONTRIBUTING.md) · [许可证](LICENSE)
 
@@ -119,5 +119,6 @@ Node.js 22+ 下在 `backend-node` 执行 `npm ci --ignore-scripts`，在 `frontw
 本项目采用 [社区非商业来源标注许可证](LICENSE)，属于公开源码、非商业共享项目，不使用“OSI 开源”来描述该许可。上游 LocalMiniDrama 和此前已按 MIT 发布的内容继续遵守 MIT；第三方组件遵守各自许可。详见 [NOTICE.md](NOTICE.md) 与 [第三方声明](THIRD_PARTY_NOTICES.md)。
 
 内测反馈请发到 [Issues](https://github.com/ginsonko/codex-yinzi-media-workflow/issues)，附操作步骤、Windows/Codex 版本和脱敏截图，切勿上传 Key 或数据库。
+
 
 

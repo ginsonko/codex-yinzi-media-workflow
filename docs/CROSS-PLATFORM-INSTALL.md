@@ -21,3 +21,8 @@ Codex 不应在 macOS/Linux 上执行 `.ps1`，也不应在 Windows 上要求用
 - macOS/Linux：先安装 Node.js 22 LTS，再运行 `chmod +x install.sh start.sh && ./install.sh`；以后运行 `./start.sh`。
 
 如果当前没有 `codex` 命令，Unix 安装器仍会完成本地工作台准备并明确提示；安装 Codex 后重新运行即可注册 Skills 和 MCP。
+
+## 安装海报
+
+![跨平台安装海报](images/onboarding-install-poster-cross-platform.png)
+
