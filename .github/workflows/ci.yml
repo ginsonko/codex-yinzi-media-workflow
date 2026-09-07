@@ -18,6 +18,7 @@ jobs:
             backend-node/package-lock.json
             frontweb/package-lock.json
       - run: node scripts/audit-public.mjs
+      - run: node --test scripts/dependencies-current.test.mjs
       - run: npm ci --ignore-scripts --no-audit --no-fund
         working-directory: backend-node
       - run: npm ci --no-audit --no-fund

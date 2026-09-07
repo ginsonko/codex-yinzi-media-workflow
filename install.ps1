@@ -39,6 +39,8 @@ Write-Host '[2/5] Installing locked frontend and backend dependencies...'
 foreach ($component in @('backend-node','frontweb')) {
   Push-Location (Join-Path $sourceRoot $component)
   try {
+    & $node (Join-Path $sourceRoot 'scripts\dependencies-current.cjs') (Get-Location).Path
+    if ($LASTEXITCODE -eq 0) { continue }
     $npmArgs = @('ci','--no-audit','--no-fund')
     # better-sqlite3 13 ships N-API prebuilds. Some npm releases nevertheless
     # run implicit node-gyp; backend dependencies need no installation scripts.

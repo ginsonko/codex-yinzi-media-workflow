@@ -24,6 +24,7 @@ node_major="$(node -p 'process.versions.node.split(".")[0]')"
 PLUGIN="$SOURCE_ROOT/codex-yinzi-universal-video-workflow/plugins/codex-yinzi-universal-video-workflow"
 node "$PLUGIN/scripts/runtime-launcher.mjs" stop --json --runtime-dir "$STATE_ROOT" >/dev/null 2>&1 || true
 for component in backend-node frontweb; do
+  if node "$SOURCE_ROOT/scripts/dependencies-current.cjs" "$SOURCE_ROOT/$component"; then continue; fi
   (cd "$SOURCE_ROOT/$component" && if [ "$component" = backend-node ]; then npm ci --ignore-scripts --no-audit --no-fund; else npm ci --no-audit --no-fund; fi)
 done
 node "$SOURCE_ROOT/scripts/verify-runtime.cjs"

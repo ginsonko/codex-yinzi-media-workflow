@@ -1,6 +1,6 @@
 {
   "name": "codex-yinzi-universal-video-workflow",
-  "version": "0.2.1+codex.20260908",
+  "version": "0.2.1+codex.20260908.1",
   "description": "\u8ba9 Codex \u52a8\u6001\u8bbe\u8ba1\u3001\u6267\u884c\u5e76\u5ba1\u8ba1\u56fe\u7247\u3001\u89c6\u9891\u3001\u526a\u8f91\u548c\u5185\u5bb9\u7814\u7a76\u4efb\u52a1\uff0c\u540c\u65f6\u4fdd\u7559\u4eba\u5de5\u63a5\u7ba1\u4e0e\u6062\u590d\u80fd\u529b\u3002",
   "author": {
     "name": "Yinzi"

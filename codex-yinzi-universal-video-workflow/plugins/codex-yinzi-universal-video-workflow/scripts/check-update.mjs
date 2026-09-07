@@ -21,6 +21,19 @@ async function busyRuntime(registry) {
   try { const r=await fetch(origin+'/health',{signal:AbortSignal.timeout(1000)});return r.ok } catch { return false }
  }
 }
+export async function claimUpdateLock(folder) {
+ await fs.mkdir(path.dirname(folder),{recursive:true})
+ try { await fs.mkdir(folder) } catch (error) {
+  if(error.code!=='EEXIST')throw error
+  const owner=await fs.readFile(path.join(folder,'owner.json'),'utf8').then(JSON.parse).catch(()=>null)
+  if(owner?.pid) { try { process.kill(owner.pid,0); return null } catch (error) { if(error.code!=='ESRCH')return null } }
+  else if(Date.now()-(await fs.stat(folder)).mtimeMs<60000)return null
+  if(owner)await fs.unlink(path.join(folder,'owner.json')).catch(()=>{})
+  try {await fs.rmdir(folder);await fs.mkdir(folder)} catch {return null}
+ }
+ await fs.writeFile(path.join(folder,'owner.json'),JSON.stringify({pid:process.pid}),{mode:0o600})
+ return async()=>{await fs.unlink(path.join(folder,'owner.json'));await fs.rmdir(folder)}
+}
 function activation(root, revision, previous, status='updated') {
  return {status,revision,previous,install_required:true,project_root:root,
    install_command:process.platform==='win32'?['powershell.exe','-NoProfile','-ExecutionPolicy','Bypass','-File',path.join(root,'install.ps1'),'-NoBrowser','-StateRoot',stateRoot()]:['bash',path.join(root,'install.sh'),'--no-browser','--state-root='+stateRoot()],
@@ -58,9 +71,8 @@ export async function checkUpdate(options={}) {
   if (await run(['status','--porcelain']) || await run(['branch','--show-current'])!=='main') return {status:'local_changes',latest,message:'发现新版；保留本地修改与分支，稍后由 Codex 协助合并'}
   if (await (options.busy||(()=>busyRuntime(registry)))()) return {status:'deferred',latest,message:'发现新版，当前任务结束后再更新，避免中断生成或下载'}
   if (!options.git) {
-   const folder=path.join(stateRoot(),'update.lock');await fs.mkdir(path.dirname(folder),{recursive:true})
-   try { await fs.mkdir(folder) } catch { return {status:'update_in_progress'} }
-   unlock=()=>fs.rmdir(folder)
+   unlock=await claimUpdateLock(path.join(stateRoot(),'update.lock'))
+   if(!unlock)return {status:'update_in_progress'}
   }
   await run(['fetch','--no-tags','origin','main'],15000)
   const fetched=await run(['rev-parse','FETCH_HEAD'])
