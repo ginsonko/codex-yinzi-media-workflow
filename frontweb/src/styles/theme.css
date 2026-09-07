@@ -19,16 +19,66 @@ a {color:var(--el-color-primary)}
 .el-input__wrapper,.el-select__wrapper,.el-textarea__inner {background:var(--bg-inner)}
 .el-dialog,.el-message-box,.el-popper,.el-select-dropdown,.el-dropdown-menu { background:var(--bg-card); color:var(--text-primary); border-color:var(--border-color); }
 .el-dialog__title,.el-message-box__title,.el-form-item__label,.el-dialog__body,.el-message-box__content { color:var(--text-primary); }
+.el-table {
+ --el-table-bg-color:var(--bg-card);
+ --el-table-tr-bg-color:var(--bg-card);
+ --el-table-row-hover-bg-color:var(--bg-hover);
+ --el-table-current-row-bg-color:var(--ui-accent-soft);
+ --el-table-header-bg-color:var(--bg-inner);
+ --el-table-text-color:var(--text-primary);
+ --el-table-header-text-color:var(--text-primary);
+ --el-table-border-color:var(--border-color);
+}
 .el-table,.el-table__inner-wrapper,.el-table tr,.el-table th.el-table__cell,.el-table td.el-table__cell { background:var(--bg-card); color:var(--text-primary); border-color:var(--border-color); }
-.el-table th.el-table__cell { background:var(--bg-inner); }
-.el-table--enable-row-hover .el-table__body tr:hover>td.el-table__cell { background:var(--bg-hover); }
-.el-table__body tr.current-row>td.el-table__cell,
-.el-table__body tr.current-row:hover>td.el-table__cell { background:var(--ui-accent-soft) !important; color:var(--text-primary) !important; }
+.el-table th.el-table__cell { background:var(--bg-inner); color:var(--text-primary); }
 .el-table--enable-row-hover .el-table__body tr:hover>td.el-table__cell,
-.el-table__fixed-right .el-table__body tr:hover>td.el-table__cell { color:var(--text-primary) !important; }
+.el-table__body tr.hover-row>td.el-table__cell { background:var(--bg-hover) !important; color:var(--text-primary) !important; }
+.el-table__body tr.current-row>td.el-table__cell,
+.el-table__body tr.current-row:hover>td.el-table__cell,
+.el-table__body tr.config-selected-row>td.el-table__cell,
+.el-table__body tr.config-selected-row:hover>td.el-table__cell,
+.el-table__fixed-right .el-table__body tr.config-selected-row>td.el-table__cell { background:var(--ui-accent-soft) !important; color:var(--text-primary) !important; }
+.el-table__body tr.el-table__row--striped>td.el-table__cell { background:var(--bg-card); color:var(--text-primary); }
+.el-table__body tr.el-table__row--striped:hover>td.el-table__cell { background:var(--bg-hover) !important; }
+.el-table__body tr.config-selected-row.el-table__row--striped>td.el-table__cell,
+.el-table__body tr.config-selected-row.el-table__row--striped:hover>td.el-table__cell { background:var(--ui-accent-soft) !important; color:var(--text-primary) !important; }
+.el-table__fixed-right .el-table__body tr:hover>td.el-table__cell,
+.el-table__fixed-right .el-table__body tr.hover-row>td.el-table__cell { color:var(--text-primary) !important; }
+.el-table tr.config-selected-row .el-button.is-link,
+.el-table tr.config-selected-row .el-button--text { color:var(--ui-accent) !important; }
+.el-table tr.config-selected-row .el-button--danger { color:var(--ui-danger) !important; }
+.el-table tr.config-selected-row .el-tag { color:var(--text-primary) !important; border-color:var(--border-muted) !important; background:var(--bg-inner) !important; }
+.el-table tr.config-selected-row .el-checkbox__label { color:var(--text-primary) !important; }
 .el-table__fixed-right, .el-table__fixed, .el-table__fixed-right-patch { background:var(--bg-card) !important; }
 .el-table__fixed-right::before, .el-table__fixed::before { background:var(--border-color) !important; }
-.el-table .cell { color:inherit; }
+.el-table .cell { color:inherit; }/* Explicit high-contrast selection palette. Keep this after stripe rules so the
+   component cannot reintroduce its light default selection background. */
+html.dark .el-table__body tr.config-selected-row > td.el-table__cell,
+html.dark .el-table__fixed-right .el-table__body tr.config-selected-row > td.el-table__cell {
+  background-color:#173d32 !important;
+  background:#173d32 !important;
+  color:#f5fcf8 !important;
+}
+html.dark .el-table__body tr.config-selected-row > td.el-table__cell .cell,
+html.dark .el-table__fixed-right .el-table__body tr.config-selected-row > td.el-table__cell .cell,
+html.dark .el-table__body tr.config-selected-row > td.el-table__cell :is(span,small,strong) {
+  color:#f5fcf8 !important;
+}
+html.light .el-table__body tr.config-selected-row > td.el-table__cell,
+html.light .el-table__fixed-right .el-table__body tr.config-selected-row > td.el-table__cell {
+  background-color:#e4f2eb !important;
+  background:#e4f2eb !important;
+  color:#173329 !important;
+}
+html.light .el-table__body tr.config-selected-row > td.el-table__cell .cell,
+html.light .el-table__fixed-right .el-table__body tr.config-selected-row > td.el-table__cell .cell,
+html.light .el-table__body tr.config-selected-row > td.el-table__cell :is(span,small,strong) {
+  color:#173329 !important;
+}
+.el-table__body tr.config-selected-row:hover > td.el-table__cell,
+.el-table__fixed-right .el-table__body tr.config-selected-row:hover > td.el-table__cell {
+  filter:brightness(1.04);
+}
 .el-tag { color:var(--text-primary); border-color:var(--border-color); background:var(--bg-inner); }
 .el-tag--success { color:var(--ui-accent); background:var(--ui-accent-soft); }
 .el-tag--warning { color:var(--ui-warning); background:var(--ui-warning-soft); }

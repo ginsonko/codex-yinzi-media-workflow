@@ -103,6 +103,7 @@
             :data="list"
             stripe
             style="width: 100%"
+            :row-class-name="configRowClassName"
             @selection-change="onSelectionChange"
           >
             <el-table-column v-if="!vendorLock.enabled" type="selection" width="46" />
@@ -2765,6 +2766,16 @@ async function onDelete(row) {
 
 function onSelectionChange(rows) {
   selectedRows.value = rows
+}
+
+// Element Plus does not expose a stable row class for checkbox selection in
+// every table mode. Keep the visual state tied to the same rows used by batch
+// actions so the main and fixed columns cannot drift apart.
+function configRowClassName({ row }) {
+  const rowId = String(row?.id ?? '')
+  return selectedRows.value.some((item) => String(item?.id ?? '') === rowId)
+    ? 'config-selected-row'
+    : ''
 }
 
 async function onBatchDelete() {
