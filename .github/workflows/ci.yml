@@ -22,6 +22,12 @@ jobs:
         working-directory: backend-node
       - run: npm ci --no-audit --no-fund
         working-directory: frontweb
+      - name: Prepare verified media tools
+        shell: pwsh
+        run: |
+          . ./scripts/windows-common.ps1
+          Install-YinziMediaTools $PWD.Path (Join-Path $env:RUNNER_TEMP 'yinzi-media-tools')
+          node ./scripts/verify-runtime.cjs
       - run: node --test test/*.test.js
         working-directory: backend-node
       - run: node --test test/*.test.js
