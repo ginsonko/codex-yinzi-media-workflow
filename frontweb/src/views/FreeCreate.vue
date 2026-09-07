@@ -5,8 +5,8 @@
         <el-icon><ArrowLeft /></el-icon>
       </el-button>
       <div>
-        <h1>自由创作</h1>
-        <p>直接生成图片或视频，并把参考媒体保存在本地项目中。</p>
+        <h1>手动创作</h1>
+        <p>简单任务可以在这里直接生成；更复杂的需求，推荐直接告诉 Codex。</p>
       </div>
     </header>
 
@@ -154,7 +154,10 @@
       <section class="result-panel">
         <div class="result-header">
           <h2>生成结果</h2>
-          <el-button v-if="results.length" size="small" plain @click="results = []">清空</el-button>
+          <div class="result-actions">
+            <el-button v-if="results.some((item) => item.assetRegistered)" size="small" plain @click="$router.push('/media-library')">查看素材库</el-button>
+            <el-button v-if="results.length" size="small" plain @click="results = []">清空</el-button>
+          </div>
         </div>
         <div v-if="!results.length && !generating" class="empty-result">
           <el-icon><MagicStick /></el-icon>
@@ -170,6 +173,8 @@
             </div>
             <div class="result-meta">
               <p>{{ item.prompt }}</p>
+              <small v-if="item.assetError" class="asset-register-error">素材库登记失败：{{ item.assetError }}</small>
+              <small v-else-if="item.assetRegistered" class="asset-register-ok">已保存到素材库</small>
               <el-button v-if="item.url" size="small" plain @click="downloadItem(item)">下载</el-button>
             </div>
           </article>
@@ -193,6 +198,7 @@ import { videosAPI } from '@/api/videos'
 import { uploadAPI } from '@/api/upload'
 import { aiAPI } from '@/api/ai'
 import { generationSettingsAPI } from '@/api/prompts'
+import request from '@/utils/request'
 
 const mode = ref('image')
 const route = useRoute()
@@ -296,6 +302,17 @@ function downloadItem(item) {
   link.click()
 }
 
+async function registerAsset(item, generationId) {
+  if (!generationId || item.assetRegistered) return
+  try {
+    const endpoint = item.type === 'video' ? `/assets/import/video/${generationId}` : `/assets/import/image/${generationId}`
+    await request.post(endpoint)
+    item.assetRegistered = true
+  } catch (error) {
+    item.assetError = error?.message || '素材库登记失败'
+  }
+}
+
 async function generate() {
   if (!prompt.value.trim()) return
   const item = { type: mode.value, prompt: prompt.value, status: 'processing', url: null, error: null }
@@ -304,11 +321,13 @@ async function generate() {
   try {
     if (mode.value === 'image') {
       const response = await imagesAPI.create({ prompt: prompt.value, style: style.value || undefined, aspect_ratio: aspectRatio.value })
+      item.generationId = response?.id || response?.image_generation_id || null
       if (response?.task_id) await pollImageTask(response.task_id, item)
       else {
         item.url = response?.image_url || (response?.local_path ? `/static/${response.local_path}` : null)
         item.status = item.url ? 'completed' : 'failed'
       }
+      if (item.status === 'completed') await registerAsset(item, item.generationId)
       return
     }
     const response = await videosAPI.create({
@@ -322,8 +341,10 @@ async function generate() {
       reference_video_urls: videoReferences.value.map((entry) => entry.local_path),
       reference_audio_urls: audioReferences.value.map((entry) => entry.local_path),
     })
+    item.generationId = response?.id || response?.video_generation_id || null
     if (response?.task_id) await pollVideoTask(response.task_id, item)
     else throw new Error('视频任务未返回任务 ID')
+    if (item.status === 'completed') await registerAsset(item, item.generationId)
   } catch (error) {
     item.status = 'failed'
     item.error = error.message || '生成失败'
@@ -341,7 +362,9 @@ async function pollImageTask(taskId, item, maxMs = 180000) {
     if (task?.status === 'completed') {
       const result = typeof task.result === 'string' ? JSON.parse(task.result) : task.result
       item.url = result?.image_url || (result?.local_path ? `/static/${result.local_path}` : null)
+      item.generationId = item.generationId || result?.image_generation_id || task?.image_generation_id || null
       item.status = item.url ? 'completed' : 'failed'
+      if (item.status === 'completed') await registerAsset(item, item.generationId)
       return
     }
     if (task?.status === 'failed') throw new Error(task.error || '图片生成失败')
@@ -359,7 +382,9 @@ async function pollVideoTask(taskId, item) {
       const result = typeof task.result === 'string' ? JSON.parse(task.result) : task.result
       const video = result?.video_generation_id ? await videosAPI.get(result.video_generation_id) : null
       item.url = video?.local_path ? `/static/${video.local_path}` : video?.video_url
+      item.generationId = item.generationId || result?.video_generation_id || video?.id || null
       item.status = item.url ? 'completed' : 'failed'
+      if (item.status === 'completed') await registerAsset(item, item.generationId)
       return
     }
     if (task?.status === 'failed') throw new Error(task.error || '视频生成失败')
@@ -369,46 +394,50 @@ async function pollVideoTask(taskId, item) {
 </script>
 
 <style scoped>
-.free-create-page { min-height: 100vh; background: #f4f6f8; padding: 20px; color: #1f2937; }
+.free-create-page { min-height: 100vh; background: var(--bg-page); padding: 20px; color: var(--text-primary); }
 .page-header { display: flex; align-items: flex-start; gap: 10px; margin-bottom: 18px; }
 .page-header h1 { margin: 0; font-size: 22px; letter-spacing: 0; }
-.page-header p { margin: 4px 0 0; color: #667085; font-size: 13px; }
+.page-header p { margin: 4px 0 0; color: var(--text-muted); font-size: 13px; }
 .create-layout { display: grid; grid-template-columns: minmax(360px, 440px) minmax(0, 1fr); gap: 18px; align-items: start; }
-.input-panel, .result-panel { background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 18px; }
+.input-panel, .result-panel { background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 8px; padding: 18px; }
 .mode-tabs { margin-bottom: 14px; }
 .form-section { margin-bottom: 16px; }
 .form-label { display: block; margin-bottom: 6px; font-size: 13px; font-weight: 600; }
-.field-note { color: #667085; font-size: 12px; }
+.field-note { color: var(--text-muted); font-size: 12px; }
 .required { color: #d92d20; }
 .full-width { width: 100%; }
-.capability-line { display: flex; flex-wrap: wrap; gap: 6px 12px; margin-top: 8px; color: #475467; font-size: 12px; }
-.reference-editor { border-top: 1px solid #eaecf0; border-bottom: 1px solid #eaecf0; padding: 14px 0 8px; }
+.capability-line { display: flex; flex-wrap: wrap; gap: 6px 12px; margin-top: 8px; color: var(--text-muted); font-size: 12px; }
+.reference-editor { border-top: 1px solid var(--border-color); border-bottom: 1px solid var(--border-color); padding: 14px 0 8px; }
 .reference-heading { display: flex; justify-content: space-between; margin-bottom: 10px; }
 .reference-group { padding: 8px 0; }
-.reference-group + .reference-group { border-top: 1px solid #f2f4f7; }
+.reference-group + .reference-group { border-top: 1px solid var(--border-color); }
 .reference-group-title { display: flex; align-items: center; justify-content: space-between; min-height: 32px; }
 .reference-group-title > span { display: flex; align-items: center; gap: 7px; font-size: 13px; font-weight: 500; }
 .media-list { display: grid; gap: 5px; margin-top: 5px; }
 .media-row { display: grid; grid-template-columns: 28px minmax(0, 1fr) 30px; align-items: center; gap: 8px; min-height: 34px; }
 .media-row img { width: 28px; height: 28px; border-radius: 4px; object-fit: cover; }
-.media-type-icon { width: 28px; font-size: 18px; color: #667085; }
-.media-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; color: #475467; }
-.upload-state { display: flex; align-items: center; gap: 6px; margin-top: 8px; color: #175cd3; font-size: 12px; }
+.media-type-icon { width: 28px; font-size: 18px; color: var(--text-muted); }
+.media-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; color: var(--text-primary); }
+.upload-state { display: flex; align-items: center; gap: 6px; margin-top: 8px; color: var(--ui-info); font-size: 12px; }
 .options-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
 .options-grid :deep(.el-input-number) { width: 100%; }
 .generate-btn { width: 100%; }
 .result-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+.result-actions { display:flex; align-items:center; gap:8px; }
 .result-header h2 { margin: 0; font-size: 16px; letter-spacing: 0; }
-.empty-result { min-height: 320px; display: grid; place-content: center; justify-items: center; color: #98a2b3; }
+.empty-result { min-height: 320px; display: grid; place-content: center; justify-items: center; color: var(--text-muted); }
 .empty-result .el-icon { font-size: 42px; }
 .result-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 14px; }
-.result-item { border: 1px solid #e5e7eb; border-radius: 8px; overflow: hidden; }
-.result-media { aspect-ratio: 16 / 9; background: #101828; display: grid; place-items: center; overflow: hidden; }
+.result-item { border: 1px solid var(--border-color); border-radius: 8px; overflow: hidden; }
+.result-media { aspect-ratio: 16 / 9; background: var(--bg-inner); display: grid; place-items: center; overflow: hidden; }
 .result-media video, .result-media img { width: 100%; height: 100%; object-fit: contain; }
-.media-status { display: flex; flex-direction: column; align-items: center; gap: 6px; color: #fff; font-size: 12px; }
-.media-status.error { color: #fda29b; }
+.media-status { display: flex; flex-direction: column; align-items: center; gap: 6px; color: var(--text-primary); font-size: 12px; }
+.media-status.error { color: var(--ui-danger); }
 .result-meta { display: flex; align-items: flex-end; justify-content: space-between; gap: 10px; padding: 10px; }
-.result-meta p { margin: 0; font-size: 12px; color: #667085; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.result-meta p { margin: 0; font-size: 12px; color: var(--text-muted); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.asset-register-ok,.asset-register-error { display:block; margin-top:5px; font-size:11px; line-height:1.4; }
+.asset-register-ok { color:var(--ui-accent); }
+.asset-register-error { color:var(--ui-warning); }
 .preview-overlay { position: fixed; inset: 0; z-index: 9999; display: grid; place-items: center; background: rgba(16, 24, 40, .9); }
 .preview-overlay img { max-width: 92vw; max-height: 92vh; object-fit: contain; }
 @media (max-width: 820px) {

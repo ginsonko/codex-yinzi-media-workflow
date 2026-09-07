@@ -3409,6 +3409,23 @@ onMounted(async () => {
   border-color: rgba(20, 184, 166, 0.28);
 }
 
+/* Configuration labels retain readable contrast in both themes. */
+.type-text,.type-image,.type-storyboard_image,.type-video,.type-jimeng2_character_auth,.type-model_ark_asset {
+  border-color: var(--border-color);
+}
+:global(html.dark) .type-text { color:#b9d8ff; background:#193453; }
+:global(html.dark) .type-image { color:#8ce5c5; background:#173d32; }
+:global(html.dark) .type-storyboard_image { color:#d2b8ff; background:#30234d; }
+:global(html.dark) .type-video { color:#ffc18c; background:#4a2c1b; }
+:global(html.dark) .type-jimeng2_character_auth { color:#8fe9dc; background:#16433f; }
+:global(html.dark) .type-model_ark_asset { color:#bfc5ff; background:#252a55; }
+:global(html.light) .type-text { color:#155aa8; background:#e8f2ff; }
+:global(html.light) .type-image { color:#08744e; background:#e5f7ef; }
+:global(html.light) .type-storyboard_image { color:#6941a5; background:#f1eaff; }
+:global(html.light) .type-video { color:#a44809; background:#fff0e5; }
+:global(html.light) .type-jimeng2_character_auth { color:#08756b; background:#e4f8f5; }
+:global(html.light) .type-model_ark_asset { color:#3e45a0; background:#eceeff; }
+
 .type-model_ark_asset {
   background: rgba(99, 102, 241, 0.12);
   color: #6366f1;
@@ -3416,12 +3433,12 @@ onMounted(async () => {
 }
 
 .no-default {
-  color: #9ca3af;
+  color: var(--text-muted);
   font-size: 13px;
 }
 .one-key-tip {
   margin: 0 0 12px;
-  color: #606266;
+  color: var(--text-muted);
   font-size: 13px;
   line-height: 1.5;
 }
@@ -3495,10 +3512,10 @@ code {
 .default-tip {
   margin: 0 0 16px;
   padding: 10px 12px;
-  background: #f0f9ff;
+  background: var(--ui-info-soft);
   border-radius: 6px;
   font-size: 13px;
-  color: #0369a1;
+  color: var(--ui-info);
   line-height: 1.5;
 }
 .vendor-lock-bar {
@@ -3529,7 +3546,7 @@ code {
 .field-tip {
   margin: 6px 0 0;
   font-size: 12px;
-  color: #909399;
+  color: var(--text-muted);
   line-height: 1.4;
 }
 .form-label-tip {
@@ -3541,9 +3558,9 @@ code {
 .ph-section-title {
   font-size: 13px;
   font-weight: 600;
-  color: #606266;
+  color: var(--text-primary);
   padding: 4px 0 6px;
-  border-bottom: 1px solid #ebeef5;
+  border-bottom: 1px solid var(--border-color);
   margin-bottom: 4px;
 }
 .ph-tag {
@@ -3556,22 +3573,22 @@ code {
   vertical-align: middle;
 }
 .ph-tag-img {
-  background: #ecf5ff;
-  color: #409eff;
-  border: 1px solid #b3d8ff;
+  background: var(--ui-info-soft);
+  color: var(--ui-info);
+  border: 1px solid var(--border-color);
 }
 .ph-tag-vid {
-  background: #f0f9eb;
-  color: #67c23a;
-  border: 1px solid #b3e19d;
+  background: var(--ui-accent-soft);
+  color: var(--ui-accent);
+  border: 1px solid var(--border-color);
 }
 .protocol-help .ph-body {
   font-size: 13px;
   line-height: 1.7;
-  color: #303133;
+  color: var(--text-primary);
 }
 .protocol-help .ph-body pre {
-  background: #f5f7fa;
+  background: var(--bg-inner);
   border-radius: 4px;
   padding: 8px 12px;
   font-size: 12px;
@@ -3582,24 +3599,24 @@ code {
   word-break: break-all;
 }
 .protocol-help .ph-body code {
-  background: #f0f2f5;
+  background: var(--bg-hover);
   padding: 1px 5px;
   border-radius: 3px;
   font-size: 12px;
 }
 .tip-icon {
   font-size: 13px;
-  color: #909399;
+  color: var(--text-muted);
   cursor: pointer;
   flex-shrink: 0;
   transition: color 0.15s;
 }
 .tip-icon:hover {
-  color: #409eff;
+  color: var(--ui-info);
 }
 .endpoint-preview-box {
-  background: #f0f7ff;
-  border: 1px solid #c6e0ff;
+  background: var(--ui-info-soft);
+  border: 1px solid var(--border-color);
   border-radius: 6px;
   padding: 10px 14px;
   margin: -4px 0 14px;
@@ -3610,14 +3627,14 @@ code {
   align-items: center;
   gap: 8px;
   font-weight: 600;
-  color: #409eff;
+  color: var(--ui-info);
   margin-bottom: 8px;
   font-size: 12px;
 }
 .ep-auto-badge {
-  background: #e6f1ff;
-  color: #409eff;
-  border: 1px solid #b3d8ff;
+  background: var(--bg-hover);
+  color: var(--ui-info);
+  border: 1px solid var(--border-color);
   border-radius: 3px;
   padding: 0 5px;
   font-size: 11px;
@@ -3635,14 +3652,14 @@ code {
 }
 .ep-label {
   flex-shrink: 0;
-  color: #606266;
+  color: var(--text-muted);
   min-width: 68px;
 }
 .ep-url {
   word-break: break-all;
-  color: #303133;
-  background: rgba(255,255,255,0.7);
-  border: 1px solid #dce8fa;
+  color: var(--text-primary);
+  background: var(--bg-inner);
+  border: 1px solid var(--border-color);
   border-radius: 3px;
   padding: 1px 6px;
   font-family: 'Menlo', 'Consolas', monospace;
@@ -3652,23 +3669,23 @@ code {
 .ep-tip {
   margin: 8px 0 0;
   font-size: 11px;
-  color: #909399;
+  color: var(--text-muted);
   line-height: 1.4;
 }
 .ep-tip-warn {
-  color: #e6a23c;
+  color: var(--ui-warning);
 }
 .ep-box-gemini {
-  background: #fffbf0;
-  border-color: #f5dfa0;
+  background: var(--ui-warning-soft);
+  border-color: var(--border-color);
 }
 .ep-box-gemini .ep-preview-header {
-  color: #b8860b;
+  color: var(--ui-warning);
 }
 .ep-badge-gemini {
-  background: #fef6e0;
-  color: #b8860b;
-  border-color: #f0d080;
+  background: var(--ui-warning-soft);
+  color: var(--ui-warning);
+  border-color: var(--border-color);
 }
 .generation-settings {
   max-width: 600px;
@@ -3676,12 +3693,12 @@ code {
 .gs-section-title {
   font-size: 14px;
   font-weight: 600;
-  color: #303133;
+  color: var(--text-primary);
   margin-bottom: 8px;
 }
 .gs-desc {
   font-size: 13px;
-  color: #606266;
+  color: var(--text-muted);
   line-height: 1.6;
   margin-bottom: 20px;
 }
@@ -3693,35 +3710,35 @@ code {
 }
 .gs-label {
   font-size: 13px;
-  color: #303133;
+  color: var(--text-primary);
   font-weight: 500;
   white-space: nowrap;
 }
 .gs-unit {
   font-size: 13px;
-  color: #606266;
+  color: var(--text-muted);
   white-space: nowrap;
 }
 .gs-tip-box {
   margin-top: 20px;
-  background: #f5f7fa;
+  background: var(--bg-inner);
   border-radius: 8px;
   padding: 14px 16px;
   font-size: 13px;
 }
 .gs-tip-title {
   font-weight: 600;
-  color: #303133;
+  color: var(--text-primary);
   margin-bottom: 8px;
 }
 .gs-tip-list {
   margin: 0 0 8px 16px;
   padding: 0;
-  color: #606266;
+  color: var(--text-muted);
   line-height: 1.8;
 }
 .gs-tip-note {
-  color: #909399;
+  color: var(--text-muted);
   font-size: 12px;
 }
 .yinzi-catalog-bar {
