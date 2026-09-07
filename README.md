@@ -8,11 +8,11 @@
 
 安装海报：[下载带完整 Codex 安装指令的 PNG](docs/images/onboarding-install-poster.png)。
 
-[快速安装](#三步开始) · [配置 Key 图文说明](docs/BEGINNER-KEY-SETUP.md) · [安装与故障排查](docs/INSTALLATION.md) · [分享 Skills](CONTRIBUTING.md) · [许可证](LICENSE)
+[快速安装](#三步开始) · [配置 Key 图文说明](docs/BEGINNER-KEY-SETUP.md) · [安装与故障排查](docs/INSTALLATION.md) · [跨平台安装](docs/CROSS-PLATFORM-INSTALL.md) · [分享 Skills](CONTRIBUTING.md) · [许可证](LICENSE)
 
 ## 三步开始
 
-**Windows 10/11，64 位。首次安装需要联网和可用的 Codex。** 本轮内测首先覆盖 Windows x64 源码安装。
+**支持 Windows、macOS 和 Linux。首次安装需要联网、Node.js 22 LTS 和可用的 Codex。** 安装器会按当前系统选择对应入口。
 
 ### 1. 把仓库交给 Codex
 
@@ -21,7 +21,7 @@
 ```text
 请帮我安装并启动 Codex 银子万能媒体工作流：
 https://github.com/ginsonko/codex-yinzi-media-workflow
-读取仓库 AGENTS.md，执行根目录 install.ps1，安装 Skills 并打开工作台。
+读取仓库 AGENTS.md，识别操作系统并执行对应安装器（Windows 用 install.ps1/install.cmd，macOS/Linux 用 install.sh），安装 Skills 并打开工作台。
 先不配置 Key，带我看一遍示例。
 ```
 
@@ -35,7 +35,7 @@ cd codex-yinzi-media-workflow
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\install.ps1
 ```
 
-没有 Git：点击 GitHub **Code → Download ZIP**，解压到固定目录，双击 **install.cmd**。
+macOS/Linux：先安装 Node.js 22 LTS，再运行 `chmod +x install.sh && ./install.sh`。没有 Git：点击 GitHub **Code → Download ZIP**，解压到固定目录；Windows 双击 **install.cmd**，macOS/Linux 运行 `./install.sh`。
 拉取/解压本身不会执行代码；安装器运行后才会完成安装。无需自己寻找或复制 Skills。
 
 ### 2. 看示例，按需配置模型
@@ -93,7 +93,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\install.ps1
 ## 日常启动与更新
 
 - 打开：双击 `start.cmd`，或让 Codex“启动银子工作流”。首页的小按钮可以添加 Windows 桌面快捷方式。
-- 更新：在仓库执行 `git pull --ff-only`，再运行 `install.cmd`。安装器刷新依赖与 Skills，保留本机 Key、项目和媒体；有自己修改的源码时先让 Codex 处理合并。
+- 更新：在仓库执行 `git pull --ff-only`，再运行对应系统的安装器（Windows 用 `install.ps1`/`install.cmd`，macOS/Linux 用 `./install.sh`）。安装器刷新依赖与 Skills，保留本机 Key、项目和媒体；有自己修改的源码时先让 Codex 处理合并。
 - ZIP 用户：下载新版到新目录，运行安装器；保持原数据目录，安装器会迁移自己创建的 Skill 链接。
 - 数据：默认在 `%LOCALAPPDATA%\Yinzi\CodexVideoWorkflow`，与 Git 源码分开。备份、诊断、卸载和高级参数见 [安装说明](docs/INSTALLATION.md)。
 
@@ -109,7 +109,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\install.ps1
 | `desktop/` | Electron 可选打包源码与图标；当前内测使用根目录源码安装 |
 | `scripts/`、`docs/` | 安装依赖锁、操作说明与社区指南 |
 
-运行 `install.ps1 -SkipCodexInstall -NoBrowser` 可只准备本地开发工作台。
+运行 Windows 的 `install.ps1 -SkipCodexInstall -NoBrowser`，或 macOS/Linux 的 `./install.sh --skip-codex-install --no-browser`，可只准备本地开发工作台。
 Node.js 22+ 下在 `backend-node` 执行 `npm ci --ignore-scripts`，在 `frontweb` 执行 `npm ci`；构建用 `npm run build`（frontweb）；测试见 [贡献指南](CONTRIBUTING.md)。
 
 ## 社区与许可
@@ -119,3 +119,5 @@ Node.js 22+ 下在 `backend-node` 执行 `npm ci --ignore-scripts`，在 `frontw
 本项目采用 [社区非商业来源标注许可证](LICENSE)，属于公开源码、非商业共享项目，不使用“OSI 开源”来描述该许可。上游 LocalMiniDrama 和此前已按 MIT 发布的内容继续遵守 MIT；第三方组件遵守各自许可。详见 [NOTICE.md](NOTICE.md) 与 [第三方声明](THIRD_PARTY_NOTICES.md)。
 
 内测反馈请发到 [Issues](https://github.com/ginsonko/codex-yinzi-media-workflow/issues)，附操作步骤、Windows/Codex 版本和脱敏截图，切勿上传 Key 或数据库。
+
+

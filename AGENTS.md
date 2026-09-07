@@ -4,7 +4,7 @@
 
 ## 首次安装
 
-1. 在本仓库根目录运行 `powershell.exe -NoProfile -ExecutionPolicy Bypass -File ./install.ps1`。直接使用当前 checkout，不要再次克隆，也不要求用户手动复制 Skill。
+1. 先识别操作系统：Windows 在本仓库根目录运行 `install.ps1`（或 `install.cmd`）；macOS/Linux 运行 `chmod +x install.sh && ./install.sh`。直接使用当前 checkout，不要再次克隆，也不要求用户手动复制 Skill。
 2. 安装器补齐 Node.js、前后端依赖和 FFmpeg，安装 Skills/MCP 或插件，启动工作台并打开浏览器。读取返回的 `frontend_url`，在对话中给用户可点击地址。端口必须来自返回结果。
 3. 如果当前任务没有即时重载 Skills，直接读取 `codex-yinzi-universal-video-workflow/plugins/codex-yinzi-universal-video-workflow/skills/codex-yinzi-universal-video/SKILL.md`，使用其中 CLI 桥接完成当前任务。后续开新任务；若仍未出现工具，重启 Codex。
 
@@ -21,3 +21,4 @@
 遵守根目录 LICENSE 和 NOTICE.md。保留上游来源和第三方许可。用户数据、数据库、Key、日志、私密截图均不得提交。测试与开发使用隔离的 `YINZI_WORKFLOW_RUNTIME_DIR`，保留正在运行的其他工作流实例。
 
 后端在 backend-node 执行 `node --test test/*.test.js`；前端在 frontweb 执行同命令；前端构建 `npm run build`。按风险选择真实流程验收，不能仅凭单测宣称全面通过。
+
