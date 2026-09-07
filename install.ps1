@@ -12,7 +12,11 @@ $ProgressPreference = 'SilentlyContinue'
 $sourceRoot = [IO.Path]::GetFullPath($PSScriptRoot)
 $StateRoot = Get-YinziStateRoot $StateRoot
 New-Item -ItemType Directory -Path $StateRoot -Force | Out-Null
-if ($CodexHome) { $env:CODEX_HOME = [IO.Path]::GetFullPath($CodexHome) }
+if ($CodexHome) {
+  $CodexHome = [IO.Path]::GetFullPath($CodexHome)
+  New-Item -ItemType Directory -Path $CodexHome -Force | Out-Null
+  $env:CODEX_HOME = $CodexHome
+}
 if (-not $SkillsRoot) {
   $SkillsRoot = if ($CodexHome) { Join-Path $CodexHome 'skills' } else { Join-Path $HOME '.agents\skills' }
 }
@@ -60,7 +64,13 @@ if (-not $SkipCodexInstall) {
     if ($LASTEXITCODE -ne 0) { throw 'Codex CLI installation failed. Install it, then rerun install.cmd.' }
     $codexPath = Join-Path $cliRoot 'node_modules\.bin\codex.cmd'
   } else { $codexPath = $codex.Source }
-  $help = (& $codexPath plugin --help 2>&1 | Out-String)
+  # An older CLI can print an unsupported-command warning to stderr. This is
+  # capability discovery, so PowerShell 5 must not terminate on that warning.
+  $priorErrorPreference = $ErrorActionPreference
+  try {
+    $ErrorActionPreference = 'Continue'
+    $help = (& $codexPath plugin --help 2>&1 | Out-String)
+  } finally { $ErrorActionPreference = $priorErrorPreference }
   if ($help -match '(?m)^\s+add\s') {
     $marketplace = Join-Path $StateRoot 'plugin-runtime'
     New-Item -ItemType Directory -Path $marketplace -Force | Out-Null
