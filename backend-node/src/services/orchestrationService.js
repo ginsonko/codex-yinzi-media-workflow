@@ -509,6 +509,36 @@ function createOrchestrationService(db) {
     return { schema_version: 2, open_world: true, planning_guidance: creativePreferences.profile(session.source_context?.quality_profile || creativePreferences.get(db).quality_profile), session, nodes, events, receipts, counts, artifacts: listArtifacts(id, query), feedback: listFeedback(id), delivery: latestDelivery(id), blender_jobs: listBlenderJobs(id) };
   }
 
+  function beginWork(input = {}) {
+    if (!String(input.idempotency_key || '').trim() || !String(input.user_goal || '').trim()) throw makeError('WORK_INPUT_REQUIRED', '开始任务需要稳定请求键和用户目标');
+    const intent = input.intent === 'analyze' ? 'analyze' : 'create';
+    const stamp = nowIso();
+    return createSession({ ...input, source_context: { ...(input.source_context || {}), intent,
+      activity: { stage: 'analysis', state: 'working', message: '已接收需求，正在分析素材与目标', next_action: '整理方案与验收标准', needs_user: false, updated_at: stamp },
+    } });
+  }
+
+  function reportActivity(id, input = {}) {
+    return db.transaction(() => {
+      const session = getSession(id);
+      if (!session) throw makeError('ORCHESTRATION_NOT_FOUND', '编排任务不存在');
+      if (!input.event_idempotency_key || !String(input.message || '').trim()) throw makeError('ACTIVITY_INPUT_REQUIRED', '进度需要事件请求键和真实动作说明');
+      const state = input.state || 'working';
+      if (!['working','waiting','completed'].includes(state)) throw makeError('ACTIVITY_STATE_INVALID', '进度状态无效');
+      const report = input.analysis_report == null ? session.source_context?.analysis_report : sanitize(input.analysis_report);
+      if (state === 'completed' && session.source_context?.intent === 'analyze') {
+        if (!report || !String(typeof report === 'string' ? report : report.summary || '').trim()) throw makeError('ANALYSIS_REPORT_REQUIRED', '分析完成时请保存分析结论');
+        const unfinished = listNodes(id).filter(node => !TERMINAL_NODE_STATUSES.has(node.status));
+        if (unfinished.length) throw makeError('COMPLETION_UNFINISHED_NODES', '请先收口分析节点的真实结果');
+      }
+      const event = recordEvent(id, { event_type: 'activity.reported', event_idempotency_key: input.event_idempotency_key, actor: input.actor || 'codex', payload: sanitize(input) });
+      if (event.reused) return getBundle(id);
+      const activity = sanitize({ stage: input.stage || 'analysis', state, message: input.message, next_action: input.next_action || '', needs_user: Boolean(input.needs_user), updated_at: nowIso() });
+      const nextStatus = state === 'completed' && session.source_context?.intent === 'analyze' ? (listNodes(id).length ? computeSessionStatus(db, id) : 'succeeded') : session.status;
+      return updateSession(id, { status: nextStatus, source_context: { ...session.source_context, activity, ...(report == null ? {} : { analysis_report: report }) } });
+    })();
+  }
+
   function createSession(input = {}) {
     const idem = input.idempotency_key ? String(input.idempotency_key).trim() : null;
     if (idem) {
@@ -963,7 +993,7 @@ function createOrchestrationService(db) {
   }
 
   return {
-    createSession, updateSession, listSessions, getBundle, submitPlan, confirmPlan, startSession, completeSession,
+    beginWork, reportActivity, createSession, updateSession, listSessions, getBundle, submitPlan, confirmPlan, startSession, completeSession,
     updateNode, retryNode, actOnNode, pauseSession, resumeSession, saveCheckpoint, exportSession,
     reserveExternalRequest, listArtifacts, searchArtifacts, listFeedback, latestDelivery, recordArtifact, recordFeedback, deliverSession,
     onboarding, recordEvent,

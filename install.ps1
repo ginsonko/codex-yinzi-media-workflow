@@ -124,5 +124,6 @@ if ($LASTEXITCODE -ne 0) { throw "Workbench startup failed: $output" }
 $runtime = ($output | Select-Object -Last 1) | ConvertFrom-Json
 $result = [ordered]@{ ok=$true; source_root=$sourceRoot; frontend_url=$runtime.frontend_url; runtime_id=$runtime.runtime_id; codex_installation=$codexMode; skills_root=$SkillsRoot; plugin_version=$manifest.version; paid_calls_started=$false; next_step='Open a new Codex task; if Skills/tools do not appear yet, restart Codex. Describe your media task. Model keys are optional and configured in the workbench.' }
 $result | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $StateRoot 'installation.json') -Encoding utf8
+& $node (Join-Path $plugin 'scripts\check-update.mjs') --acknowledge --project-root $sourceRoot | Out-Null
 Write-Host "Ready: $($runtime.frontend_url)"
 $result | ConvertTo-Json -Depth 5

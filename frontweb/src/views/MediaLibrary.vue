@@ -28,10 +28,10 @@
         <el-radio-group v-model="librarySource" @change="changeSource">
           <el-radio-button value="orchestration">Codex 任务成果</el-radio-button>
           <el-radio-button value="production">已批准生产资产</el-radio-button>
-          <el-radio-button value="upload">手工上传</el-radio-button>
+          <el-radio-button value="upload">手动与上传</el-radio-button>
         </el-radio-group>
         <span class="source-note">
-          {{ librarySource === 'orchestration' ? '汇总各任务的成品、中间素材与工程文件，保留原始任务记录' : librarySource === 'production' ? '保留项目、阶段、版本与审批来源，只读展示' : '可上传、预览和删除的独立媒体文件' }}
+          {{ librarySource === 'orchestration' ? '汇总各任务的成品、中间素材与工程文件，保留原始任务记录' : librarySource === 'production' ? '保留项目、阶段、版本与审批来源，只读展示' : '手动生成和上传的素材，可重命名、预览、下载和删除' }}
         </span>
       </div>
 
@@ -151,14 +151,14 @@
           </div>
 
           <div class="media-info">
-            <strong class="media-name" :title="item.name">{{ item.name || '未命名' }}</strong>
+            <div class="media-name-row"><strong class="media-name" :title="item.name">{{ item.name || '未命名' }}</strong><el-button v-if="item.library_source === 'upload'" text :icon="Edit" aria-label="重命名素材" title="重命名" @click.stop="renameItem(item)" /></div>
             <div v-if="item.library_source === 'production'" class="media-provenance">
               <span>{{ item.drama_title || `项目 ${item.drama_id}` }}</span>
               <span v-if="item.scope_type === 'shot'">镜头 #{{ item.scope_id }}</span>
               <span>修订 {{ item.revision }}</span>
             </div>
             <div class="media-meta">
-              <span>{{ mediaTypeLabel(item.type) }}</span>
+              <span>{{ mediaTypeLabel(item.type) }}</span><span v-if="item.file_size">{{ formatBytes(item.file_size) }}</span>
               <span v-if="formatDuration(item.duration_seconds || item.duration)">{{ formatDuration(item.duration_seconds || item.duration) }}</span>
               <span>{{ formatDate(item.approved_at || item.created_at) }}</span>
             </div>
@@ -220,7 +220,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   ArrowLeft, CircleCheck, Delete, Download, Files, FolderOpened,
-  Headset, Loading, Lock, Refresh, Search, Upload, ZoomIn,
+  Edit, Headset, Loading, Lock, Refresh, Search, Upload, ZoomIn,
 } from '@element-plus/icons-vue'
 import { uploadAPI } from '@/api/upload'
 import { dramaAPI } from '@/api/drama'
@@ -243,7 +243,7 @@ const loadError = ref('')
 const uploading = ref(false)
 const uploadProgress = ref({ current: 0, total: 0, failed: 0 })
 const mediaItems = ref([])
-const librarySource = ref('orchestration')
+const librarySource = ref(['upload','orchestration','production'].includes(route.query.source) ? route.query.source : 'upload')
 const mediaType = ref('all')
 const stage = ref('all')
 const dramaId = ref('all')
@@ -424,8 +424,8 @@ function openSource(item) {
 }
 
 function downloadItem(item) {
-  const url = itemUrl(item)
-  if (!url) return ElMessage.warning('文件当前不可下载')
+  const url = item.download_url || itemUrl(item)
+  if (!url || item.available === false) return ElMessage.warning('本地文件尚不可下载，请回原任务恢复下载')
   const suffix = String(item.media_path || item.local_path || item.url || '').match(/\.[a-z0-9]+(?:[?#].*)?$/i)?.[0]?.split(/[?#]/, 1)[0] || ''
   const name = String(item.name || '素材').replace(/[\\/:*?"<>|]/g, '_')
   const anchor = document.createElement('a')
@@ -435,6 +435,15 @@ function downloadItem(item) {
   document.body.appendChild(anchor)
   anchor.click()
   anchor.remove()
+}
+
+function formatBytes(value) { return Number(value) >= 1048576 ? `${(Number(value)/1048576).toFixed(1)} MB` : `${Math.ceil(Number(value)/1024)} KB` }
+async function renameItem(item) {
+  try {
+    const { value } = await ElMessageBox.prompt('修改显示名称，原素材引用和文件路径会保留。', '重命名素材', { inputValue: item.name, inputValidator: value => Boolean(value?.trim()) && value.trim().length <= 240 || '请输入1到240个字符' })
+    await request.put(`/assets/${item.id}`, { name: value.trim() })
+    item.name = value.trim(); ElMessage.success('名称已保存')
+  } catch (error) { if (error !== 'cancel' && error !== 'close') ElMessage.error(error.message || '重命名失败') }
 }
 
 async function deleteItem(item) {
@@ -818,4 +827,9 @@ useWorkbenchPage({ refresh: loadMedia, error: () => loadError.value, loading: ()
     min-height: 220px;
   }
 }
+</style>
+
+<style scoped>
+.media-name-row { display:flex; align-items:center; gap:6px; }
+.media-name-row .media-name { flex:1; min-width:0; }
 </style>

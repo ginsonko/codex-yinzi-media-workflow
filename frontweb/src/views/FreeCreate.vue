@@ -43,12 +43,14 @@
             </div>
           </div>
 
+        </template>
           <div class="form-section reference-editor">
             <div class="reference-heading">
               <div>
                 <div class="form-label">参考媒体</div>
                 <div class="field-note">图片、视频和音频均按 reference 角色提交</div>
               </div>
+              <el-button size="small" plain :icon="FolderOpened" @click="openLibraryPicker">从素材库选择</el-button>
             </div>
 
             <div class="reference-group">
@@ -71,7 +73,7 @@
               </div>
             </div>
 
-            <div class="reference-group">
+            <div v-if="mode === 'video'" class="reference-group">
               <div class="reference-group-title">
                 <span><el-icon><VideoPlay /></el-icon> 视频 {{ videoReferences.length }}/{{ limits.videos }}</span>
                 <el-tooltip content="添加参考视频" placement="top">
@@ -91,7 +93,7 @@
               </div>
             </div>
 
-            <div class="reference-group">
+            <div v-if="mode === 'video'" class="reference-group">
               <div class="reference-group-title">
                 <span><el-icon><Headset /></el-icon> 音频 {{ audioReferences.length }}/{{ limits.audios }}</span>
                 <el-tooltip content="添加参考音频" placement="top">
@@ -116,7 +118,6 @@
             <input ref="videoInput" hidden type="file" accept="video/*" multiple @change="onReferenceFiles('video', $event)" />
             <input ref="audioInput" hidden type="file" accept="audio/*" @change="onReferenceFiles('audio', $event)" />
           </div>
-        </template>
 
         <div class="form-section options-grid">
           <div>
@@ -153,12 +154,14 @@
 
       <section class="result-panel">
         <div class="result-header">
-          <h2>生成结果</h2>
+          <h2>我的手动任务</h2>
           <div class="result-actions">
-            <el-button v-if="results.some((item) => item.assetRegistered)" size="small" plain @click="$router.push('/media-library')">查看素材库</el-button>
-            <el-button v-if="results.length" size="small" plain @click="results = []">清空</el-button>
+            <el-button v-if="results.some((item) => item.assetRegistered)" size="small" plain @click="$router.push('/media-library?source=upload')">查看素材库</el-button>
+            <el-button size="small" plain @click="loadHistory">刷新进度</el-button>
           </div>
         </div>
+        <el-alert v-if="historyError" :title="historyError" type="warning" :closable="false" />
+        <p class="field-note">任务与结果保存在后台，切换页面或重开浏览器都可以继续查看。</p>
         <div v-if="!results.length && !generating" class="empty-result">
           <el-icon><MagicStick /></el-icon>
           <p>生成内容会显示在这里</p>
@@ -168,19 +171,34 @@
             <div class="result-media">
               <video v-if="item.type === 'video' && item.url" :src="item.url" controls loop />
               <img v-else-if="item.type === 'image' && item.url" :src="item.url" :alt="item.prompt" @click="previewUrl = item.url" />
-              <div v-else-if="item.status === 'processing'" class="media-status"><el-icon class="is-loading"><Loading /></el-icon><span>生成中</span></div>
-              <div v-else class="media-status error"><el-icon><CircleClose /></el-icon><span>{{ item.error || '生成失败' }}</span></div>
+              <div v-else-if="['queued','submitting','processing'].includes(item.status)" class="media-status"><el-icon class="is-loading"><Loading /></el-icon><span>{{ taskState(item) }}</span></div>
+              <div v-else class="media-status error"><el-icon><CircleClose /></el-icon><span>{{ item.error || (item.status === 'completed' ? '本地文件尚不可预览，可让 Codex 检查原记录' : '请查看任务状态') }}</span></div>
             </div>
             <div class="result-meta">
               <p>{{ item.prompt }}</p>
+              <small class="result-progress">{{ taskState(item) }}</small><small v-if="item.provider_updated_at" class="field-note">任务最后更新：{{ new Date(item.provider_updated_at).toLocaleString() }}</small>
+              <small v-if="item.fileSize" class="result-size">文件大小：{{ formatBytes(item.fileSize) }}</small>
               <small v-if="item.assetError" class="asset-register-error">素材库登记失败：{{ item.assetError }}</small>
               <small v-else-if="item.assetRegistered" class="asset-register-ok">已保存到素材库</small>
-              <el-button v-if="item.url" size="small" plain @click="downloadItem(item)">下载</el-button>
+              <el-button v-if="item.download_url" size="small" type="primary" plain @click="downloadItem(item)">下载原文件</el-button><el-button v-else-if="item.local_path" size="small" plain @click="saveAsset(item)">保存到素材库</el-button><el-button v-if="item.can_retry_download" size="small" plain @click="retryDownload(item)">重试下载（不重新生成）</el-button>
             </div>
           </article>
         </div>
+        <el-pagination v-if="historyTotal > 12" v-model:current-page="historyPage" :page-size="12" :total="historyTotal" layout="prev, pager, next" @current-change="loadHistory" />
       </section>
     </main>
+
+    <el-dialog v-model="libraryVisible" title="从素材库选择参考素材" width="min(760px, 94vw)">
+      <div class="library-picker-toolbar"><el-select v-model="librarySource" aria-label="素材来源"><el-option label="手动与上传" value="upload" /><el-option label="Codex 成果" value="orchestration" /><el-option label="项目制作" value="production" /></el-select><el-select v-model="libraryType" aria-label="素材类型"><el-option label="图片" value="image" /><el-option label="视频" value="video" /><el-option label="音频" value="audio" /></el-select><el-input v-model="libraryKeyword" clearable placeholder="搜索素材名称" @keyup.enter="loadLibraryAssets" /><el-button :loading="libraryLoading" @click="loadLibraryAssets">刷新</el-button></div>
+      <div v-if="libraryAssets.length" class="library-picker-grid">
+        <button v-for="asset in libraryAssets" :key="asset.id" type="button" class="library-picker-item" @click="selectLibraryAsset(asset)">
+          <img v-if="asset.type === 'image' && asset.url" :src="asset.url" :alt="asset.name" />
+          <div v-else class="library-picker-icon"><el-icon><VideoPlay v-if="asset.type === 'video'" /><Headset v-else /></el-icon></div>
+          <strong>{{ asset.name }}</strong><small>{{ mediaTypeLabel(asset.type) }} · {{ formatBytes(asset.file_size) }}</small>
+        </button>
+      </div>
+      <el-empty v-else description="素材库暂无可选素材" /><el-pagination v-if="libraryTotal > 24" v-model:current-page="libraryPage" :page-size="24" :total="libraryTotal" layout="prev, pager, next" @current-change="loadLibraryAssets" />
+    </el-dialog>
 
     <div v-if="previewUrl" class="preview-overlay" @click="previewUrl = null">
       <img :src="previewUrl" alt="图片预览" @click.stop />
@@ -192,12 +210,12 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { ArrowLeft, CircleClose, Delete, Headset, Loading, MagicStick, Picture, Plus, VideoPlay } from '@element-plus/icons-vue'
-import { imagesAPI } from '@/api/images'
-import { videosAPI } from '@/api/videos'
+import { ArrowLeft, CircleClose, Delete, FolderOpened, Headset, Loading, MagicStick, Picture, Plus, VideoPlay } from '@element-plus/icons-vue'
+import { mediaBatchAPI } from '@/api/mediaBatch'
+import { useLiveRefresh } from '@/composables/useLiveRefresh'
+import { resolveMediaUrl } from '@/utils/mediaUrl'
 import { uploadAPI } from '@/api/upload'
 import { aiAPI } from '@/api/ai'
-import { generationSettingsAPI } from '@/api/prompts'
 import request from '@/utils/request'
 
 const mode = ref('image')
@@ -218,7 +236,19 @@ const audioReferences = ref([])
 const imageInput = ref(null)
 const videoInput = ref(null)
 const audioInput = ref(null)
-const videoPollMaxMs = ref(30 * 60 * 1000)
+const libraryVisible = ref(false)
+const libraryLoading = ref(false)
+const libraryKeyword = ref('')
+const libraryAssets = ref([])
+const historyPage = ref(1)
+const historyTotal = ref(0)
+const historyError = ref('')
+const libraryPage = ref(1)
+const libraryTotal = ref(0)
+const libraryType = ref('image')
+const librarySource = ref('upload')
+let submission = null
+try { submission = JSON.parse(sessionStorage.getItem('yinzi-pending-manual-submit') || 'null') } catch {}
 
 const videoCapability = computed(() => videoModels.value.find((item) => item.model === selectedVideoModel.value)?.capabilities || null)
 const limits = computed(() => ({
@@ -240,15 +270,10 @@ watch(durationBounds, (bounds) => {
 }, { immediate: true })
 
 onMounted(async () => {
-  const [settingsResult, catalogResult, configsResult] = await Promise.allSettled([
-    generationSettingsAPI.get(),
+  const [catalogResult, configsResult] = await Promise.allSettled([
     aiAPI.getYinziCatalog(),
     aiAPI.list('video'),
   ])
-  if (settingsResult.status === 'fulfilled') {
-    const minutes = Math.max(1, Number(settingsResult.value?.video_generation_timeout_minutes) || 30)
-    videoPollMaxMs.value = minutes * 60 * 1000
-  }
   if (catalogResult.status === 'fulfilled') videoModels.value = catalogResult.value?.video || []
   if (configsResult.status === 'fulfilled') {
     const configs = Array.isArray(configsResult.value) ? configsResult.value : []
@@ -258,6 +283,35 @@ onMounted(async () => {
   }
   if (!selectedVideoModel.value && videoModels.value.length) selectedVideoModel.value = videoModels.value[0].model
 })
+
+function mediaTypeLabel(type) { return ({ image: '图片', video: '视频', audio: '音频' })[type] || '媒体' }
+function formatBytes(value) { const n = Number(value); if (!Number.isFinite(n) || n <= 0) return '大小未知'; if (n < 1024 * 1024) return `${Math.round(n / 1024)} KB`; return `${(n / 1024 / 1024).toFixed(1)} MB` }
+function assetUrl(asset) { const local = asset.local_path || ''; return local ? `/static/${String(local).replace(/\\/g, '/').replace(/^\/+/, '')}` : (asset.url || '') }
+async function openLibraryPicker() { libraryVisible.value = true; await loadLibraryAssets() }
+async function loadLibraryAssets() {
+  libraryLoading.value = true
+  try {
+    const params = { page: libraryPage.value, page_size: 24, type: libraryType.value, keyword: libraryKeyword.value.trim(), q: libraryKeyword.value.trim() }
+    const endpoint = librarySource.value === 'orchestration' ? '/orchestration-artifacts' : librarySource.value === 'production' ? '/production-media' : '/assets'
+    if (librarySource.value === 'production') { params.media_type = libraryType.value; delete params.type }
+    const result = await request.get(endpoint, { params })
+    libraryAssets.value = (result?.items || []).map(item => ({ ...item, id: `${librarySource.value}:${item.id || item.artifact_id}`, name: item.name || item.title || '素材', type: item.type || item.media_type, local_path: item.local_path || item.media_path, url: resolveMediaUrl(item.local_path || item.media_path || item.url || item.media_url) })).filter(item => ['image','video','audio'].includes(item.type))
+    libraryTotal.value = result?.pagination?.total || result?.total || 0
+  } catch (error) { ElMessage.error(error?.message || '素材库暂时无法读取') }
+  finally { libraryLoading.value = false }
+}
+function selectLibraryAsset(asset) {
+  const type = asset.type
+  if (mode.value === 'image' && type !== 'image') return ElMessage.info('图片生成请选择图片参考')
+  const collection = collectionFor(type)
+  if (!asset.url || asset.available === false) return ElMessage.warning('该文件尚未准备好，请先完成下载')
+  if (collection.value.length >= limits.value[`${type}s`]) return ElMessage.warning(`参考${mediaTypeLabel(type)}已达到上限`)
+  const reference = asset.local_path || asset.url
+  if (collection.value.some(item => (item.local_path || item.url) === reference)) return ElMessage.info('该素材已经添加')
+  collection.value.push({ asset_id: asset.id, filename: asset.name, local_path: asset.local_path, url: asset.url, mime_type: asset.mime_type })
+  libraryVisible.value = false
+}
+watch([libraryType,librarySource], () => { libraryPage.value = 1; if (libraryVisible.value) loadLibraryAssets() })
 
 function collectionFor(type) {
   return type === 'image' ? imageReferences : type === 'video' ? videoReferences : audioReferences
@@ -290,107 +344,55 @@ async function onReferenceFiles(type, event) {
   }
 }
 
-function removeReference(type, index) {
-  collectionFor(type).value.splice(index, 1)
-}
-
+function removeReference(type, index) { collectionFor(type).value.splice(index, 1) }
 function downloadItem(item) {
-  if (!item.url) return
-  const link = document.createElement('a')
-  link.href = item.url
-  link.download = `free_create_${Date.now()}.${item.type === 'video' ? 'mp4' : 'jpg'}`
-  link.click()
+  if (!item.download_url) return ElMessage.info('请等待原文件下载并保存到素材库')
+  const link = document.createElement('a'); link.href = item.download_url; link.click()
 }
-
-async function registerAsset(item, generationId) {
-  if (!generationId || item.assetRegistered) return
+async function saveAsset(item) {
+  try { await request.post(`/assets/import/${item.type}/${item.video_id || item.image_id}`); await loadHistory() }
+  catch (error) { ElMessage.error(error.message || '登记失败') }
+}
+async function retryDownload(item) {
+  try { await request.post(`/media-batches/${item.batch_id}/items/${item.id}/retry-download`); await loadHistory() }
+  catch (error) { ElMessage.error(error.message || '重试下载失败') }
+}
+async function loadHistory() {
   try {
-    const endpoint = item.type === 'video' ? `/assets/import/video/${generationId}` : `/assets/import/image/${generationId}`
-    await request.post(endpoint)
-    item.assetRegistered = true
-  } catch (error) {
-    item.assetError = error?.message || '素材库登记失败'
-  }
+    const list = await mediaBatchAPI.list({ origin: 'manual', limit: 12, offset: (historyPage.value - 1) * 12 })
+    const batches = await Promise.all((list.items || []).map(batch => mediaBatchAPI.get(batch.id)))
+    results.value = batches.flatMap(batch => (batch.items || []).map(item => ({ ...item, type: item.kind, prompt: item.request?.prompt || batch.prompt, url: item.local_path ? resolveMediaUrl(item.local_path) : null, error: item.download_error || item.error_message, assetRegistered: Boolean(item.asset_id), fileSize: item.file_size })))
+    historyTotal.value = list.total || 0
+    historyError.value = ''
+  } catch (error) { historyError.value = error.message || '暂时无法读取进度，后台任务仍保留' }
 }
-
+function taskState(item) {
+  if (item.status === 'completed') return item.download_url ? '已完成，原文件可下载' : '生成记录已完成，本地文件待恢复'
+  if (item.can_retry_download) return '生成完成，等待恢复下载'
+  if (item.generation_status === 'completed') return '生成完成，正在保存原文件'
+  return ({ queued: '已排队', submitting: '正在提交', processing: '后台生成中', needs_review: '需要处理', failed: '生成失败' })[item.status] || '等待进展'
+}
 async function generate() {
-  if (!prompt.value.trim()) return
-  const item = { type: mode.value, prompt: prompt.value, status: 'processing', url: null, error: null }
-  results.value.unshift(item)
+  if (!prompt.value.trim() || generating.value) return
+  const settings = { _origin: 'manual', style: style.value || undefined, aspect_ratio: aspectRatio.value,
+    reference_image_urls: imageReferences.value.map(item => item.local_path || item.url),
+    ...(mode.value === 'video' ? { duration: duration.value, resolution: videoCapability.value?.resolution || undefined,
+      reference_video_urls: videoReferences.value.map(item => item.local_path || item.url), reference_audio_urls: audioReferences.value.map(item => item.local_path || item.url) } : {}) }
+  const body = { kind: mode.value, title: `手动${mode.value === 'video' ? '视频' : '图片'} · ${prompt.value.slice(0,40)}`, prompt: prompt.value, model: mode.value === 'video' ? selectedVideoModel.value || undefined : undefined, concurrency: 1, settings, items: [{}] }
+  const signature = JSON.stringify(body)
+  // Reuse the request key after a lost response. Changing the request explicitly starts a different job.
+  if (!submission || submission.signature !== signature) submission = { signature, key: `manual:${crypto.randomUUID()}` }
+  try { sessionStorage.setItem('yinzi-pending-manual-submit', JSON.stringify(submission)) } catch {}
   generating.value = true
   try {
-    if (mode.value === 'image') {
-      const response = await imagesAPI.create({ prompt: prompt.value, style: style.value || undefined, aspect_ratio: aspectRatio.value })
-      item.generationId = response?.id || response?.image_generation_id || null
-      if (response?.task_id) await pollImageTask(response.task_id, item)
-      else {
-        item.url = response?.image_url || (response?.local_path ? `/static/${response.local_path}` : null)
-        item.status = item.url ? 'completed' : 'failed'
-      }
-      if (item.status === 'completed') await registerAsset(item, item.generationId)
-      return
-    }
-    const response = await videosAPI.create({
-      prompt: prompt.value,
-      style: style.value || undefined,
-      model: selectedVideoModel.value || undefined,
-      aspect_ratio: aspectRatio.value,
-      duration: duration.value,
-      resolution: videoCapability.value?.resolution || undefined,
-      reference_image_urls: imageReferences.value.map((entry) => entry.local_path),
-      reference_video_urls: videoReferences.value.map((entry) => entry.local_path),
-      reference_audio_urls: audioReferences.value.map((entry) => entry.local_path),
-    })
-    item.generationId = response?.id || response?.video_generation_id || null
-    if (response?.task_id) await pollVideoTask(response.task_id, item)
-    else throw new Error('视频任务未返回任务 ID')
-    if (item.status === 'completed') await registerAsset(item, item.generationId)
-  } catch (error) {
-    item.status = 'failed'
-    item.error = error.message || '生成失败'
-  } finally {
-    generating.value = false
-  }
+    await mediaBatchAPI.create({ ...body, idempotency_key: submission.key })
+    submission = null; try { sessionStorage.removeItem('yinzi-pending-manual-submit') } catch {}
+    historyPage.value = 1
+    await loadHistory(); ElMessage.success('任务已交给后台，可以切换页面，稍后回来查看')
+  } catch (error) { ElMessage.error(error.message || '暂未收到提交回执，再次点击会核对同一任务') }
+  finally { generating.value = false }
 }
-
-async function pollImageTask(taskId, item, maxMs = 180000) {
-  const { taskAPI } = await import('@/api/task')
-  const started = Date.now()
-  while (Date.now() - started < maxMs) {
-    await new Promise((resolve) => setTimeout(resolve, 3000))
-    const task = await taskAPI.get(taskId)
-    if (task?.status === 'completed') {
-      const result = typeof task.result === 'string' ? JSON.parse(task.result) : task.result
-      item.url = result?.image_url || (result?.local_path ? `/static/${result.local_path}` : null)
-      item.generationId = item.generationId || result?.image_generation_id || task?.image_generation_id || null
-      item.status = item.url ? 'completed' : 'failed'
-      if (item.status === 'completed') await registerAsset(item, item.generationId)
-      return
-    }
-    if (task?.status === 'failed') throw new Error(task.error || '图片生成失败')
-  }
-  throw new Error('图片生成超时')
-}
-
-async function pollVideoTask(taskId, item) {
-  const { taskAPI } = await import('@/api/task')
-  const started = Date.now()
-  while (Date.now() - started < videoPollMaxMs.value) {
-    await new Promise((resolve) => setTimeout(resolve, 4000))
-    const task = await taskAPI.get(taskId)
-    if (task?.status === 'completed') {
-      const result = typeof task.result === 'string' ? JSON.parse(task.result) : task.result
-      const video = result?.video_generation_id ? await videosAPI.get(result.video_generation_id) : null
-      item.url = video?.local_path ? `/static/${video.local_path}` : video?.video_url
-      item.generationId = item.generationId || result?.video_generation_id || video?.id || null
-      item.status = item.url ? 'completed' : 'failed'
-      if (item.status === 'completed') await registerAsset(item, item.generationId)
-      return
-    }
-    if (task?.status === 'failed') throw new Error(task.error || '视频生成失败')
-  }
-  throw new Error('视频生成超时')
-}
+useLiveRefresh(loadHistory, { active: () => results.value.some(item => ['queued','submitting','processing'].includes(item.status)), failed: () => Boolean(historyError.value) })
 </script>
 
 <style scoped>
@@ -449,4 +451,20 @@ async function pollVideoTask(taskId, item) {
   .options-grid { grid-template-columns: minmax(0, 1fr); }
   .capability-line { gap: 5px 10px; }
 }
+</style>
+
+
+<style scoped>
+.result-meta { flex-direction: column; align-items: stretch; }
+.library-picker-toolbar { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:16px; }
+.library-picker-toolbar .el-select { width:145px; }
+.library-picker-toolbar .el-input { flex:1; min-width:140px; }
+.library-picker-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:12px; max-height:55vh; overflow:auto; padding:4px; }
+.library-picker-item { display:flex; flex-direction:column; gap:8px; text-align:left; padding:10px; border:1px solid var(--border-color); border-radius:10px; background:var(--bg-card); color:var(--text-primary); cursor:pointer; }
+.library-picker-item:hover,.library-picker-item:focus-visible { border-color:var(--ui-accent); outline:2px solid var(--ui-accent); }
+.library-picker-item img,.library-picker-icon { height:110px; width:100%; object-fit:contain; background:var(--bg-inner); }
+.library-picker-icon { display:grid; place-items:center; font-size:32px; }
+.library-picker-item strong { overflow-wrap:anywhere; }
+.library-picker-item small { color:var(--text-muted); }
+.result-progress { color:var(--text-primary); }
 </style>

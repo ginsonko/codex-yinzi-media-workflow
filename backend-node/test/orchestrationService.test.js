@@ -300,3 +300,30 @@ describe('Codex orchestration service', () => {
   });
 
 });
+
+describe('visible analysis lifecycle', () => {
+  it('registers before planning, resumes without resetting, and closes analysis with a report without generation', () => {
+    const created = service.beginWork({ idempotency_key:'visible-analysis', user_goal:'先分析视频，暂不生成', intent:'analyze' });
+    const id = created.session.id;
+    assert.equal(created.session.status, 'draft');
+    assert.equal(created.session.source_context.activity.stage, 'analysis');
+    service.reportActivity(id,{event_idempotency_key:'inspected',message:'已读取参考素材',next_action:'给出方案'});
+    const reused=service.beginWork({idempotency_key:'visible-analysis',user_goal:'先分析视频，暂不生成',intent:'analyze'});
+    assert.equal(reused.session.source_context.activity.message,'已读取参考素材');
+    assert.throws(()=>service.reportActivity(id,{event_idempotency_key:'finish',message:'完成',state:'completed'}), /分析结论/);
+    const end=service.reportActivity(id,{event_idempotency_key:'finish',message:'分析完成',state:'completed',analysis_report:{summary:'建议先跟踪遮罩，再合成替换',acceptance:['保持背景与音轨']}});
+    assert.equal(end.session.status,'succeeded');
+    const duplicate=service.reportActivity(id,{event_idempotency_key:'finish',message:'不会覆盖',state:'completed',analysis_report:'不同内容'});
+    assert.equal(duplicate.session.source_context.activity.message,'分析完成');
+    assert.equal(db.prepare('SELECT COUNT(*) n FROM video_generations').get().n,0);
+    assert.equal(db.prepare('SELECT COUNT(*) n FROM image_generations').get().n,0);
+  });
+});
+
+it('analysis completion preserves a failed analysis node rather than reporting success',()=>{
+ const id=service.beginWork({idempotency_key:'analysis-failure',user_goal:'分析损坏素材',intent:'analyze'}).session.id;
+ service.submitPlan(id,{confirm:true,nodes:[{node_key:'inspect',module_id:'manual.inspect',phase:'research',title:'读取素材'}]});
+ service.updateNode(id,'inspect',{status:'failed',receipt:{status:'failed',message:'文件损坏',source:'local'}});
+ const result=service.reportActivity(id,{event_idempotency_key:'finish-failed',state:'completed',message:'分析结束，素材需要修复',analysis_report:'输入文件损坏，无法完成镜头分析。'});
+ assert.equal(result.session.status,'failed');
+});

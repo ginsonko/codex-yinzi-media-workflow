@@ -940,6 +940,8 @@ const tools = [
   { name: 'list_modules', description: '读取开放式 V1-V4 模块合同目录；未知模块仍可进入计划。', inputSchema: { type: 'object', properties: { version_track: { type: 'string' }, availability: { type: 'string' } } } },
   { name: 'list_sessions', description: '检索已存在的可恢复编排任务，避免重复创建。', inputSchema: { type: 'object', properties: { status: { type: 'string' }, linked_run_id: { type: 'string' }, limit: { type: 'integer' } } } },
   { name: 'get_session', description: '读取一个编排任务的会话、节点、事件和回执真值。', inputSchema: { type: 'object', required: ['session_id'], properties: { session_id: { type: 'string' }, include_inactive: { type: 'boolean' }, event_limit: { type: 'integer' } } } },
+  { name: 'begin_media_task', description: '立即登记或恢复当前媒体任务并打开对应页面；分析阶段即可展示，不发起付费生成。', inputSchema: { type:'object', required:['user_goal','idempotency_key'], properties:{ user_goal:{type:'string'}, idempotency_key:{type:'string'}, title:{type:'string'}, intent:{enum:['analyze','create']}, source_context:{type:'object'}, open_browser:{type:'boolean',default:true} } } },
+  { name: 'report_activity', description: '记录当前真实动作、下一步、是否需要用户和分析报告。分析完成可收口；不会执行媒体生成。', inputSchema: { type:'object', required:['session_id','event_idempotency_key','message'], properties:{ session_id:{type:'string'}, event_idempotency_key:{type:'string'}, stage:{type:'string'}, state:{enum:['working','waiting','completed']}, message:{type:'string'}, next_action:{type:'string'}, needs_user:{type:'boolean'}, analysis_report:{type:['object','string']} } } },
   { name: 'create_session', description: '使用稳定幂等键创建或复用 Codex 视频编排任务。', inputSchema: { type: 'object', required: ['idempotency_key', 'user_goal'], properties: { idempotency_key: { type: 'string' }, title: { type: 'string' }, user_goal: { type: 'string' }, mode: { enum: ['auto', 'collaborate', 'manual'] }, source_context: { type: 'object' }, budget: { type: 'object' } } } },
   { name: 'submit_plan', description: '提交可动态增删重排的计划和节点；计划版本冲突会拒绝覆盖。', inputSchema: { type: 'object', required: ['session_id', 'nodes'], properties: { session_id: { type: 'string' }, expected_revision: { type: 'integer' }, confirm: { type: 'boolean' }, plan: { type: 'object' }, nodes: { type: 'array', items: { type: 'object' } } } } },
   { name: 'session_action', description: '确认/开始/暂停/恢复任务或保存检查点。', inputSchema: { type: 'object', required: ['session_id', 'action'], properties: { session_id: { type: 'string' }, action: { enum: ['confirm', 'start', 'pause', 'resume', 'checkpoint'] }, expected_revision: { type: 'integer' }, expected_version: { type: 'integer' }, checkpoint: { type: 'object' }, note: { type: 'string' } } } },
@@ -961,6 +963,18 @@ const tools = [
 async function callTool(name, args = {}) {
   switch (name) {
     case 'workflow_health': return workflowHealth()
+    case 'begin_media_task': {
+      rejectSecrets(args)
+      const runtime = await callTool('open_workflow', {open_browser:false})
+      const work = await api('POST','/api/v1/orchestration-sessions/begin',{...args,actor:'codex'})
+      const taskUrl = new URL(`/codex-console/${encodeURIComponent(work.session.id)}`,runtime.frontend_url).href
+      const browser = args.open_browser === false ? {requested:false} : await openBrowser(taskUrl)
+      return {...runtime,...work,frontend_url:taskUrl,browser}
+    }
+    case 'report_activity': {
+      const {session_id,...body}=args;rejectSecrets(body)
+      return api('POST',`/api/v1/orchestration-sessions/${encodeURIComponent(session_id)}/activity`,{...body,actor:'codex'})
+    }
     case 'open_workflow': {
       let health
       let launch = null

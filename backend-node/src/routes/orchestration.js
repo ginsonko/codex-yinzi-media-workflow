@@ -67,6 +67,14 @@ module.exports = function orchestrationRoutes(db, log = console, cfg = {}, injec
       try { response.success(res, service.onboarding()); }
       catch (error) { sendError(res, log, 'orchestration onboarding', error); }
     },
+    beginWork(req, res) {
+      try { response.success(res, service.beginWork(req.body || {})); }
+      catch (error) { sendError(res, log, 'begin media work', error); }
+    },
+    reportActivity(req, res) {
+      try { response.success(res, service.reportActivity(req.params.id, req.body || {})); }
+      catch (error) { sendError(res, log, 'report media activity', error); }
+    },
     createSession(req, res) {
       try {
         const result = service.createSession(req.body || {});

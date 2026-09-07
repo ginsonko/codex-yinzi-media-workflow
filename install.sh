@@ -45,5 +45,6 @@ ARGS=("$PLUGIN/scripts/runtime-launcher.mjs" ensure --json --project-root "$SOUR
 [ "$NO_BROWSER" -eq 1 ] || ARGS+=(--open)
 runtime="$(node "${ARGS[@]}")"
 printf '%s\n' "$runtime" > "$STATE_ROOT/installation.json"
+node "$PLUGIN/scripts/check-update.mjs" --acknowledge --project-root "$SOURCE_ROOT" >/dev/null
 printf '%s\n' "$runtime"
 printf '安装完成。Codex 注册：%s。\n' "$CODEX_MODE" >&2

@@ -2,6 +2,7 @@ const crypto = require('node:crypto');
 const adaptive = require('./adaptiveConcurrency');
 const imageService = require('./imageService');
 const videoService = require('./videoService');
+const assetService = require('./assetService');
 
 const TERMINAL_BATCH_STATUSES = new Set(['completed', 'partial', 'failed', 'needs_review', 'cancelled']);
 const MAX_ITEMS = 10000;
@@ -137,7 +138,21 @@ function createMediaBatchService(db, log = console, injected = {}) {
     const count = db.prepare('SELECT COUNT(*) AS total FROM media_batch_items WHERE batch_id = ?').get(String(id));
     const items = db.prepare('SELECT * FROM media_batch_items WHERE batch_id = ? ORDER BY ordinal ASC LIMIT ? OFFSET ?')
       .all(String(id), meta.pageSize, meta.offset);
-    return publicBatch(row, items, { ...meta, total: Number(count.total) || 0, reused });
+    const result = publicBatch(row, items, { ...meta, total: Number(count.total) || 0, reused });
+    result.items = result.items.map(item => {
+      const media = item.kind === 'video' && item.video_id ? videoService.getById(db, item.video_id) : item.image_id ? imageService.getById(db, item.image_id) : null;
+      if (!media) return item;
+      const key = item.kind === 'video' ? 'video_gen_id' : 'image_gen_id';
+      const asset = db.prepare(`SELECT id FROM assets WHERE ${key}=? AND deleted_at IS NULL ORDER BY id LIMIT 1`).get(item.video_id || item.image_id);
+      const file = assetService.localFileMetadata(media.local_path, injected.config);
+      return { ...item, local_path: file ? media.local_path : null, file_size: file?.size || null, asset_id: asset?.id || null,
+        download_url: file && asset ? `/api/v1/assets/${asset.id}/download` : null,
+        generation_status: media.generation_status || media.status, download_status: media.download_status || null,
+        download_error: media.download_error || null, provider_updated_at: media.updated_at, download_attempts: media.download_attempts || 0,
+        can_retry_download: item.kind === 'video' && media.generation_status === 'completed' && !file && media.download_status !== 'downloading',
+      };
+    });
+    return result;
   }
 
   function recalc(id) {
@@ -231,7 +246,11 @@ function createMediaBatchService(db, log = console, injected = {}) {
     const status = String(media.status || '').toLowerCase();
     const generationStatus = String(media.generation_status || '').toLowerCase();
     const submissionStatus = String(media.submission_status || '').toLowerCase();
-    const finished = status === 'completed' || generationStatus === 'completed';
+    const finished = status === 'completed' || (generationStatus === 'completed' && Boolean(media.local_path));
+    if (item.kind === 'video' && generationStatus === 'completed' && !finished) {
+      if (media.download_status === 'failed') db.prepare("UPDATE media_batch_items SET status='needs_review',error_code='DOWNLOAD_FAILED',error_message=?,retryable=0,updated_at=? WHERE id=?").run(media.download_error || '生成已完成，下载失败；可以重试原文件', now(), item.id);
+      return;
+    }
     const ambiguous = generationStatus === 'ambiguous' || submissionStatus === 'ambiguous';
     const failed = status === 'failed' || generationStatus === 'failed';
     if (!finished && !failed && !ambiguous) {
@@ -252,6 +271,9 @@ function createMediaBatchService(db, log = console, injected = {}) {
     const errorMessage = media.error_msg || media.error || (ambiguous ? '上游是否受理尚不明确，请先核对任务和账单' : null);
     const definitelyRejected = ['rejected', 'not_sent'].includes(submissionStatus);
     const retryable = failed && !ambiguous && definitelyRejected && /temporar|unavailable|busy|稍后|繁忙|不可用/i.test(String(errorMessage || ''));
+    if (finished && media.local_path) {
+      try { (item.kind === 'video' ? assetService.importFromVideo : assetService.importFromImage)(db, log, item.video_id || item.image_id, injected.config); } catch (error) { log.warn?.('asset registration pending', { item_id: item.id, error: error.message }); }
+    }
     const nextStatus = finished ? 'completed' : ambiguous ? 'needs_review' : 'failed';
     const errorCode = finished ? null : ambiguous ? 'UPSTREAM_AMBIGUOUS' : 'PROVIDER_FAILED';
     db.prepare("UPDATE media_batch_items SET status = ?, media_url = ?, error_code = ?, error_message = ?, retryable = ?, completed_at = ?, updated_at = ? WHERE id = ? AND status IN ('submitting','processing')")
@@ -354,6 +376,7 @@ function createMediaBatchService(db, log = console, injected = {}) {
       const insert = db.prepare("INSERT INTO media_batch_items (id, batch_id, request_key, ordinal, kind, request_json, status, updated_at) VALUES (?, ?, ?, ?, ?, ?, 'queued', ?)");
       sourceItems.forEach((entry, index) => {
         const request = { ...settings, ...(entry && typeof entry === 'object' ? entry : {}), prompt: String(entry?.prompt || normalized.prompt).slice(0, 8000), model: entry?.model == null ? normalized.model : entry.model };
+        delete request._origin;
         const itemId = crypto.randomUUID();
         insert.run(itemId, id, `media-batch:${id}:item:${index}`, index, kind, JSON.stringify(request), timestamp);
       });
@@ -365,8 +388,9 @@ function createMediaBatchService(db, log = console, injected = {}) {
   function list(query = {}) {
     const limit = Math.min(100, Math.max(1, Math.floor(Number(query.limit) || 20)));
     const offset = Math.max(0, Math.floor(Number(query.offset) || 0));
-    const rows = db.prepare('SELECT * FROM media_batches ORDER BY updated_at DESC LIMIT ? OFFSET ?').all(limit, offset);
-    const total = Number(db.prepare('SELECT COUNT(*) AS total FROM media_batches').get().total) || 0;
+    const filter = query.origin === 'manual' ? " WHERE json_extract(settings_json, '$._origin') = 'manual'" : '';
+    const rows = db.prepare('SELECT * FROM media_batches' + filter + ' ORDER BY updated_at DESC LIMIT ? OFFSET ?').all(limit, offset);
+    const total = Number(db.prepare('SELECT COUNT(*) AS total FROM media_batches' + filter).get().total) || 0;
     return { items: rows.map((row) => publicBatch(row)), total, limit, offset };
   }
 
@@ -387,6 +411,19 @@ function createMediaBatchService(db, log = console, injected = {}) {
     db.prepare("UPDATE media_batches SET status = 'running', paused_at = NULL, completed_at = NULL, updated_at = ? WHERE id = ?").run(now(), String(id));
     schedule(id, 0);
     return readBatch(id);
+  }
+
+  function retryDownload(batchId, itemId) {
+    const item = db.prepare('SELECT * FROM media_batch_items WHERE id=? AND batch_id=?').get(String(itemId), String(batchId));
+    if (!item?.video_id) throw Object.assign(new Error('视频任务不存在'), { code: 'MEDIA_BATCH_NOT_FOUND' });
+    const media = videoService.getById(db, item.video_id);
+    if (media?.generation_status !== 'completed') throw Object.assign(new Error('上游视频尚未完成，只能查询原任务'), { code: 'DOWNLOAD_NOT_READY' });
+    db.prepare("UPDATE media_batch_items SET status='processing',error_code=NULL,error_message=NULL,completed_at=NULL,updated_at=? WHERE id=?").run(now(), item.id);
+    db.prepare("UPDATE media_batches SET status='running',completed_at=NULL,updated_at=? WHERE id=?").run(now(), String(batchId));
+    Promise.resolve().then(() => (injected.retryDownload || videoService.resumeDownloadForVideoGeneration)(db, log, item.video_id))
+      .catch(error => log.warn?.('manual download retry failed', { item_id: item.id, error: error.message }));
+    schedule(batchId, 0);
+    return readBatch(batchId);
   }
 
   function retryItem(batchId, itemId) {
@@ -410,7 +447,27 @@ function createMediaBatchService(db, log = console, injected = {}) {
     return readBatch(batchId);
   }
 
+  function recoverStandaloneHistory() {
+    // Older direct-create pages did not create a batch, but their generation rows are durable.
+    // Adopt those existing rows without issuing a new generation request.
+    db.transaction(() => {
+      for (const kind of ['image','video']) {
+        const table = kind === 'image' ? 'image_generations' : 'video_generations';
+        const field = kind === 'image' ? 'image_id' : 'video_id';
+        const rows = db.prepare(`SELECT g.* FROM ${table} g WHERE g.deleted_at IS NULL AND COALESCE(g.drama_id,0)=0 AND g.storyboard_id IS NULL AND g.client_request_key IS NULL AND NOT EXISTS (SELECT 1 FROM media_batch_items i WHERE i.${field}=g.id)`).all();
+        for (const row of rows) {
+          const id = `standalone-${kind}-${row.id}`; const created = row.created_at || now();
+          db.prepare("INSERT OR IGNORE INTO media_batches (id,idempotency_key,kind,status,title,prompt,model,settings_json,concurrency,total,running,created_at,updated_at) VALUES (?,?,?,'running',?,?,?,?,1,1,1,?,?)")
+            .run(id,id,kind,`历史独立${kind === 'image' ? '图片' : '视频'} · ${String(row.prompt || '').slice(0,40)}`,row.prompt || '',row.model || null,JSON.stringify({_origin:'manual',_legacy:true}),created,created);
+          db.prepare(`INSERT OR IGNORE INTO media_batch_items (id,batch_id,request_key,ordinal,kind,request_json,status,${field},task_id,attempt,submitted_at,updated_at) VALUES (?,?,?,0,?,?,'processing',?,?,1,?,?)`)
+            .run(id,id,id,kind,JSON.stringify({prompt:row.prompt || '',model:row.model || null}),row.id,row.task_id || null,created,created);
+        }
+      }
+    })();
+  }
+
   function resumeAll() {
+    recoverStandaloneHistory();
     recoverSubmitting();
     const rows = db.prepare("SELECT id FROM media_batches WHERE status IN ('queued','running','paused')").all();
     rows.forEach((row) => schedule(row.id, 500));
@@ -422,7 +479,7 @@ function createMediaBatchService(db, log = console, injected = {}) {
     timers.clear();
   }
 
-  return { create, list, get, pause, resume, retryItem, resumeAll, pump, recoverSubmitting, stop };
+  return { create, list, get, pause, resume, retryItem, retryDownload, recoverStandaloneHistory, resumeAll, pump, recoverSubmitting, stop };
 }
 
 module.exports = {

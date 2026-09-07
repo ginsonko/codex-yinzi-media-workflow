@@ -55,7 +55,7 @@ function setupRouter(cfg, db, log, injected = {}) {
   const images = imageRoutes(db, cfg, log);
   const videos = videoRoutes(db, log);
   const videoMerges = videoMergeRoutes(db, log);
-  const assets = assetRoutes(db, log);
+  const assets = assetRoutes(db, log, cfg);
   const audio = audioRoutes(db, log, cfg);
   const promptOverrides = promptOverridesRoutes.routes(db, log);
   const production = productionRoutes(db, cfg, log, injected.production || {});
@@ -67,6 +67,7 @@ function setupRouter(cfg, db, log, injected = {}) {
   const orchestration = orchestrationRoutes(db, log, cfg, injected.orchestration || {});
   r.blenderService = orchestration.blenderService;
   const mediaBatch = createMediaBatchService(db, log, {
+    config: cfg,
     dispatchVideo: (body) => {
       const { createGeneration } = require('./videos');
       return createGeneration(db, log, body, { entry: 'media_batch_video' });
@@ -100,8 +101,20 @@ function setupRouter(cfg, db, log, injected = {}) {
   r.delete('/orchestration-modules/:moduleId', orchestration.deleteModule);
   r.get('/orchestration-modules/:moduleId', orchestration.getModule);
   r.get('/orchestration-onboarding', orchestration.onboarding);
+  r.get('/runtime-work-status', (req, res) => {
+    const sources = { async_tasks:['pending','processing','running'], media_batches:['queued','running','paused'], production_runs:['running'], orchestration_blender_jobs:['queued','running'] };
+    const counts = {};
+    for (const [table, statuses] of Object.entries(sources)) {
+      if (!db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(table)) continue;
+      counts[table] = db.prepare(`SELECT COUNT(*) n FROM ${table} WHERE status IN (${statuses.map(() => '?').join(',')})`).get(...statuses).n;
+    }
+    counts.analysis = db.prepare("SELECT COUNT(*) n FROM orchestration_sessions WHERE deleted_at IS NULL AND (status='running' OR (status='draft' AND json_extract(source_context_json,'$.activity.state')='working'))").get().n;
+    response.success(res, { busy: Object.values(counts).some(n => n > 0), counts });
+  });
   r.get('/orchestration-sessions', orchestration.listSessions);
   r.get('/orchestration-artifacts', orchestration.searchArtifacts);
+  r.post('/orchestration-sessions/begin', orchestration.beginWork);
+  r.post('/orchestration-sessions/:id/activity', orchestration.reportActivity);
   r.post('/orchestration-sessions', orchestration.createSession);
   r.get('/orchestration-sessions/:id', orchestration.getSession);
   r.get('/orchestration-sessions/:id/blender/jobs', orchestration.blenderJobs);
@@ -142,6 +155,7 @@ function setupRouter(cfg, db, log, injected = {}) {
   r.post('/media-batches/:id/pause', batches.pause);
   r.post('/media-batches/:id/resume', batches.resume);
   r.post('/media-batches/:id/items/:itemId/retry', batches.retry);
+  r.post('/media-batches/:id/items/:itemId/retry-download', batches.retryDownload);
 
   // ---------- production workflow ----------
   r.get('/production-graph', production.graph);
@@ -458,6 +472,7 @@ function setupRouter(cfg, db, log, injected = {}) {
   r.post('/assets', assets.create);
   r.post('/assets/import/image/:image_gen_id', assets.importImage);
   r.post('/assets/import/video/:video_gen_id', assets.importVideo);
+  r.get('/assets/:id/download', assets.download);
   r.get('/assets/:id', assets.get);
   r.put('/assets/:id', assets.update);
   r.delete('/assets/:id', assets.delete);

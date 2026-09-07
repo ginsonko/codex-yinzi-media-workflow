@@ -34,6 +34,10 @@ function routes(service, log = console) {
         return response.success(res, item);
       } catch (e) { return fail(res, e); }
     },
+    retryDownload(req, res) {
+      try { return response.success(res, service.retryDownload(req.params.id, req.params.itemId)); }
+      catch (e) { return fail(res, e); }
+    },
     retry(req, res) {
       try {
         const item = service.retryItem(req.params.id, req.params.itemId, req.body || {});

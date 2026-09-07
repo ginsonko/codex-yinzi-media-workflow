@@ -49,7 +49,7 @@ function assertNoSecrets(value, path = '$') {
 async function input() {
   const file = option('--input')
   if (!file) return {}
-  const parsed = JSON.parse(await fs.readFile(file, 'utf8'))
+  const parsed = JSON.parse((await fs.readFile(file, 'utf8')).replace(/^\uFEFF/, ''))
   assertNoSecrets(parsed)
   return parsed
 }
@@ -149,6 +149,9 @@ async function request(method, path, body) {
 
 const pos = positional()
 const routes = {
+  begin: ['POST', '/api/v1/orchestration-sessions/begin'],
+  update: ['PATCH', `/api/v1/orchestration-sessions/${encodeURIComponent(pos[0] || '')}`],
+  activity: ['POST', `/api/v1/orchestration-sessions/${encodeURIComponent(pos[0] || '')}/activity`],
   health: ['GET', '/health'],
   onboarding: ['GET', '/api/v1/orchestration-onboarding'],
   modules: ['GET', '/api/v1/orchestration-modules'],
@@ -168,14 +171,23 @@ const routes = {
 }
 
 if (command === 'help' || !routes[command]) {
-  process.stdout.write(`Usage: node scripts/orchestration-cli.mjs <command> [session-id] [node-key] [--input file]\nCommands: health modules sessions get export create plan confirm start node retry pause resume checkpoint\n`)
+  process.stdout.write(`Usage: node scripts/orchestration-cli.mjs <command> [session-id] [node-key] [--input file]\nCommands: begin activity event health modules sessions get export create plan confirm start node retry pause resume checkpoint\n`)
   process.exit(command === 'help' ? 0 : 1)
 }
 
-if (['get', 'export', 'plan', 'confirm', 'start', 'pause', 'resume', 'checkpoint'].includes(command) && !pos[0]) fail(`${command} 需要 session-id`)
+if (['activity', 'get', 'export', 'plan', 'confirm', 'start', 'pause', 'resume', 'checkpoint'].includes(command) && !pos[0]) fail(`${command} 需要 session-id`)
 if (['node', 'retry'].includes(command) && (!pos[0] || !pos[1])) fail(`${command} 需要 session-id 和 node-key/node-id`)
 
+if (command === 'begin') {
+  const {ensure} = await import('../../../scripts/runtime-core.mjs')
+  const runtime = await ensure({})
+  base = runtime.api_base; discoveryPromise = Promise.resolve(base)
+}
 const [method, path] = routes[command]
 const body = method === 'GET' ? undefined : await input()
 const result = await request(method, path, body)
+if (command === 'begin' && result?.session?.id) {
+  result.frontend_url = `${base}/codex-console/${encodeURIComponent(result.session.id)}`
+  if (!args.includes('--no-browser')) { const {openBrowser} = await import('../../../scripts/runtime-state.mjs'); result.browser = await openBrowser(result.frontend_url) }
+}
 process.stdout.write(`${JSON.stringify(result, null, 2)}\n`)

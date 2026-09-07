@@ -63,6 +63,7 @@
         <section class="workspace">
           <template v-if="bundle?.session">
             <div v-if="refreshError" class="refresh-warning" role="status">{{ refreshError }}；仍显示 {{ formatTime(lastUpdated) }} 的状态，正在尝试重新连接。</div>
+            <WorkActivity v-if="bundle.session.source_context?.activity || bundle.session.source_context?.analysis_report" :session="bundle.session" />
             <header class="session-header">
               <div>
                 <div class="status-line"><span :class="['status-pill', statusTone(bundle.session.status)]">{{ statusLabel(bundle.session.status) }}</span><span v-if="showTechnical">计划版本 {{ bundle.session.plan_revision }}</span><span v-if="showTechnical">状态版本 {{ bundle.session.version }}</span></div>
@@ -79,26 +80,26 @@
               </div>
             </header>
 
-            <div class="metric-grid">
+            <div v-if="bundle.nodes?.length" class="metric-grid">
               <article><small>动态节点 · 已结束</small><strong>{{ countSummary.done }} / {{ countSummary.all }}</strong><el-progress :percentage="countSummary.percent" :show-text="false" :stroke-width="6" /></article>
               <article><small>关联项目</small><strong>{{ bundle.session.linked_drama_id || '未关联' }}</strong><span>{{ bundle.session.linked_run_id ? `任务 ${shortId(bundle.session.linked_run_id)}` : '可由 Codex 后续绑定' }}</span></article>
               <article><small>费用真值</small><strong>{{ formatCost(bundle.session.usage) }}</strong><span>{{ formatBudget(bundle.session.budget) }}</span></article>
               <article><small>恢复点</small><strong>{{ bundle.session.checkpoint?.saved_at ? '已保存' : '尚未保存' }}</strong><span>{{ bundle.session.checkpoint?.summary || '节点与事件仍持续落库' }}</span></article>
             </div>
 
-            <section class="activity-strip" aria-label="任务活跃度与下一步">
+            <section v-if="!bundle.session.source_context?.activity" class="activity-strip" aria-label="任务活跃度与下一步">
               <div><small>最新更新时间</small><strong>{{ formatTime(activitySummary.updatedAt) }}</strong><span>{{ activitySummary.age }}</span></div>
               <div><small>现在正在做</small><strong>{{ activitySummary.current }}</strong><span>{{ activitySummary.detail }}</span></div>
               <div><small>接下来</small><strong>{{ activitySummary.next }}</strong><span>{{ activitySummary.waitReason }}</span></div>
               <div :class="['activity-state', `tone-${activitySummary.tone}`]"><span class="activity-dot"></span><strong>{{ activitySummary.state }}</strong><span>{{ activitySummary.stateHint }}</span></div>
             </section>
 
-            <div class="experience-grid">
+            <div v-if="bundle.nodes?.length" class="experience-grid">
               <OrchestrationProgress :session="bundle.session" :nodes="bundle.nodes" />
               <OrchestrationDelivery :delivery="delivery" />
             </div>
 
-            <OrchestrationArtifactGallery :items="artifacts" :loading="artifactsLoading" :error="artifactsError" />
+            <OrchestrationArtifactGallery v-if="artifacts.length || bundle.session.source_context?.intent !== 'analyze'" :items="artifacts" :loading="artifactsLoading" :error="artifactsError" />
 
             <section v-if="blenderJobs.length" class="blender-jobs-card">
               <div class="section-heading"><div><small>本地专业镜头</small><h3>Blender 参考作业</h3></div><span>{{ blenderJobs.length }} 个作业</span></div>
@@ -122,7 +123,7 @@
               </div>
             </section>
 
-            <section class="plan-card">
+            <section v-if="bundle.nodes?.length || bundle.session.source_context?.intent !== 'analyze'" class="plan-card">
               <div class="section-heading">
                 <div><small>当前方案</small><h3>Codex 动态执行计划</h3></div>
                 <div class="plan-heading-actions"><div class="legend"><span><i class="success"></i>完成</span><span><i class="active"></i>执行</span><span><i class="warning"></i>处理</span><span><i class="neutral"></i>等待</span></div><el-button size="small" text @click="showTechnical = !showTechnical">{{ showTechnical ? '隐藏高级信息' : '显示高级信息' }}</el-button><el-button size="small" plain :disabled="runtimeWriteBlocked" @click="openPlanEditor">人工编辑计划</el-button></div>
@@ -277,6 +278,7 @@
 </template>
 
 <script setup>
+import WorkActivity from '@/components/orchestration/WorkActivity.vue'
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'

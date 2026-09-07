@@ -8,7 +8,7 @@
 
 安装海报：[下载带完整 Codex 安装指令的 PNG](docs/images/onboarding-install-poster-cross-platform.png)。
 
-[快速安装](#三步开始) · [配置 Key 图文说明](docs/BEGINNER-KEY-SETUP.md) · [安装与故障排查](docs/INSTALLATION.md) · [跨平台安装](docs/CROSS-PLATFORM-INSTALL.md) · [分享 Skills](CONTRIBUTING.md) · [许可证](LICENSE)
+[快速安装](#三步开始) · [配置 Key 图文说明](docs/BEGINNER-KEY-SETUP.md) · [安装与故障排查](docs/INSTALLATION.md) · [跨平台安装](docs/CROSS-PLATFORM-INSTALL.md) · [任务进度与自动更新](docs/WORKFLOW-UPDATES.md) · [分享 Skills](CONTRIBUTING.md) · [许可证](LICENSE)
 
 ## 三步开始
 
