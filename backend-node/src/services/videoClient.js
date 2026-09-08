@@ -3218,6 +3218,45 @@ function validateLocalYinziReferenceVideoDurationBudget(values, storageLocalPath
   return { ok: true, known_total_seconds: knownTotal, unknown_count: unknownCount, durations };
 }
 
+function adaptLocalYinziReferenceVideos(values, storageLocalPath, capability, options = {}) {
+  const maximum = Number(capability?.max_reference_video_seconds_total);
+  const margin = Math.max(0.25, Number(capability?.reference_video_safety_margin_seconds) || 0);
+  const target = maximum - margin;
+  if (!Number.isFinite(target) || target <= 0.5) {
+    throw new Error('参考视频合同没有可用的安全裁剪目标');
+  }
+  const durations = options.durations || [];
+  const adapted = [];
+  const adaptations = [];
+  let remaining = target;
+  for (let index = 0; index < values.length; index += 1) {
+    const original = values[index];
+    const filePath = localReferencePath(original, storageLocalPath);
+    const sourceDuration = Number(durations[index]);
+    if (!filePath || !Number.isFinite(sourceDuration) || sourceDuration <= 0) {
+      throw new Error('参考视频不是可自动裁剪的本地媒体');
+    }
+    const excerptDuration = Math.min(sourceDuration, remaining);
+    if (excerptDuration <= 0.5) throw new Error('参考视频总时长无法在安全余量内适配');
+    if (excerptDuration < sourceDuration - 0.05) {
+      const prepared = prepareYinziReferenceVideo(filePath, {
+        storage_root: storageLocalPath,
+        aspect_ratio: options.aspect_ratio,
+        clip_start_seconds: 0,
+        clip_duration_seconds: excerptDuration,
+        log: options.log,
+        video_gen_id: options.video_gen_id,
+        index,
+      });
+      const relative = path.relative(path.resolve(storageLocalPath), prepared.file_path).replace(/\\/g, '/');
+      adapted.push(relative);
+      adaptations.push({ index, source: original, source_duration_seconds: Number(sourceDuration.toFixed(3)), excerpt_duration_seconds: Number(prepared.probe.duration.toFixed(3)), relative_path: relative, cache_reused: prepared.cache_reused === true });
+    } else adapted.push(original);
+    remaining -= excerptDuration;
+  }
+  return { values: adapted, adaptations, target_seconds: target };
+}
+
 function mimeTypeForReference(filePath, type) {
   const ext = path.extname(filePath).toLowerCase();
   const mime = {
@@ -3346,6 +3385,7 @@ async function callYinziVideoApi(db, config, log, opts) {
   const capability = capabilityContext.capability;
   const contractValidationMode = normalizeContractValidationMode(opts.contract_validation_mode);
   const contractWarnings = [];
+  const referenceVideoAdaptations = [];
   opts.contract_warnings = contractWarnings;
   const withContractReceipt = (result) => ({
     ...result,
@@ -3359,6 +3399,7 @@ async function callYinziVideoApi(db, config, log, opts) {
       contract_status: capabilityContext.contract_status,
       resolution_source: capabilityContext.resolution_source,
       model: String(opts.model || ''),
+      reference_video_adaptations: referenceVideoAdaptations.length ? referenceVideoAdaptations : [],
     },
   });
   const publishSubmission = (status, result = {}, receipt = {}) => {
@@ -3375,6 +3416,7 @@ async function callYinziVideoApi(db, config, log, opts) {
       model: String(opts.model || '').slice(0, 240),
       endpoint: endpoint.slice(0, 240),
       reference_summary: receipt.reference_summary || null,
+      reference_video_adaptations: referenceVideoAdaptations?.length ? referenceVideoAdaptations : null,
       observed_at: new Date().toISOString(),
     };
     if (typeof opts.on_submission_state === 'function') {
@@ -3406,7 +3448,7 @@ async function callYinziVideoApi(db, config, log, opts) {
     });
   }
   const rawReferenceUrls = dedupeReferenceInputs(opts.reference_urls);
-  const rawVideoUrls = dedupeReferenceInputs(opts.reference_video_urls);
+  let rawVideoUrls = dedupeReferenceInputs(opts.reference_video_urls);
   const rawAudioUrls = dedupeReferenceInputs(opts.reference_audio_urls);
   const legacyFirst = String(opts.first_frame_url || opts.image_url || '').trim();
   const legacyLast = String(opts.last_frame_url || '').trim();
@@ -3450,9 +3492,24 @@ async function callYinziVideoApi(db, config, log, opts) {
     );
     if (!durationBudget.ok) {
       warn('reference_video_duration_over_contract');
-      if (contractValidationMode === 'strict') {
-        return publishSubmission('not_sent', { error: durationBudget.error }, { phase: 'local_reference_duration_validation' });
+      // Adapt local references before upload. The excerpt is deterministic,
+      // cache-backed and leaves the user's original file untouched.
+      try {
+        const adapted = adaptLocalYinziReferenceVideos(rawVideoUrls, opts.storage_local_path, capability, {
+          durations: durationBudget.durations, aspect_ratio: opts.aspect_ratio, log, video_gen_id: opts.video_gen_id,
+        });
+        rawVideoUrls = adapted.values;
+        referenceVideoAdaptations.push(...adapted.adaptations);
+      } catch (error) {
+        return publishSubmission('not_sent', { error: `${durationBudget.error}；${error.message}，未提交` }, { phase: 'local_reference_duration_adaptation' });
       }
+      warn('reference_video_auto_clipped');
+      log?.info?.('[YinziAPI] Auto-clipped local reference videos to provider contract', {
+        video_gen_id: opts.video_gen_id,
+        maximum_seconds: Number(capability?.max_reference_video_seconds_total),
+        safety_margin_seconds: Number(capability?.reference_video_safety_margin_seconds) || 0,
+        adaptations: referenceVideoAdaptations.map((item) => ({ index: item.index, source_duration_seconds: item.source_duration_seconds, excerpt_duration_seconds: item.excerpt_duration_seconds })),
+      });
     }
     if (rawVideoUrls.length) {
       log.info('[YinziAPI] Local reference-video duration preflight', {
@@ -5362,4 +5419,5 @@ module.exports = {
   isSeedance2FamilyModel,
   normalizeVolcengineDuration,
   validateLocalYinziReferenceVideoDurationBudget,
+  adaptLocalYinziReferenceVideos,
 };

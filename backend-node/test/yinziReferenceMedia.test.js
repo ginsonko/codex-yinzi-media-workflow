@@ -15,6 +15,7 @@ const {
   providerSafeMp4,
   parseFrameRate,
 } = require('../src/services/yinziReferenceMedia');
+const { adaptLocalYinziReferenceVideos } = require('../src/services/videoClient');
 
 const mediaToolsAvailable = hasLocalFfmpeg() && hasLocalFfprobe();
 
@@ -153,6 +154,28 @@ describe('Yinzi local reference-video preparation', () => {
       assert.equal(second.cache_reused, true);
       const afterHash = require('node:crypto').createHash('sha256').update(fs.readFileSync(source)).digest('hex');
       assert.equal(afterHash, sourceHash);
+    } finally {
+      fs.rmSync(storage, { recursive: true, force: true });
+    }
+  });
+
+  it('automatically adapts an overlong local reference to the contract safe target', {
+    skip: !mediaToolsAvailable,
+  }, () => {
+    const storage = fs.mkdtempSync(path.join(os.tmpdir(), 'yinzi-reference-contract-'));
+    try {
+      const source = path.join(storage, 'source.mp4');
+      makeVideo(source, 'libx264', '1280x720', 24, 4);
+      const before = require('node:crypto').createHash('sha256').update(fs.readFileSync(source)).digest('hex');
+      const adapted = adaptLocalYinziReferenceVideos(['source.mp4'], storage, {
+        max_reference_video_seconds_total: 3,
+        reference_video_safety_margin_seconds: 0.25,
+      }, { durations: [4], aspect_ratio: '16:9' });
+      assert.equal(adapted.adaptations.length, 1);
+      assert.ok(adapted.adaptations[0].excerpt_duration_seconds <= 2.8);
+      const prepared = probeReferenceVideo(path.join(storage, adapted.values[0]));
+      assert.ok(prepared.duration <= 2.9);
+      assert.equal(require('node:crypto').createHash('sha256').update(fs.readFileSync(source)).digest('hex'), before);
     } finally {
       fs.rmSync(storage, { recursive: true, force: true });
     }
