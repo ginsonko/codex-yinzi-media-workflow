@@ -14,8 +14,8 @@
             <div class="distribution-profile-copy">{{ distributionProfile.description }}</div>
             <div class="distribution-profile-copy">
               {{ distributionProfile.smart_routing_entry
-                ? '银子 API：先填一个 Key 就能开始使用文本、生图和视频；需要备用渠道时，再分别添加图片或视频配置。'
-                : '银子 API：文本、图片和视频都可以分别保存多个配置；不懂时先填一个常用配置即可。' }}
+                ? '银子 API：文本、图片和视频必须分别填写 URL、Key 和模型；智能路由 Key 不推荐用于工作流。'
+                : '银子 API：文本、图片和视频都可以分别保存多个配置；每个服务都使用自己的 URL、Key 和模型。' }}
             </div>
           </el-alert>
           <!-- 普通模式操作栏 -->
@@ -1329,23 +1329,31 @@ input_reference = (图片文件，可选)</pre>
         <article><b>2</b><div><strong>创建 API Key</strong><span>登录后进入 API Key / 密钥页面，点击创建。</span></div></article>
         <article><b>3</b><div><strong>复制完整 Key</strong><span>复制完整的 <code>sk-...</code>，粘贴到下面。</span></div></article>
       </div>
-      <p class="yinzi-onboarding-note">配置后，Codex 才能按任务调用文本、图片和视频模型；不配置也能做本地整理、剪辑、已有媒体处理和任务规划。你也可以直接把站点、访问端点、Key 和模型名发给 Codex，让它代为填写。</p>
+      <p class="yinzi-onboarding-note">请分别填写文本、图片、视频三个服务的 URL、Key 和模型。<b>不要填写“智能路由 Key”</b>：它无法保证三个站点分别按用途路由，也不适合本工作流的独立计费和故障切换。保存后 Codex 才能按任务调用对应服务。</p>
 
       <el-form label-position="top" class="yinzi-config-form">
         <el-form-item label="API Base URL">
           <el-input v-model="oneKeyYinziForm.base_url" placeholder="https://api.yinziapi.top/v1" clearable />
         </el-form-item>
 
-        <el-form-item label="银子 API Key（推荐先填这个）" required>
-          <el-input v-model="oneKeyYinziForm.api_key" type="password" show-password clearable autocomplete="new-password" placeholder="粘贴完整的 sk- 开头 Key" />
-          <p class="yinzi-field-help">先填一个 Key 就可以让 Codex尝试文本、生图和视频任务。系统会先读取当前 Key 能用的模型，再把可用配置列出来；需要备用渠道时，可在“高级设置”中分别填写不同 Key。</p>
-        </el-form-item>
-
-        <div class="yinzi-auto-summary">
-          <span><small>文本</small><strong>{{ oneKeyYinziForm.text_model || 'gpt-5.6-sol' }}</strong></span>
-          <span><small>生图</small><strong>{{ oneKeyYinziForm.image_model || 'gpt-image-2' }}</strong></span>
-          <span><small>视频</small><strong>{{ oneKeyYinziForm.video_model || '优先 Seedance，再按镜头自动选择' }}</strong></span>
+        <div class="yinzi-service-grid">
+          <section class="yinzi-service-card"><h4>文本服务</h4>
+            <el-form-item label="文本 Base URL" required><el-input v-model="oneKeyYinziForm.text_base_url" placeholder="https://你的文本站点/v1" clearable /></el-form-item>
+            <el-form-item label="文本 Key" required><el-input v-model="oneKeyYinziForm.text_api_key" type="password" show-password clearable autocomplete="new-password" placeholder="文本服务专用 Key" /></el-form-item>
+            <el-form-item label="文本模型" required><el-input v-model="oneKeyYinziForm.text_model" placeholder="例如 gpt-5.6-sol" clearable /></el-form-item>
+          </section>
+          <section class="yinzi-service-card"><h4>图片服务</h4>
+            <el-form-item label="图片 Base URL" required><el-input v-model="oneKeyYinziForm.image_base_url" placeholder="https://图片站点/v1" clearable /></el-form-item>
+            <el-form-item label="图片 Key" required><el-input v-model="oneKeyYinziForm.image_api_key" type="password" show-password clearable autocomplete="new-password" placeholder="图片服务专用 Key" /></el-form-item>
+            <el-form-item label="图片模型" required><el-input v-model="oneKeyYinziForm.image_model" placeholder="例如 gpt-image-2" clearable /></el-form-item>
+          </section>
+          <section class="yinzi-service-card"><h4>视频服务</h4>
+            <el-form-item label="视频 Base URL" required><el-input v-model="oneKeyYinziForm.video_base_url" placeholder="https://视频站点/v1" clearable /></el-form-item>
+            <el-form-item label="视频 Key" required><el-input v-model="oneKeyYinziForm.video_api_key" type="password" show-password clearable autocomplete="new-password" placeholder="视频服务专用 Key" /></el-form-item>
+            <el-form-item label="视频模型" required><el-input v-model="oneKeyYinziForm.video_model" placeholder="例如 Seedance 2.5-720" clearable /></el-form-item>
+          </section>
         </div>
+        <p class="yinzi-field-help">三个服务可以来自不同站点。模型名称按对应站点实际提供的名称填写；模型目录读取失败时仍可手动保存。</p>
 
         <div v-if="yinziCatalogScope === 'credential'" class="yinzi-video-scope-summary">
           <span><strong>{{ yinziCredentialVideoCount }}</strong> Key 目录直接返回</span>
@@ -1354,12 +1362,12 @@ input_reference = (图片文件，可选)</pre>
         </div>
 
         <el-collapse v-model="oneKeyYinziAdvanced" class="yinzi-advanced">
-          <el-collapse-item title="高级设置：分组 Key 与模型覆盖" name="advanced">
+          <el-collapse-item title="兼容旧配置（不推荐智能路由 Key）" name="advanced">
             <div class="yinzi-field-grid">
               <el-form-item label="文本 Base URL">
                 <el-input v-model="oneKeyYinziForm.text_base_url" placeholder="留空使用上面的地址" clearable />
               </el-form-item>
-              <el-form-item label="文本 Key 覆盖">
+              <el-form-item label="旧版通用 Key（兼容，不推荐）">
                 <el-input v-model="oneKeyYinziForm.text_api_key" type="password" show-password clearable autocomplete="new-password" placeholder="留空使用通用 Key" />
               </el-form-item>
               <el-form-item label="文本模型">
@@ -1805,10 +1813,12 @@ const oneKeyLaoliReady = computed(() => {
 
 const oneKeyYinziReady = computed(() => {
   const form = oneKeyYinziForm.value
-  const universalReady = String(form.api_key || '').trim()
-  const separateReady = [form.text_api_key, form.image_api_key, form.video_api_key]
-    .every((value) => String(value || '').trim())
-  return Boolean(String(form.base_url || '').trim() && (universalReady || separateReady))
+  const separateReady = [
+    form.text_base_url, form.image_base_url, form.video_base_url,
+    form.text_api_key, form.image_api_key, form.video_api_key,
+    form.text_model, form.image_model, form.video_model,
+  ].every((value) => String(value || '').trim())
+  return separateReady
 })
 
 const yinziCatalogMessage = computed(() => {

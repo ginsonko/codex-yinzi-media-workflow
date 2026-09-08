@@ -76,8 +76,8 @@
             <h3>{{ distributionProfile.smart_routing_entry ? '使用银子 API 一键配置' : '通用版：分别配置文本、图片、视频服务' }}</h3>
             <ol v-if="distributionProfile.smart_routing_entry">
               <li>在 <a href="https://www.yinziapi.top" target="_blank" rel="noopener noreferrer">www.yinziapi.top</a> 创建对应分组的 Key。文本、生图、视频可以使用不同 Key。</li>
-              <li>首页点击“缺 N 项配置”或“一键配置银子API”，填写 Base URL：<code>https://api.yinziapi.top/v1</code>。</li>
-              <li>分别填写文本 Key、生图 Key和视频 Key，再选择对应模型。资源图与分镜图会共用生图 Key，但保存为两个独立默认服务。</li>
+              <li>首页点击“缺 N 项配置”或“一键配置银子API”，分别填写文本、图片、视频三个 Base URL。</li>
+              <li>分别填写文本 Key、生图 Key 和视频 Key，再选择对应模型；不要使用智能路由 Key。资源图与分镜图会共用生图服务，但保存为两个独立默认服务。</li>
               <li>保存后返回首页确认显示 4/4。只有需要排查 Key 或网络时，才在配置页主动点击“测试”。</li>
             </ol>
             <ol v-else>
