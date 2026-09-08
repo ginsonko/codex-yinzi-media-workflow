@@ -361,6 +361,8 @@ function readOnlyVideoConfigId(db, preferredModel = '') {
 const SNAPSHOT_DISCOVERY_FALLBACK_CODES = new Set([
   'MODEL_DISCOVERY_NETWORK_ERROR',
   'MODEL_DISCOVERY_HTTP_ERROR',
+  'MODEL_DISCOVERY_UPSTREAM_ERROR',
+  'MODEL_DISCOVERY_TIMEOUT',
 ]);
 
 function canReuseModelCatalogSnapshot(error) {

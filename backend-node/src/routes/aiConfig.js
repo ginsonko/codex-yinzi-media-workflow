@@ -281,6 +281,31 @@ function discoverModels(db, log) {
     } catch (err) {
       const safeMessage = aiConfigService.redactConnectionTestError(err, [resolved?.config?.api_key]);
       log.error('Discover AI models failed', { config_id: resolved?.config_id ?? body.config_id ?? null, error: safeMessage });
+      // A transient catalog failure must not erase a model the user explicitly
+      // configured. Return a partial, manual-only catalog with a typed
+      // diagnostic so the UI can preserve the selection without promoting it
+      // into automatic routing.
+      if (resolved?.config) {
+        const fallback = aiConfigService.buildDiscoveryFallback(resolved.config, {
+          ...err,
+          message: safeMessage,
+        }, { service_type: body.service_type || resolved.config.service_type || 'video' });
+        const fallbackCatalog = aiConfigService.mergeDiscoveredCatalog(fallback, null, {
+          provider: resolved.config.provider,
+          service_type: body.service_type || resolved.config.service_type || 'video',
+          group: body.group || '',
+          capability_overrides: aiConfigService.getModelCapabilityOverrides(resolved.config),
+          smart_routing: false,
+        });
+        return response.success(res, {
+          ...fallback,
+          catalog: fallbackCatalog,
+          config_id: resolved.config_id,
+          credential_source: resolved.credential_source,
+          snapshot_persisted: false,
+          diagnostic: fallback.diagnostic,
+        });
+      }
       response.badRequest(res, '模型目录读取失败: ' + safeMessage);
     }
   };

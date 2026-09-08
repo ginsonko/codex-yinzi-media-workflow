@@ -1077,9 +1077,11 @@ input_reference = (图片文件，可选)</pre>
         </div>
       </div>
       <el-form label-position="top" class="yinzi-config-form" style="margin-top: 12px">
-        <el-form-item label="API Base URL">
-          <el-input v-model="oneKeyImageYinziForm.base_url" placeholder="https://image.yinziapi.top/v1" clearable />
-        </el-form-item>
+        <div class="yinzi-field-grid">
+          <el-form-item label="文本 Base URL" required><el-input v-model="oneKeyImageYinziForm.text_base_url" placeholder="https://文本站点/v1" clearable /></el-form-item>
+          <el-form-item label="图片 Base URL" required><el-input v-model="oneKeyImageYinziForm.image_base_url" placeholder="https://image.yinziapi.top/v1" clearable /></el-form-item>
+          <el-form-item label="视频 Base URL" required><el-input v-model="oneKeyImageYinziForm.video_base_url" placeholder="https://image.yinziapi.top/v1" clearable /></el-form-item>
+        </div>
         <div class="yinzi-field-grid">
           <el-form-item label="文本 Key" required><el-input v-model="oneKeyImageYinziForm.text_api_key" type="password" show-password clearable autocomplete="new-password" placeholder="文本分组 Key" /></el-form-item>
           <el-form-item label="文本模型"><el-input v-model="oneKeyImageYinziForm.text_model" /></el-form-item>
@@ -1354,6 +1356,9 @@ input_reference = (图片文件，可选)</pre>
         <el-collapse v-model="oneKeyYinziAdvanced" class="yinzi-advanced">
           <el-collapse-item title="高级设置：分组 Key 与模型覆盖" name="advanced">
             <div class="yinzi-field-grid">
+              <el-form-item label="文本 Base URL">
+                <el-input v-model="oneKeyYinziForm.text_base_url" placeholder="留空使用上面的地址" clearable />
+              </el-form-item>
               <el-form-item label="文本 Key 覆盖">
                 <el-input v-model="oneKeyYinziForm.text_api_key" type="password" show-password clearable autocomplete="new-password" placeholder="留空使用通用 Key" />
               </el-form-item>
@@ -1366,6 +1371,9 @@ input_reference = (图片文件，可选)</pre>
               <el-form-item label="生图 Key 覆盖">
                 <el-input v-model="oneKeyYinziForm.image_api_key" type="password" show-password clearable autocomplete="new-password" placeholder="留空使用通用 Key" />
               </el-form-item>
+              <el-form-item label="生图 Base URL">
+                <el-input v-model="oneKeyYinziForm.image_base_url" placeholder="留空使用上面的地址" clearable />
+              </el-form-item>
               <el-form-item label="生图模型">
                 <el-select v-model="oneKeyYinziForm.image_model" filterable allow-create default-first-option clearable placeholder="自动选择">
                   <el-option v-for="item in yinziCatalog.image" :key="item.model" :label="catalogOptionLabel(item)" :value="item.model" />
@@ -1374,6 +1382,9 @@ input_reference = (图片文件，可选)</pre>
 
               <el-form-item label="视频 Key 覆盖">
                 <el-input v-model="oneKeyYinziForm.video_api_key" type="password" show-password clearable autocomplete="new-password" placeholder="留空使用通用 Key" />
+              </el-form-item>
+              <el-form-item label="视频 Base URL">
+                <el-input v-model="oneKeyYinziForm.video_base_url" placeholder="留空使用上面的地址" clearable />
               </el-form-item>
               <el-form-item label="固定视频模型">
                 <el-select v-model="oneKeyYinziForm.video_model" filterable allow-create default-first-option clearable placeholder="留空：当前 Key 内优先 Seedance，按镜头自动选择" @change="oneKeyYinziVideoModelManual = true">
@@ -1734,6 +1745,9 @@ const oneKeyYinziVideoModelManual = ref(false)
 const yinziCatalog = ref({ pricing_version: '', text: [], image: [], video: [] })
 const oneKeyYinziForm = ref({
   base_url: 'https://api.yinziapi.top/v1',
+  text_base_url: '',
+  image_base_url: '',
+  video_base_url: '',
   api_key: '',
   text_api_key: '',
   image_api_key: '',
@@ -1746,6 +1760,9 @@ const oneKeyImageYinziVisible = ref(false)
 const oneKeyImageYinziSaving = ref(false)
 const oneKeyImageYinziForm = ref({
   base_url: 'https://image.yinziapi.top/v1',
+  text_base_url: 'https://api.yinziapi.top/v1',
+  image_base_url: 'https://image.yinziapi.top/v1',
+  video_base_url: 'https://image.yinziapi.top/v1',
   text_api_key: '',
   image_api_key: '',
   video_api_key: '',
@@ -1755,7 +1772,9 @@ const oneKeyImageYinziForm = ref({
 })
 const oneKeyImageYinziReady = computed(() => {
   const form = oneKeyImageYinziForm.value
-  return Boolean(String(form.base_url || '').trim()
+  return Boolean(String(form.text_base_url || '').trim()
+    && String(form.image_base_url || '').trim()
+    && String(form.video_base_url || '').trim()
     && String(form.text_api_key || '').trim()
     && String(form.image_api_key || '').trim()
     && String(form.video_api_key || '').trim())
@@ -2856,8 +2875,11 @@ function oneKeyYinziPayload() {
   return {
     base_url: form.base_url.trim(),
     api_key: form.api_key.trim(),
-    routing_mode: 'smart',
-    smart_routing: true,
+    text_base_url: String(form.text_base_url || '').trim(),
+    image_base_url: String(form.image_base_url || '').trim(),
+    video_base_url: String(form.video_base_url || '').trim(),
+    routing_mode: 'group',
+    smart_routing: false,
     text_api_key: form.text_api_key.trim(),
     image_api_key: form.image_api_key.trim(),
     video_api_key: form.video_api_key.trim(),
@@ -2908,6 +2930,9 @@ function openOneKeyYinzi() {
 }
 
 function resetOneKeyYinzi() {
+  oneKeyYinziForm.value.text_base_url = ''
+  oneKeyYinziForm.value.image_base_url = ''
+  oneKeyYinziForm.value.video_base_url = ''
   oneKeyYinziForm.value.api_key = ''
   oneKeyYinziForm.value.text_api_key = ''
   oneKeyYinziForm.value.image_api_key = ''
@@ -2985,6 +3010,10 @@ async function submitOneKeyLaoli() {
 }
 
 function resetOneKeyImageYinzi() {
+  oneKeyImageYinziForm.value.base_url = 'https://image.yinziapi.top/v1'
+  oneKeyImageYinziForm.value.text_base_url = 'https://api.yinziapi.top/v1'
+  oneKeyImageYinziForm.value.image_base_url = 'https://image.yinziapi.top/v1'
+  oneKeyImageYinziForm.value.video_base_url = 'https://image.yinziapi.top/v1'
   oneKeyImageYinziForm.value.text_api_key = ''
   oneKeyImageYinziForm.value.image_api_key = ''
   oneKeyImageYinziForm.value.video_api_key = ''

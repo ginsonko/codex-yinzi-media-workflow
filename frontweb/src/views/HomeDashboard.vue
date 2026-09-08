@@ -1,10 +1,14 @@
 <template>
   <div class="workbench-view">
     <div class="dashboard-page">
+      <section class="panel unattended-panel" aria-label="挂机模式">
+        <div><el-checkbox :model-value="unattendedMode" :disabled="preferencesSaving || !preferencesLoaded" @change="saveUnattendedMode">挂机模式</el-checkbox><p>开启后，Codex 会在你的任务范围和预算内自主生成、检查和修整作品，无需逐次确认。设置会自动记住，可随时关闭。</p></div>
+        <span role="status">{{ preferencesSaving ? '正在保存…' : preferencesError || (unattendedMode ? '已开启 · 自主执行' : '未开启') }}</span>
+      </section>
       <WorkActivity v-if="activeSession" :session="activeSession"><el-button plain size="small" @click="openAttention">打开当前任务</el-button></WorkActivity>
       <section v-else-if="activeBatch" class="panel manual-current" aria-label="当前后台任务"><h2>{{ activeBatch.title }}</h2><p>{{ activeBatch.settings?._origin === 'manual' ? '手动创作' : '批量生成' }} · {{ activeBatch.status === 'needs_review' ? '需要处理，请打开任务查看原因与恢复操作。' : '后台持续处理，可随时离开再回来。' }}</p><p>{{ activeBatch.completed || 0 }} / {{ activeBatch.total }} 已完成 · {{ activeBatch.running || 0 }} 项处理中</p><small>后台状态更新：{{ new Date(activeBatch.updated_at).toLocaleString() }}</small><el-button type="primary" plain @click="router.push(activeBatch.settings?._origin === 'manual' ? '/free-create' : `/batch?batch=${activeBatch.id}`)">查看进度和下载</el-button></section>
       <section v-if="!sessions.length && !batches.length" class="welcome-band">
-        <div class="welcome-copy"><span class="kicker">今天从一句话开始</span><h2>把想法交给 Codex，<em>进度和成果会自己回来。</em></h2><p>可以直接说要做什么，也可以附上一张图片或一个文件夹。Codex 会先说明计划、素材和费用，再按你的确认执行。</p><div class="welcome-actions"><el-button type="primary" size="large" @click="router.push('/free-create')"><el-icon><VideoPlay /></el-icon>手动创作</el-button><el-button size="large" plain @click="router.push('/batch')"><el-icon><CopyDocument /></el-icon>批量生成</el-button><el-button class="desktop-shortcut-button" text size="small" :loading="shortcutSaving" title="在 Windows 桌面添加工作流快捷方式" @click="addDesktopShortcut"><el-icon><Monitor /></el-icon>添加到桌面</el-button></div><span v-if="shortcutHint" class="shortcut-hint" role="status">{{ shortcutHint }}</span></div>
+        <div class="welcome-copy"><span class="kicker">今天从一句话开始</span><h2>把想法交给 Codex，<em>进度和成果会自己回来。</em></h2><p>可以直接说要做什么，也可以附上一张图片或一个文件夹。Codex 会先说明计划、素材和费用，按你的授权继续执行。</p><div class="welcome-actions"><el-button type="primary" size="large" @click="router.push('/free-create')"><el-icon><VideoPlay /></el-icon>手动创作</el-button><el-button size="large" plain @click="router.push('/batch')"><el-icon><CopyDocument /></el-icon>批量生成</el-button><el-button class="desktop-shortcut-button" text size="small" :loading="shortcutSaving" title="在 Windows 桌面添加工作流快捷方式" @click="addDesktopShortcut"><el-icon><Monitor /></el-icon>添加到桌面</el-button></div><span v-if="shortcutHint" class="shortcut-hint" role="status">{{ shortcutHint }}</span></div>
         <div class="welcome-visual"><div class="visual-grid"><span v-for="n in 9" :key="n"></span></div><div class="visual-orbit orbit-a"></div><div class="visual-orbit orbit-b"></div><div class="visual-core"><el-icon><MagicStick /></el-icon><strong>CODEX</strong><small>LIVE</small></div></div>
       </section>
 
@@ -19,7 +23,7 @@
           <article><span>2</span><div><strong>按需接入 AI</strong><p>文本、图片、视频可以分别保存多个候选；推荐从银子 API 开始，配置后 Codex 才能调用对应的生图和视频模型。Key 只保存在本机，配置什么就会解锁什么。</p><div class="first-run-actions"><el-button size="small" type="primary" plain @click="router.push('/ai-config?action=yinzi')">配置银子 API</el-button><el-button size="small" plain @click="router.push('/ai-config?action=yinzi')">查看配置步骤</el-button></div></div></article>
           <article><span>3</span><div><strong>不懂就问 Codex</strong><p>可以把 URL、Key、模型名和备注直接发给 Codex，让它代填配置；也可以随时回到“模型与 Key”修改。</p><el-button size="small" text @click="router.push('/help')">查看帮助</el-button></div></article>
         </div>
-        <div class="first-run-footnote">当前配置：文本 {{ onboarding?.active_config_counts?.text || 0 }} · 图片 {{ onboarding?.active_config_counts?.image || 0 }} · 视频 {{ onboarding?.active_config_counts?.video || 0 }}；推荐目录只作参考，真正付费前仍会按当前 Key 重新核对能力和价格。</div>
+        <div class="first-run-footnote">当前配置：文本 {{ onboarding?.active_config_counts?.text || 0 }} · 图片 {{ onboarding?.active_config_counts?.image || 0 }} · 视频 {{ onboarding?.active_config_counts?.video || 0 }}；推荐目录只作参考，Codex 会保留你选定的模型，并按你的授权和预算执行。</div>
       </section>
 
       <section class="metric-grid" aria-label="工作台摘要"><article v-for="metric in metrics" :key="metric.label" class="metric-card"><div class="metric-top"><span>{{ metric.label }}</span><el-icon :class="metric.tone"><component :is="metric.icon" /></el-icon></div><strong>{{ metric.value }}</strong><small>{{ metric.note }}</small></article></section>
@@ -54,6 +58,33 @@ import { normalizeArtifacts } from '@/utils/orchestrationExperience'
 import { artifactMediaUrl } from '@/utils/mediaUrl'
 
 const router = useRouter()
+const unattendedMode = ref(false)
+const preferencesSaving = ref(false)
+const preferencesLoaded = ref(false)
+const preferencesError = ref('')
+let preferenceReadVersion = 0
+async function loadPreferences() {
+  if (preferencesSaving.value) return
+  const version = ++preferenceReadVersion
+  try {
+    const value = await orchestrationAPI.preferences()
+    if (preferencesSaving.value || version !== preferenceReadVersion) return
+    unattendedMode.value = value.unattended_mode === true
+    preferencesLoaded.value = true
+    preferencesError.value = ''
+  } catch (error) { preferencesError.value = '设置暂未同步，保留上次状态' }
+}
+async function saveUnattendedMode(enabled) {
+  ++preferenceReadVersion
+  preferencesSaving.value = true
+  preferencesError.value = ''
+  try {
+    const value = await orchestrationAPI.savePreferences({ unattended_mode: enabled })
+    unattendedMode.value = value.unattended_mode === true
+    ElMessage.success(unattendedMode.value ? '挂机模式已开启并保存' : '挂机模式已关闭并保存')
+  } catch (error) { preferencesError.value = '保存未确认，正在重新读取'; ElMessage.error('设置保存未确认，请查看同步后的状态') }
+  finally { preferencesSaving.value = false; await loadPreferences() }
+}
 const loading = ref(false); const runtimeError = ref(''); const sessions = ref([]); const bundles = ref([]); const batches = ref([]); const batchBundles = ref([]); const samples = ref([]); const lastSuccessfulAt = ref(''); const brokenArtifacts = ref(new Set()); const onboarding = ref(null); const firstRunDismissed = ref(localStorage.getItem('yinzi-first-run-guide-dismissed-v1') === '1'); const shortcutSaving = ref(false); const shortcutHint = ref(''); let timer = null
 const firstRunVisible = computed(() => !firstRunDismissed.value && !sessions.value.length && !batches.value.length && Boolean(onboarding.value))
 const sampleKey = 'yinzi-dashboard-progress-samples-v1'
@@ -88,6 +119,7 @@ async function loadDashboard() {
   if (loading.value) return
   loading.value = true
   const errors = []
+  void loadPreferences()
   try {
     if (!onboarding.value) { try { onboarding.value = await orchestrationAPI.onboarding() } catch (_) {} }
     const [sessionResult,batchResult] = await Promise.allSettled([orchestrationAPI.sessions({limit:20}),mediaBatchAPI.list({limit:30})])
@@ -162,4 +194,8 @@ useWorkbenchPage({ refresh: loadDashboard, error: () => runtimeError.value, load
 </style>
 <style scoped>
 .dashboard-columns.has-work-activity { grid-template-columns:1fr; }
+.unattended-panel { display:flex; align-items:center; justify-content:space-between; gap:16px; }
+.unattended-panel p { margin:4px 0 0; color:var(--text-muted); font-size:13px; line-height:1.6; }
+.unattended-panel > span { flex-shrink:0; color:var(--ui-accent); font-size:13px; }
+@media(max-width:650px) { .unattended-panel { align-items:flex-start; flex-direction:column; gap:6px; } }
 </style>

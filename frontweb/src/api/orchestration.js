@@ -1,6 +1,8 @@
 import request from '@/utils/request'
 
 export const orchestrationAPI = {
+  preferences() { return request.get('/creative-preferences', { suppressGlobalError: true }) },
+  savePreferences(body) { return request.put('/creative-preferences', body, { suppressGlobalError: true }) },
   runtimeIdentity() { return request.get('/runtime-identity', { suppressGlobalError: true, timeout: 5000 }) },
   createDesktopShortcut() { return request.post('/runtime/desktop-shortcut', {}, { timeout: 15000 }) },
   onboarding() { return request.get('/orchestration-onboarding') },

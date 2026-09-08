@@ -506,16 +506,17 @@ function createOrchestrationService(db) {
     const events = listEvents(id, { limit: query.event_limit || 200, after: query.after || 0 });
     const receipts = listReceipts(id);
     const counts = nodes.reduce((acc, node) => { acc[node.status] = (acc[node.status] || 0) + 1; return acc; }, {});
-    return { schema_version: 2, open_world: true, planning_guidance: creativePreferences.profile(session.source_context?.quality_profile || creativePreferences.get(db).quality_profile), session, nodes, events, receipts, counts, artifacts: listArtifacts(id, query), feedback: listFeedback(id), delivery: latestDelivery(id), blender_jobs: listBlenderJobs(id) };
+    return { schema_version: 2, open_world: true, creative_preferences: creativePreferences.get(db), planning_guidance: creativePreferences.profile(session.source_context?.quality_profile || creativePreferences.get(db).quality_profile), session, nodes, events, receipts, counts, artifacts: listArtifacts(id, query), feedback: listFeedback(id), delivery: latestDelivery(id), blender_jobs: listBlenderJobs(id) };
   }
 
   function beginWork(input = {}) {
     if (!String(input.idempotency_key || '').trim() || !String(input.user_goal || '').trim()) throw makeError('WORK_INPUT_REQUIRED', '开始任务需要稳定请求键和用户目标');
     const intent = input.intent === 'analyze' ? 'analyze' : 'create';
     const stamp = nowIso();
-    return createSession({ ...input, source_context: { ...(input.source_context || {}), intent,
+    const result = createSession({ ...input, source_context: { ...(input.source_context || {}), intent,
       activity: { stage: 'analysis', state: 'working', message: '已接收需求，正在分析素材与目标', next_action: '整理方案与验收标准', needs_user: false, updated_at: stamp },
     } });
+    return { ...result, creative_preferences: creativePreferences.get(db) };
   }
 
   function reportActivity(id, input = {}) {
@@ -700,10 +701,12 @@ function createOrchestrationService(db) {
       });
       const plan = sanitize({ ...rawPlan, nodes: rawNodes.map((node) => ({ node_key: node.node_key, module_id: node.module_id, depends_on: node.depends_on || [] })) });
       const terminalStatus = computeSessionStatus(db, id);
-      const nextStatus = input.confirm ? (terminalStatus || 'planned') : 'waiting_confirmation';
+      const confirmed = input.confirm === true || (input.confirm === undefined && creativePreferences.get(db).unattended_mode && parse(getSessionRow(db, id).source_context_json, {}).intent !== 'analyze');
+      const nextStatus = confirmed ? (terminalStatus || 'planned') : 'waiting_confirmation';
       db.prepare(`UPDATE orchestration_sessions SET plan_revision=?,plan_json=?,status=?,updated_at=?,version=version+1 WHERE id=?`)
         .run(revision, json(plan, {}), nextStatus, nowIso(), id);
-      appendEvent(db, id, input.confirm ? 'plan.confirmed' : 'plan.proposed', {
+      appendEvent(db, id, confirmed ? 'plan.confirmed' : 'plan.proposed', {
+        authorization_source: input.confirm === true ? 'existing_user_authorization' : confirmed ? 'unattended_mode' : null,
         plan_revision: revision, node_count: rawNodes.length, summary: rawPlan.summary || null,
         invalidated_node_keys: [...invalidated.keys()], preserved_node_keys: definitions.filter((item) => existingByKey.has(item.nodeKey) && !invalidated.has(item.nodeKey)).map((item) => item.nodeKey),
       }, { actor: input.actor || 'codex' });

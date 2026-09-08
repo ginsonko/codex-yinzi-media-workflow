@@ -5,6 +5,8 @@ Use the canonical local base URL, normally `http://127.0.0.1:5683`. The bundled 
 
 ## Read endpoints
 
+`GET /api/v1/creative-preferences` returns `quality_profile` and `unattended_mode` (default false). `PUT` updates only supplied fields; send `{"unattended_mode":true}` after a user checkbox action or explicit unattended/spending authorization. MCP exposes `get_workflow_preferences` and `set_workflow_preferences`; CLI exposes `preferences` and `set-preferences --input <file>`. Startup and session bundles include the current preference. A plan without `confirm` is automatically confirmed for production work in unattended mode; explicit `confirm:false` and analysis-only intent remain waiting.
+
 - `GET /health`
 - `GET /api/v1/orchestration-modules`
 - `GET /api/v1/orchestration-modules/:moduleId`
@@ -123,7 +125,7 @@ Before a provider request with material cost or duplicate-side-effect risk, atom
 Use MCP `generate_image_once` for a newly authorized image request. It requires:
 
 - `session_id` and a dedicated `node_key`;
-- stable `idempotency_key` and `confirmed_paid_action:true`;
+- stable `idempotency_key` and existing authorization via `confirmed_paid_action:true` or saved unattended mode;
 - locked `image_config_id`, `provider`, `model`, and `group_name`;
 - the final prompt and optional reference images;
 - `max_unit_price_usd` from the user's approved exposure.
@@ -141,11 +143,11 @@ Transport timeout after reservation is never proof of failure and never authoriz
 
 ## Guarded video generation
 
-Use MCP `generate_video_once` for a newly authorized paid video request. It requires a dedicated session/node, stable idempotency key, `confirmed_paid_action:true`, locked `video_config_id`/provider/model/group, final prompt and reference manifest, a capability-valid duration and resolution, and `max_cost_cny` covering no more than the user's approved exposure.
+Use MCP `generate_video_once` with a dedicated session/node, stable idempotency key, saved `video_config_id`/provider/model, final prompt, duration and references. Existing authorization is represented by `confirmed_paid_action:true` or saved unattended mode. Set `max_cost_cny` to any user-specified ceiling; in unattended mode it can be omitted when no ceiling was specified.
 
-Before reserving the external request hash, the tool asks the local backend to discover the saved Key's live model catalog with `persist_snapshot:false`. The exact requested model or a proven exact capability alias must be present as a Key-verified video offer; public pricing alone is never permission to spend. Discovery failure, a text-only Key, a public-only offer, or a backend that cannot prove the probe was non-persisting stops with zero reservation and zero `/videos` submission. This automatic-paid safety check does not change the application's advisory/manual unknown-model behavior.
+The selected model remains authoritative. There is no mandatory Key discovery step before video submission. Missing capability metadata is recorded as unknown; supplied parameters are advisory by default. Optional `contract_validation_mode:strict` validates known duration, resolution and reference limits. Actual generation errors retain their real outcome and recovery path.
 
-Before atomic reservation, the tool reads the public saved configuration, its model-capability state, and the current Yinzi CNY catalog. The request model must remain present in the saved configuration. A price-directory alias is accepted only when the current contracts prove the same family, resolution, provider protocol, fixed duration, and enumerated durations; a similar-looking name is never enough. If the saved configuration has no verifiable group binding, the tool uses the highest current price among all proven aliases, so a caller-supplied cheap group cannot understate exposure. Unknown contract, unsupported duration/reference count, price drift, currency/billing ambiguity, or budget excess stops before `/api/v1/videos`.
+Public pricing supplies an estimate, without asserting Key permissions. Exact model matches or evidenced aliases can supply prices. If a user specified a ceiling, the tool checks the available price and uses the highest matching group exposure when no group is configured. Unknown price is reported as unknown, never zero; a specified ceiling must remain verifiable. In unattended mode without a specified ceiling, an absent price or capability entry does not block the selected video request.
 
 A single `reserved:true` permits exactly one local `POST /api/v1/videos`. The response records the local generation ID, local asynchronous task ID, provider task ID when available, request hash, configuration ID, capability snapshot, price source/version, and estimated CNY exposure. A local generation record is not proof that the provider accepted it. Transport or response ambiguity remains `uncertain`; call `reconcile_video`, never `generate_video_once` as a resend mechanism.
 

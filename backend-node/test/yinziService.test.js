@@ -518,15 +518,15 @@ describe('prepareYinziSetupInput', () => {
     assert.equal(unknown.scope_verified, true);
   });
 
-  it('still rejects an invalid key when the authoritative models endpoint rejects it', async () => {
+  it('preserves the user video configuration when the directory returns 401', async () => {
     const fetchImpl = async (url) => {
       if (url.endsWith('/models')) return { ok: false, status: 401 };
       throw new Error(`unexpected URL ${url}`);
     };
-    await assert.rejects(
-      prepareYinziSetupInput({ base_url: 'https://api.yinziapi.top/v1', api_key: 'bad-key' }, fetchImpl),
-      /模型目录鉴权失败/
-    );
+    const result = await prepareYinziSetupInput({ base_url: 'https://api.yinziapi.top/v1', api_key: 'bad-key', video_model: 'user-video-model' }, fetchImpl);
+    assert.equal(result.video_model, 'user-video-model');
+    assert.ok(result.setup_catalog.warnings.some(item => /401/.test(item)));
+    assert.equal(result.setup_catalog.scope_verified, false);
   });
 });
 

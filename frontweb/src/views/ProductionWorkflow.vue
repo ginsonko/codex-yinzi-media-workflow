@@ -2443,14 +2443,35 @@ async function discoverVideoCatalog(configId, options = {}) {
       group: String(options.group || '').trim(),
     }, { suppressGlobalError: true })
     const catalog = Array.isArray(result?.catalog?.video) ? result.catalog.video : []
-    videoCatalog.value = catalog
+    // The backend may return a partial manual-only catalog when the upstream
+    // directory is unavailable. Keep the last usable list if no explicit
+    // fallback model exists, and surface the evidence boundary to the user.
+    if (catalog.length || !videoCatalog.value.length) videoCatalog.value = catalog
     videoCatalogConfigId.value = normalizedId
-    if (!catalog.length) catalogLoadError.value = '这个 Key 的模型目录为空，请确认分组权限或上游 /models 返回内容。'
+    const diagnostic = result?.diagnostic || result?.discovery_diagnostic || null
+    if (diagnostic) {
+      const code = String(diagnostic.code || '')
+      const message = code === 'MODEL_DISCOVERY_AUTH_FAILED'
+        ? '当前视频 Key 鉴权失败，请检查 Key 是否完整、是否已过期。已保留你手动配置的模型。'
+        : code === 'MODEL_DISCOVERY_ENDPOINT_NOT_FOUND'
+          ? '当前服务没有提供模型目录接口。已保留你手动配置的模型，固定模型仍可保存并交给上游校验。'
+          : code === 'MODEL_DISCOVERY_TIMEOUT' || code === 'MODEL_DISCOVERY_NETWORK_ERROR' || code === 'MODEL_DISCOVERY_UPSTREAM_ERROR'
+            ? '模型目录网络请求暂时失败。已保留你手动配置的模型，稍后可重试，不会自动替换模型。'
+            : '模型目录暂时无法读取。已保留你手动配置的模型，能力和权限将在提交时由上游确认。'
+      catalogLoadError.value = message
+    } else if (!catalog.length) catalogLoadError.value = '这个 Key 的模型目录为空，请确认分组权限或上游 /models 返回内容。'
     return catalog.length > 0
   } catch (error) {
-    videoCatalog.value = []
+    // Preserve the last catalog and the persisted/current selection after a
+    // transport failure; clearing it made a transient outage look like loss
+    // of model permissions.
     videoCatalogConfigId.value = normalizedId
-    catalogLoadError.value = `读取当前视频配置的模型目录失败：${error.message || '请检查 URL、Key 和上游 /models 接口'}`
+    const code = String(error?.code || '')
+    catalogLoadError.value = code === 'MODEL_DISCOVERY_AUTH_FAILED'
+      ? '当前视频 Key 鉴权失败，请检查 Key 是否完整、是否已过期。已保留你手动配置的模型。'
+      : code === 'MODEL_DISCOVERY_ENDPOINT_NOT_FOUND'
+        ? '当前服务没有提供模型目录接口。已保留你手动配置的模型，固定模型仍可保存并交给上游校验。'
+        : `模型目录暂时无法读取：${error.message || '网络或上游服务异常'}。已保留你手动配置的模型。`
     return false
   } finally {
     if (!options.preserveLoading) videoCatalogLoading.value = false

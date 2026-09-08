@@ -634,6 +634,16 @@ function resolveYinziKeys(input = {}) {
   return { universalKey, textKey, imageKey, videoKey };
 }
 
+function resolveYinziBaseUrls(input = {}) {
+  const universal = normalizeYinziBaseUrl(input.base_url || YINZI_DEFAULT_BASE_URL);
+  return {
+    universal,
+    text: normalizeYinziBaseUrl(input.text_base_url || universal),
+    image: normalizeYinziBaseUrl(input.image_base_url || universal),
+    video: normalizeYinziBaseUrl(input.video_base_url || universal),
+  };
+}
+
 function endpointTypes(item) {
   return normalizeEndpointTypes(item?.endpoint_types || item?.supported_endpoint_types || item?.endpoints || []);
 }
@@ -696,32 +706,51 @@ function chooseDefaultYinziVideoModel(videoCatalog, requested = '') {
 }
 
 async function prepareYinziSetupInput(input = {}, fetchImpl = fetch) {
-  const baseUrl = normalizeYinziBaseUrl(input.base_url);
+  const baseUrls = resolveYinziBaseUrls(input);
+  const baseUrl = baseUrls.universal;
   const routingMode = resolveYinziRoutingMode(input);
   const smartRouting = routingMode === 'smart';
   const distributionProfile = resolveDistributionProfile(input);
   const { universalKey, textKey, imageKey, videoKey } = resolveYinziKeys(input);
   const discoveryByKey = new Map();
-  const discover = async (apiKey) => {
-    if (!discoveryByKey.has(apiKey)) {
-      discoveryByKey.set(apiKey, aiConfigService.discoverModels({
-        base_url: baseUrl,
+  const discover = async (apiKey, serviceType, serviceBase, fallbackModel) => {
+    // A universal key/base should make one read-only request and then be
+    // classified for text/image/video locally. Distinct per-service URLs or
+    // keys naturally get their own scoped request.
+    const cacheKey = `${serviceBase}|${apiKey}`;
+    if (!discoveryByKey.has(cacheKey)) {
+      discoveryByKey.set(cacheKey, aiConfigService.discoverModels({
+        base_url: serviceBase,
         api_key: apiKey,
         provider: 'yinzi',
+        service_type: serviceType,
+        model: fallbackModel ? [fallbackModel] : [],
+        default_model: fallbackModel,
       }, { fetchImpl }));
     }
-    return discoveryByKey.get(apiKey);
+    try {
+      return await discoveryByKey.get(cacheKey);
+    } catch (error) {
+      return aiConfigService.buildDiscoveryFallback({
+        base_url: serviceBase,
+        api_key: apiKey,
+        provider: 'yinzi',
+        service_type: serviceType,
+        model: [fallbackModel],
+        default_model: fallbackModel,
+      }, error, { service_type: serviceType, fallback_model: fallbackModel });
+    }
   };
 
   const [textDiscovery, imageDiscovery, videoDiscovery] = await Promise.all([
-    discover(textKey),
-    discover(imageKey),
-    discover(videoKey),
+    discover(textKey, 'text', baseUrls.text, normalizeOpaqueModel(input.text_model) || 'gpt-5.6-sol'),
+    discover(imageKey, 'image', baseUrls.image, normalizeOpaqueModel(input.image_model) || 'gpt-image-2'),
+    discover(videoKey, 'video', baseUrls.video, normalizeOpaqueModel(input.video_model) || 'Seedance 2.5-720'),
   ]);
   // Capability contracts and public prices enrich the key-scoped /models
   // result, but never decide whether a valid key can be configured.
   const pricingCatalog = await fetchYinziCatalogForConfig(
-    { base_url: baseUrl, api_key: videoKey },
+    { base_url: baseUrls.video, api_key: videoKey },
     fetchImpl,
     { include_public_catalog: true }
   );
@@ -740,16 +769,12 @@ async function prepareYinziSetupInput(input = {}, fetchImpl = fetch) {
   const routableVideoCatalog = smartRouting
     ? videoCatalog.filter((item) => item.credential_verified === true || item.smart_routing_candidate === true)
     : credentialVideoCatalog;
-  if (!routableVideoCatalog.length) {
-    const error = new Error('当前 Key 没有返回可用视频模型；请展开高级设置填写视频分组 Key 后重试');
-    error.code = 'YINZI_VIDEO_MODELS_EMPTY';
-    throw error;
-  }
 
   const textModel = preferredModel(input.text_model, textEntries, 'gpt-5.6-sol', 'gpt-5.6-sol');
   const imageModel = preferredModel(input.image_model, imageEntries, 'gpt-image-2', 'gpt-image-2');
-  const videoModel = chooseDefaultYinziVideoModel(routableVideoCatalog, input.video_model);
+  const videoModel = chooseDefaultYinziVideoModel(routableVideoCatalog, input.video_model) || 'Seedance 2.5-720';
   const warnings = [];
+  if (!routableVideoCatalog.length) warnings.push('目录未提供视频候选，已保留指定模型；实际生成结果以提交回执为准');
   warnings.push(...(Array.isArray(pricingCatalog.warnings) ? pricingCatalog.warnings : []));
   if (!textEntries.length) warnings.push('当前文本 Key 未返回文本模型，已保留 gpt-5.6-sol 默认值');
   if (!imageEntries.length) warnings.push('当前生图 Key 未返回生图模型，已保留 gpt-image-2 默认值');
@@ -757,6 +782,9 @@ async function prepareYinziSetupInput(input = {}, fetchImpl = fetch) {
   return {
     ...input,
     base_url: baseUrl,
+    text_base_url: baseUrls.text,
+    image_base_url: baseUrls.image,
+    video_base_url: baseUrls.video,
     routing_mode: routingMode,
     smart_routing: smartRouting,
     api_key: universalKey,
@@ -791,7 +819,12 @@ async function prepareYinziSetupInput(input = {}, fetchImpl = fetch) {
         : /seedance/i.test(videoModel) ? 'current_key_seedance_preferred'
           : routableVideoCatalog.length === 1 ? 'only_current_key_video_model'
             : 'current_key_compatible_model',
-      warnings,
+      warnings: [
+        ...warnings,
+        ...[textDiscovery, imageDiscovery, videoDiscovery]
+          .filter((item) => item?.partial)
+          .map((item) => `${item.diagnostic?.code || 'MODEL_DISCOVERY_FAILED'}: ${item.diagnostic?.message || '模型目录暂不可用'}（已保留手动模型）`),
+      ],
       models: videoCatalog.map((item) => ({
         model: item.model,
         name: item.name || item.model,
@@ -821,7 +854,8 @@ async function prepareYinziSetupInput(input = {}, fetchImpl = fetch) {
 }
 
 function yinziConfigDefinitions(input) {
-  const baseUrl = normalizeYinziBaseUrl(input.base_url);
+  const baseUrls = resolveYinziBaseUrls(input);
+  const baseUrl = baseUrls.universal;
   const routingMode = resolveYinziRoutingMode(input);
   const smartRouting = routingMode === 'smart';
   const distributionProfile = resolveDistributionProfile(input);
@@ -836,7 +870,7 @@ function yinziConfigDefinitions(input) {
     ...(normalizeModelList(input.video_models)),
     videoModel,
   ]);
-  const shared = { base_url: baseUrl, provider: 'yinzi', priority: 100, is_default: true };
+  const shared = { provider: 'yinzi', priority: 100, is_default: true };
   const commonSettings = {
     catalog_url: YINZI_CATALOG_URL,
     local_media_persistence: true,
@@ -851,10 +885,10 @@ function yinziConfigDefinitions(input) {
     model_catalog_snapshot: input.setup_catalog || null,
   });
   return [
-    { ...shared, service_type: 'text', name: 'YinziAPI 文本', api_protocol: 'openai', api_key: textKey, model: textModels, default_model: textModel, endpoint: '/chat/completions', query_endpoint: '', settings },
-    { ...shared, service_type: 'image', name: 'YinziAPI 文本生图', api_protocol: 'openai', api_key: imageKey, model: imageModels, default_model: imageModel, endpoint: '/images/generations', query_endpoint: '', settings },
-    { ...shared, service_type: 'storyboard_image', name: 'YinziAPI 分镜图', api_protocol: 'openai', api_key: imageKey, model: imageModels, default_model: imageModel, endpoint: '/images/generations', query_endpoint: '', settings },
-    { ...shared, service_type: 'video', name: 'YinziAPI 视频', api_protocol: 'yinzi', api_key: videoKey, model: videoModels, default_model: videoModel, endpoint: '/videos', query_endpoint: '/videos/{taskId}', settings: videoSettings },
+    { ...shared, base_url: baseUrls.text, service_type: 'text', name: 'YinziAPI 文本', api_protocol: 'openai', api_key: textKey, model: textModels, default_model: textModel, endpoint: '/chat/completions', query_endpoint: '', settings },
+    { ...shared, base_url: baseUrls.image, service_type: 'image', name: 'YinziAPI 文本生图', api_protocol: 'openai', api_key: imageKey, model: imageModels, default_model: imageModel, endpoint: '/images/generations', query_endpoint: '', settings },
+    { ...shared, base_url: baseUrls.image, service_type: 'storyboard_image', name: 'YinziAPI 分镜图', api_protocol: 'openai', api_key: imageKey, model: imageModels, default_model: imageModel, endpoint: '/images/generations', query_endpoint: '', settings },
+    { ...shared, base_url: baseUrls.video, service_type: 'video', name: 'YinziAPI 视频', api_protocol: 'yinzi', api_key: videoKey, model: videoModels, default_model: videoModel, endpoint: '/videos', query_endpoint: '/videos/{taskId}', settings: videoSettings },
   ];
 }
 
@@ -890,6 +924,9 @@ function upsertYinziConfigs(db, log, input) {
   return {
     provider: 'yinzi',
     base_url: definitions[0].base_url,
+    text_base_url: definitions.find((item) => item.service_type === 'text')?.base_url || '',
+    image_base_url: definitions.find((item) => item.service_type === 'image')?.base_url || '',
+    video_base_url: definitions.find((item) => item.service_type === 'video')?.base_url || '',
     routing_mode: resolveYinziRoutingMode(input),
     distribution_profile: resolveDistributionProfile(input),
     distribution: getDistributionProfile(input),
@@ -902,6 +939,7 @@ module.exports = {
   YINZI_CATALOG_URL,
   YINZI_DEFAULT_BASE_URL,
   normalizeYinziBaseUrl,
+  resolveYinziBaseUrls,
   normalizeYinziRoutingMode,
   resolveYinziRoutingMode,
   isYinziSmartRoutingConfig,

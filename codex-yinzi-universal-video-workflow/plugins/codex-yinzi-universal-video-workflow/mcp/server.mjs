@@ -333,7 +333,7 @@ function assertBridgeRoute(method, route) {
 async function workflowBridge(args) {
   const method = assertBridgeRoute(args.method, args.path)
   if (method !== 'GET' && (!args.session_id || !args.node_key)) throw new Error('有副作用的旧工作流调用必须绑定 session_id 和 node_key')
-  if (args.paid === true && (args.confirmed_paid_action !== true || !args.idempotency_key)) throw new Error('付费调用需要 confirmed_paid_action=true 和稳定 idempotency_key')
+  if (args.paid === true && args.reconcile !== true) await paidAuthorization(args)
   if (method === 'GET') return api(method, args.path, undefined, Number(args.timeout_ms) || 30000)
 
   const bundle = await api('GET', `/api/v1/orchestration-sessions/${encodeURIComponent(args.session_id)}?include_inactive=true&event_limit=50`)
@@ -413,16 +413,11 @@ function sameProvenVideoOffer(requestedModel, capability, catalogItem) {
     && Number(capability.fixed_duration_seconds || 0) === Number(offered.fixed_duration_seconds || 0)
 }
 
-function isKeyVerifiedVideoOffer(catalogItem) {
-  if (!catalogItem || catalogItem.manual_only === true) return false
-  const keyScoped = catalogItem.credential_verified === true
-    || catalogItem.smart_routing_candidate === true
-  if (!keyScoped) return false
-  const endpointTypes = Array.isArray(catalogItem.endpoint_types)
-    ? catalogItem.endpoint_types.map((value) => String(value || '').trim().toLowerCase())
-    : []
-  return endpointTypes.includes('openai-video')
-    || String(catalogItem?.capabilities?.provider_create_path || catalogItem?.provider_create_path || '').trim() === '/videos'
+async function paidAuthorization(args) {
+  if (!args.idempotency_key) throw new Error('付费调用需要稳定 idempotency_key')
+  const preferences = await api('GET', '/api/v1/creative-preferences')
+  if (args.confirmed_paid_action !== true && preferences?.unattended_mode !== true) throw new Error('请依据已有用户授权设置 confirmed_paid_action=true，或由用户开启挂机模式')
+  return { unattended: preferences?.unattended_mode === true, source: preferences?.unattended_mode === true ? 'unattended_mode' : 'existing_user_authorization' }
 }
 
 function priceExposureCny(price, duration) {
@@ -447,7 +442,7 @@ function mergeOutputRefs(existing = [], additions = []) {
   return merged
 }
 
-async function loadGuardedVideoContract(args, video) {
+async function loadGuardedVideoContract(args, video, authorization) {
   const publicConfig = await api('GET', `/api/v1/ai-configs/${encodeURIComponent(video.video_config_id)}`)
   const configuredModels = Array.isArray(publicConfig?.model)
     ? publicConfig.model.map(String)
@@ -458,16 +453,15 @@ async function loadGuardedVideoContract(args, video) {
   if (!publicModels.some((item) => exactModelName(item) === exactModelName(video.model))) throw new Error('锁定配置不包含请求视频模型，已在付费提交前停止')
   if (publicConfig?.is_active === false || publicConfig?.is_enabled === false) throw new Error('锁定视频配置当前未启用，已在付费提交前停止')
   if (publicConfig?.has_api_key !== true) throw new Error('锁定视频配置没有已保存凭据，已在付费提交前停止')
-  const protocol = String(publicConfig?.api_protocol || '').trim().toLowerCase()
-  const endpoint = String(publicConfig?.endpoint || '').trim()
-  if (video.provider === 'yinzi' && protocol !== 'yinzi') throw new Error('锁定 Yinzi 视频配置的协议不是 yinzi，已在付费提交前停止')
-  if (endpoint && endpoint !== '/videos') throw new Error('锁定视频配置的创建路径不是 /videos，已在付费提交前停止')
-
-  const capabilityStates = await api('GET', `/api/v1/ai-configs/${encodeURIComponent(video.video_config_id)}/model-capabilities`)
+  const diagnostics = []
+  const capabilityStates = await api('GET', `/api/v1/ai-configs/${encodeURIComponent(video.video_config_id)}/model-capabilities`).catch(error => {
+    diagnostics.push({ source: 'capabilities', message: error.message }); return {}
+  })
   const state = (Array.isArray(capabilityStates?.models) ? capabilityStates.models : [])
     .find((item) => exactModelName(item.model) === exactModelName(video.model))
-  const capability = state?.capability || null
-  if (!capability || state?.contract_status !== 'known') throw new Error('锁定视频模型没有可验证能力合同，自动付费已停止；仍可由用户在普通界面手动选择')
+  const capability = state?.capability || {}
+  if (!state?.capability) diagnostics.push({ source: 'capabilities', message: '模型能力尚未登记，使用指定模型和请求参数' })
+  if (video.contract_validation_mode === 'strict' && state?.capability) {
   if (!capabilityAllowsDuration(capability, video.duration)) {
     const allowed = capability.allowed_durations?.length
       ? capability.allowed_durations.join('/')
@@ -490,29 +484,17 @@ async function loadGuardedVideoContract(args, video) {
     if (finiteNumber(maximum) != null && actual > Number(maximum)) throw new Error(`${label}数量 ${actual} 超过锁定能力合同上限 ${maximum}，未提交`)
   }
 
-  let keyCatalog
-  try {
-    keyCatalog = await api('POST', '/api/v1/ai-configs/discover-models', {
-      config_id: video.video_config_id,
-      service_type: 'video',
-      persist_snapshot: false,
-    }, Number(args.catalog_timeout_ms) || 30000)
-  } catch (error) {
-    throw new Error(`当前 Key 的视频模型目录读取失败，自动付费未提交：${error.message}。请检查 Key 权限或修复 Yinzi 智能路由的视频合同`)
-  }
-  if (keyCatalog?.snapshot_persisted !== false) {
-    throw new Error('当前 Key 的视频模型预检未能证明为无副作用读取，自动付费未提交；请升级或重启本地工作流后端')
-  }
-  const keyVideoOffers = (Array.isArray(keyCatalog?.catalog?.video) ? keyCatalog.catalog.video : [])
-    .filter((item) => sameProvenVideoOffer(video.model, capability, item) && isKeyVerifiedVideoOffer(item))
-  if (!keyVideoOffers.length) {
-    throw new Error(`当前 Key 的实时目录未发现可用视频模型 ${video.model}，自动付费未提交。站点公开报价不代表这个 Key 已有视频权限；请换用具有视频分组权限的 Key，或修复 Yinzi 智能路由的视频合同`)
   }
 
-  const catalog = await api('GET', `/api/v1/ai-configs/yinzi/catalog?config_id=${encodeURIComponent(video.video_config_id)}`, undefined, Number(args.catalog_timeout_ms) || 30000)
-  if (video.provider !== 'yinzi') throw new Error('当前受保护视频工具只支持具有实时 CNY 价格目录的 Yinzi 配置')
+  // Public prices inform the estimate; they do not establish or deny Key access.
+  const catalog = video.provider === 'yinzi' ? await api('GET', '/api/v1/ai-configs/yinzi/catalog', undefined, Number(args.catalog_timeout_ms) || 30000).catch(error => {
+    diagnostics.push({ source: 'pricing', message: error.message }); return {}
+  }) : {}
+  const hasCeiling = args.max_cost_cny != null
+  if (hasCeiling && (typeof args.max_cost_cny !== 'number' || !Number.isFinite(args.max_cost_cny) || args.max_cost_cny < 0)) throw new Error('max_cost_cny 必须是非负有限数字')
+  if (!hasCeiling && !authorization.unattended) throw new Error('请提供已授权的 max_cost_cny，或在用户授权自主花费后开启挂机模式')
   const offeredModels = (Array.isArray(catalog?.video) ? catalog.video : []).filter((item) => sameProvenVideoOffer(video.model, capability, item))
-  if (!offeredModels.length) throw new Error('当前实时目录中没有与锁定模型同名或具有同一精确能力合同的价格项，未提交')
+  if (!offeredModels.length && hasCeiling) throw new Error('当前实时目录中没有与锁定模型同名或具有同一精确能力合同的价格项，无法核对指定预算，未提交')
   const requestedGroup = String(args.group_name || '').trim()
   const prices = offeredModels.flatMap((item) => (Array.isArray(item.prices) ? item.prices : []).map((price) => ({ ...price, catalog_model: item.model })))
     .filter((price) => String(price.currency || '').toUpperCase() === 'CNY' && priceExposureCny(price, video.duration) != null)
@@ -520,13 +502,12 @@ async function loadGuardedVideoContract(args, video) {
   const configuredGroup = String(settings.group_name || settings.group || publicConfig?.group_name || '').trim()
   if (configuredGroup && requestedGroup && configuredGroup !== requestedGroup) throw new Error('请求分组与锁定配置中可验证的分组不一致，已在付费提交前停止')
   const matching = configuredGroup ? prices.filter((price) => String(price.group || '') === configuredGroup) : prices
-  if (!matching.length) throw new Error(configuredGroup ? '锁定配置分组没有可验证的当前 CNY 视频价格，未提交' : '当前锁定视频模型没有可验证的 CNY 价格，未提交')
-  const selectedPrice = matching.reduce((highest, price) => priceExposureCny(price, video.duration) > priceExposureCny(highest, video.duration) ? price : highest)
+  if (!matching.length && hasCeiling) throw new Error(configuredGroup ? '锁定配置分组没有可验证的当前 CNY 视频价格，无法核对指定预算' : '当前锁定视频模型没有可验证的 CNY 价格，无法核对指定预算')
+  const selectedPrice = matching.length ? matching.reduce((highest, price) => priceExposureCny(price, video.duration) > priceExposureCny(highest, video.duration) ? price : highest) : {}
   const estimatedCostCny = priceExposureCny(selectedPrice, video.duration)
-  if (!Number.isFinite(Number(args.max_cost_cny)) || Number(args.max_cost_cny) < 0) throw new Error('视频自动付费需要明确 max_cost_cny 上限')
-  if (estimatedCostCny > Number(args.max_cost_cny)) throw new Error(`当前最坏成本 ${estimatedCostCny} CNY 超过本次授权上限 ${Number(args.max_cost_cny)} CNY，未提交`)
+  if (hasCeiling && estimatedCostCny > args.max_cost_cny) throw new Error(`当前最坏成本 ${estimatedCostCny} CNY 超过本次授权上限 ${args.max_cost_cny} CNY，未提交`)
   return {
-    publicConfig, capability, capabilityState: state, keyCatalog, keyVideoOffers, catalog, selectedPrice, estimatedCostCny,
+    publicConfig, capability, capabilityState: state || { source: 'unknown', contract_status: 'unknown' }, diagnostics, catalog, selectedPrice, estimatedCostCny,
     configuredGroup: configuredGroup || null, requestedGroup: requestedGroup || null,
     catalogModels: [...new Set(matching.map((item) => item.catalog_model))],
   }
@@ -534,7 +515,7 @@ async function loadGuardedVideoContract(args, video) {
 
 async function generateVideo(args) {
   if (!args.session_id || !args.node_key) throw new Error('视频生成必须绑定 session_id 和 node_key')
-  if (args.confirmed_paid_action !== true || !args.idempotency_key) throw new Error('视频生成需要 confirmed_paid_action=true 和稳定 idempotency_key')
+  if (!args.idempotency_key) throw new Error('视频生成需要稳定 idempotency_key')
   const video = {
     prompt: String(args.prompt || '').trim(), model: String(args.model || '').trim(), provider: String(args.provider || '').trim(),
     video_config_id: Number(args.video_config_id), drama_id: Number(args.drama_id) || 0,
@@ -549,6 +530,7 @@ async function generateVideo(args) {
     contract_validation_mode: args.contract_validation_mode || 'advisory',
   }
   if (!video.prompt) throw new Error('视频生成缺少 prompt')
+  if (!Number.isFinite(video.duration) || video.duration <= 0) throw new Error('视频时长必须为正数')
   if (!video.model || !video.provider || !Number.isInteger(video.video_config_id) || video.video_config_id <= 0) throw new Error('视频生成必须锁定 model、provider 和 video_config_id，避免改配置后仍误用旧模型')
   rejectSecrets(video)
   const requestHash = createHash('sha256').update(JSON.stringify(sanitize({ video, idempotency_key: args.idempotency_key }))).digest('hex')
@@ -558,7 +540,8 @@ async function generateVideo(args) {
   if (existingNode.request_hash === requestHash) {
     return { submitted: false, reused: true, reconciliation_required: true, request_hash: requestHash, node: existingNode }
   }
-  const contract = await loadGuardedVideoContract(args, video)
+  const authorization = await paidAuthorization(args)
+  const contract = await loadGuardedVideoContract(args, video, authorization)
   video.prompt_contract = {
     ...(args.prompt_contract && typeof args.prompt_contract === 'object' ? sanitize(args.prompt_contract) : {}),
     schema: 'yinzi.codex-video-request/v1', orchestration_request_hash: requestHash,
@@ -574,7 +557,7 @@ async function generateVideo(args) {
     decision: {
       paid: true, idempotency_key: args.idempotency_key, provider: video.provider, model: video.model, video_config_id: video.video_config_id,
       configured_group: contract.configuredGroup, requested_group: contract.requestedGroup, pricing_snapshot: pricingSnapshot,
-      capability_snapshot: capabilitySnapshot, maximum_cost_cny: Number(args.max_cost_cny), request: sanitize(video),
+      capability_snapshot: capabilitySnapshot, authorization_source: authorization.source, diagnostics: contract.diagnostics, maximum_cost_cny: args.max_cost_cny ?? null, request: sanitize(video),
     },
   })
   if (!reserve.reserved) return { submitted: false, reused: true, reconciliation_required: true, request_hash: requestHash, node: reserve.node }
@@ -606,7 +589,7 @@ async function generateVideo(args) {
       decision: {
         ...(reserve.node?.decision || {}), paid: true, idempotency_key: args.idempotency_key, provider: video.provider, model: video.model,
         video_config_id: video.video_config_id, configured_group: contract.configuredGroup, requested_group: contract.requestedGroup,
-        pricing_snapshot: pricingSnapshot, capability_snapshot: capabilitySnapshot, maximum_cost_cny: Number(args.max_cost_cny), request: sanitize(video), response_summary: sanitize(result),
+        pricing_snapshot: pricingSnapshot, capability_snapshot: capabilitySnapshot, authorization_source: authorization.source, diagnostics: contract.diagnostics, maximum_cost_cny: args.max_cost_cny ?? null, request: sanitize(video), response_summary: sanitize(result),
       },
     })
     return {
@@ -771,7 +754,7 @@ async function reconcileVideo(args) {
 
 async function generateImage(args) {
   if (!args.session_id || !args.node_key) throw new Error('图片生成必须绑定 session_id 和 node_key')
-  if (args.confirmed_paid_action !== true || !args.idempotency_key) throw new Error('图片生成需要 confirmed_paid_action=true 和稳定 idempotency_key')
+  const authorization = await paidAuthorization(args)
   const image = {
     prompt: String(args.prompt || '').trim(), model: String(args.model || '').trim(), provider: String(args.provider || '').trim(),
     image_service_type: String(args.image_service_type || 'image'), image_config_id: Number(args.image_config_id), drama_id: Number(args.drama_id) || 0,
@@ -865,11 +848,11 @@ async function generateImage(args) {
   const explicitCnyCeiling = Number.isFinite(Number(args.max_unit_price_cny)) ? Number(args.max_unit_price_cny) : null
   const legacyNumericCeiling = Number.isFinite(Number(args.max_unit_price_usd)) ? Number(args.max_unit_price_usd) : null
   const maximumPrice = explicitCnyCeiling ?? legacyNumericCeiling
-  if (!Number.isFinite(maximumPrice)) throw new Error('图片付费请求需要 max_unit_price_cny 或 max_unit_price_usd 授权上限，未提交')
+  if (!Number.isFinite(maximumPrice) && !authorization.unattended) throw new Error('图片付费请求需要 max_unit_price_cny 或 max_unit_price_usd 授权上限，未提交')
   const ceilingBasis = explicitCnyCeiling != null
     ? `${nativeCurrency.toUpperCase()}_explicit`
     : `${nativeCurrency.toUpperCase()}_legacy_numeric_compatibility`
-  if (selectedNativePrice > maximumPrice) {
+  if (maximumPrice != null && selectedNativePrice > maximumPrice) {
     const ceilingLabel = explicitCnyCeiling != null ? `${maximumPrice} CNY` : `${maximumPrice}（旧 USD 字段的兼容数值，不做汇率换算）`
     throw new Error(`实时单价 ${selectedNativePrice} ${nativeCurrency} 超过本次授权上限 ${ceilingLabel}，未提交`)
   }
@@ -932,6 +915,8 @@ async function reconcileImage(args) {
 }
 
 const tools = [
+  { name: 'get_workflow_preferences', description: '读取实时质量档位与持久化挂机模式。', inputSchema: { type: 'object', properties: {} } },
+  { name: 'set_workflow_preferences', description: '更新本机工作流偏好。用户勾选挂机、明确说自己挂机或授权自主花费时，可设置 unattended_mode=true；可随时关闭。保留用户任务范围与预算。', inputSchema: { type: 'object', properties: { unattended_mode: { type: 'boolean' }, quality_profile: { enum: ['quality', 'balanced', 'speed'] } } } },
   { name: 'workflow_health', description: '检查本机银子视频工作流服务是否可用。', inputSchema: { type: 'object', properties: {} } },
   { name: 'open_workflow', description: '启动/打开工作流观察入口，返回已确认的本地运行时、前端地址和首用下一步；不会创建任务或产生费用。', inputSchema: { type: 'object', properties: { open_browser: { type:'boolean', default:true } } } },
   { name: 'list_model_candidates', description: '读取本机已启用的文本、图片或视频模型候选；返回脱敏配置、备注、用途、优先级和可选能力提示。不会测试 Key、不会提交付费请求。', inputSchema: { type: 'object', properties: { service_type: { enum: ['text', 'image', 'storyboard_image', 'video'] } } } },
@@ -952,15 +937,20 @@ const tools = [
   { name: 'blender_cancel_job', description: '取消本地 Blender 作业并保留已经生成的文件；不声称取消任何上游付费任务。', inputSchema: { type: 'object', required: ['session_id', 'job_id'], properties: { session_id: { type: 'string' }, job_id: { type: 'string' }, note: { type: 'string' } } } },
   { name: 'update_node', description: '更新节点输入输出、进度、决策、请求哈希或配置版本，不需要伪造终态。', inputSchema: { type: 'object', required: ['session_id', 'node_key', 'patch'], properties: { session_id: { type: 'string' }, node_key: { type: 'string' }, patch: { type: 'object' } } } },
   { name: 'scan_assets', description: '有界扫描用户明确授权的文件/文件夹，生成哈希化素材清单；可自动写回 asset.scan 节点。', inputSchema: { type: 'object', properties: { path: { type: 'string' }, paths: { type: 'array', items: { type: 'string' } }, session_id: { type: 'string' }, node_key: { type: 'string' }, max_files: { type: 'integer' }, max_bytes: { type: 'integer' }, max_depth: { type: 'integer' }, hash_max_bytes: { type: 'integer' }, include_absolute_paths: { type: 'boolean' }, force: { type: 'boolean' } } } },
-  { name: 'workflow_bridge', description: '受审计地调用既有 production-run/asset-import 执行器。写操作必须绑定节点；付费操作还需要明确确认和幂等键。', inputSchema: { type: 'object', required: ['method', 'path'], properties: { method: { enum: ['GET', 'POST', 'PATCH'] }, path: { type: 'string' }, body: { type: 'object' }, session_id: { type: 'string' }, node_key: { type: 'string' }, paid: { type: 'boolean' }, confirmed_paid_action: { type: 'boolean' }, idempotency_key: { type: 'string' }, reconcile: { type: 'boolean' }, force: { type: 'boolean' }, timeout_ms: { type: 'integer' } } } },
-  { name: 'generate_image_once', description: '按锁定配置和当前实时目录价格只提交一次图片任务；Yinzi 目录优先使用原生 CNY 价格，重复调用只返回恢复要求，不会重复生成。请提供 max_unit_price_cny；旧 max_unit_price_usd 仅作为不汇率换算的兼容数值上限。', inputSchema: { type: 'object', required: ['session_id', 'node_key', 'idempotency_key', 'confirmed_paid_action', 'image_config_id', 'provider', 'model', 'group_name', 'prompt'], properties: { session_id: { type: 'string' }, node_key: { type: 'string' }, idempotency_key: { type: 'string' }, confirmed_paid_action: { type: 'boolean' }, image_config_id: { type: 'integer' }, provider: { type: 'string' }, model: { type: 'string' }, group_name: { type: 'string' }, prompt: { type: 'string' }, size: { type: 'string' }, aspect_ratio: { type: 'string' }, drama_id: { type: 'integer' }, image_service_type: { enum: ['image', 'storyboard_image'] }, reference_images: { type: 'array', items: { type: 'string' } }, negative_prompt: { type: 'string' }, frame_type: { type: 'string' }, max_unit_price_usd: { type: 'number' }, max_unit_price_cny: { type: 'number' }, timeout_ms: { type: 'integer' } } } },
+  { name: 'workflow_bridge', description: '受审计地调用既有 production-run/asset-import 执行器。写操作必须绑定节点；付费操作使用已有授权或挂机模式，并保留幂等键。', inputSchema: { type: 'object', required: ['method', 'path'], properties: { method: { enum: ['GET', 'POST', 'PATCH'] }, path: { type: 'string' }, body: { type: 'object' }, session_id: { type: 'string' }, node_key: { type: 'string' }, paid: { type: 'boolean' }, confirmed_paid_action: { type: 'boolean' }, idempotency_key: { type: 'string' }, reconcile: { type: 'boolean' }, force: { type: 'boolean' }, timeout_ms: { type: 'integer' } } } },
+  { name: 'generate_image_once', description: '按锁定配置和当前实时目录价格只提交一次图片任务；Yinzi 目录优先使用原生 CNY 价格，重复调用只返回恢复要求，不会重复生成。请提供 max_unit_price_cny；旧 max_unit_price_usd 仅作为不汇率换算的兼容数值上限。', inputSchema: { type: 'object', required: ['session_id', 'node_key', 'idempotency_key', 'image_config_id', 'provider', 'model', 'group_name', 'prompt'], properties: { session_id: { type: 'string' }, node_key: { type: 'string' }, idempotency_key: { type: 'string' }, confirmed_paid_action: { type: 'boolean' }, image_config_id: { type: 'integer' }, provider: { type: 'string' }, model: { type: 'string' }, group_name: { type: 'string' }, prompt: { type: 'string' }, size: { type: 'string' }, aspect_ratio: { type: 'string' }, drama_id: { type: 'integer' }, image_service_type: { enum: ['image', 'storyboard_image'] }, reference_images: { type: 'array', items: { type: 'string' } }, negative_prompt: { type: 'string' }, frame_type: { type: 'string' }, max_unit_price_usd: { type: 'number' }, max_unit_price_cny: { type: 'number' }, timeout_ms: { type: 'integer' } } } },
   { name: 'reconcile_image', description: '查询同一图片 generation/task 并将真实终态写回编排节点；没有关联 ID 时保持 uncertain。', inputSchema: { type: 'object', required: ['session_id', 'node_key'], properties: { session_id: { type: 'string' }, node_key: { type: 'string' }, generation_id: { type: ['string', 'integer'] }, task_id: { type: 'string' } } } },
-  { name: 'generate_video_once', description: '按锁定配置、能力合同和实时 CNY 价格只提交一次视频任务；重复或不明确结果只允许对账。', inputSchema: { type: 'object', required: ['session_id', 'node_key', 'idempotency_key', 'confirmed_paid_action', 'video_config_id', 'provider', 'model', 'group_name', 'prompt', 'duration', 'max_cost_cny'], properties: { session_id: { type: 'string' }, node_key: { type: 'string' }, idempotency_key: { type: 'string' }, confirmed_paid_action: { type: 'boolean' }, video_config_id: { type: 'integer' }, provider: { type: 'string' }, model: { type: 'string' }, group_name: { type: 'string' }, prompt: { type: 'string' }, duration: { type: 'number' }, aspect_ratio: { type: 'string' }, resolution: { type: 'string' }, drama_id: { type: 'integer' }, storyboard_id: { type: 'integer' }, image_url: { type: 'string' }, first_frame_url: { type: 'string' }, last_frame_url: { type: 'string' }, reference_image_urls: { type: 'array', items: { type: 'string' } }, reference_video_urls: { type: 'array', items: { type: 'string' } }, reference_audio_urls: { type: 'array', items: { type: 'string' } }, camera_fixed: { type: 'boolean' }, watermark: { type: 'boolean' }, prompt_contract: { type: 'object' }, contract_validation_mode: { enum: ['advisory', 'strict'] }, max_cost_cny: { type: 'number' }, timeout_ms: { type: 'integer' }, catalog_timeout_ms: { type: 'integer' } } } },
+  { name: 'generate_video_once', description: '按用户指定配置只提交一次视频。目录不作为鉴权门槛；已有授权或挂机模式下执行，重复或未知结果只对账。max_cost_cny沿用用户预算；挂机且用户未设限时可省略。', inputSchema: { type: 'object', required: ['session_id', 'node_key', 'idempotency_key', 'video_config_id', 'provider', 'model', 'group_name', 'prompt', 'duration'], properties: { session_id: { type: 'string' }, node_key: { type: 'string' }, idempotency_key: { type: 'string' }, confirmed_paid_action: { type: 'boolean' }, video_config_id: { type: 'integer' }, provider: { type: 'string' }, model: { type: 'string' }, group_name: { type: 'string' }, prompt: { type: 'string' }, duration: { type: 'number' }, aspect_ratio: { type: 'string' }, resolution: { type: 'string' }, drama_id: { type: 'integer' }, storyboard_id: { type: 'integer' }, image_url: { type: 'string' }, first_frame_url: { type: 'string' }, last_frame_url: { type: 'string' }, reference_image_urls: { type: 'array', items: { type: 'string' } }, reference_video_urls: { type: 'array', items: { type: 'string' } }, reference_audio_urls: { type: 'array', items: { type: 'string' } }, camera_fixed: { type: 'boolean' }, watermark: { type: 'boolean' }, prompt_contract: { type: 'object' }, contract_validation_mode: { enum: ['advisory', 'strict'] }, max_cost_cny: { type: 'number' }, timeout_ms: { type: 'integer' }, catalog_timeout_ms: { type: 'integer' } } } },
   { name: 'reconcile_video', description: '查询同一视频 generation/task，区分上游生成与本地下载，并在需要时只恢复下载、绝不重提视频。', inputSchema: { type: 'object', required: ['session_id', 'node_key'], properties: { session_id: { type: 'string' }, node_key: { type: 'string' }, generation_id: { type: ['string', 'integer'] }, task_id: { type: 'string' }, retry_download: { type: 'boolean' }, timeout_ms: { type: 'integer' } } } },
   { name: 'export_audit', description: '导出完整编排任务审计包。', inputSchema: { type: 'object', required: ['session_id'], properties: { session_id: { type: 'string' } } } },
 ]
 
 async function callTool(name, args = {}) {
+  if (name === 'get_workflow_preferences') return api('GET', '/api/v1/creative-preferences')
+  if (name === 'set_workflow_preferences') {
+    rejectSecrets(args)
+    return api('PUT', '/api/v1/creative-preferences', { unattended_mode: args.unattended_mode, quality_profile: args.quality_profile })
+  }
   switch (name) {
     case 'workflow_health': return workflowHealth()
     case 'begin_media_task': {

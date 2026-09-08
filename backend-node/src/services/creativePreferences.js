@@ -6,6 +6,12 @@ const PROFILES = Object.freeze({
   speed: { label: '速度优先', guidance: '优先尽快交付清晰可用的作品。选择最短可行制作路径，复用已有素材、布局和成熟工具；减少非必要方案探索。保留事实核验、基本可读性、音画同步和可播放性检查，直接修复影响使用的缺陷。' },
 });
 function profile(value) { const id = value || 'quality'; if (!PROFILES[id]) throw Object.assign(new Error('质量档位应为 quality、balanced 或 speed'), { code:'QUALITY_PROFILE_INVALID' }); return { id,...PROFILES[id] }; }
-function get(db) { const value=settings.getGlobalSetting(db,KEY,{quality_profile:'quality'}); return { quality_profile: PROFILES[value?.quality_profile] ? value.quality_profile : 'quality' }; }
-function set(db,input={}) { const value={quality_profile:profile(input.quality_profile).id}; settings.setGlobalSetting(db,KEY,value);return value; }
+function get(db) { const value=settings.getGlobalSetting(db,KEY,{quality_profile:'quality'}); return { quality_profile: PROFILES[value?.quality_profile] ? value.quality_profile : 'quality', unattended_mode: value?.unattended_mode === true }; }
+function set(db,input={}) {
+  if (input.unattended_mode !== undefined && typeof input.unattended_mode !== 'boolean') throw Object.assign(new Error('挂机模式必须为 true 或 false'), { code:'UNATTENDED_MODE_INVALID' });
+  const value={...get(db)};
+  if (input.quality_profile !== undefined) value.quality_profile=profile(input.quality_profile).id;
+  if (input.unattended_mode !== undefined) value.unattended_mode=input.unattended_mode;
+  settings.setGlobalSetting(db,KEY,value);return value;
+}
 module.exports={KEY,PROFILES,profile,get,set};

@@ -63,6 +63,9 @@ function profileSettings(kind, distributionProfile = 'universal') {
 
 function definitions(input = {}) {
   const baseUrl = normalizeImageYinziBaseUrl(input.base_url);
+  const textBaseUrl = normalizeYinziBaseUrl(input.text_base_url || baseUrl);
+  const imageBaseUrl = normalizeImageYinziBaseUrl(input.image_base_url || baseUrl);
+  const videoBaseUrl = normalizeImageYinziBaseUrl(input.video_base_url || baseUrl);
   const textKey = key(input.text_api_key, '文本');
   const imageKey = key(input.image_api_key, '图片');
   const videoKey = key(input.video_api_key, '视频');
@@ -79,10 +82,10 @@ function definitions(input = {}) {
   const existingDefaults = input.existing_defaults || {};
   const defaultFlag = (type) => existingDefaults[type] ? false : input.set_default !== false;
   return [
-    { service_type: 'text', name: '银子媒体站 文本', provider: 'yinzi', api_protocol: 'openai', base_url: baseUrl, api_key: textKey, model: modelLists.text, default_model: textModel, endpoint: '/chat/completions', query_endpoint: '', priority: 95, is_default: defaultFlag('text'), settings: JSON.stringify(profileSettings('text', distributionProfile)) },
-    { service_type: 'image', name: '银子媒体站 图片', provider: 'yinzi', api_protocol: 'openai', base_url: baseUrl, api_key: imageKey, model: modelLists.image, default_model: imageModel, endpoint: '/images/generations', query_endpoint: '', priority: 95, is_default: defaultFlag('image'), settings: JSON.stringify(profileSettings('image', distributionProfile)) },
-    { service_type: 'storyboard_image', name: '银子媒体站 分镜图', provider: 'yinzi', api_protocol: 'openai', base_url: baseUrl, api_key: imageKey, model: modelLists.image, default_model: imageModel, endpoint: '/images/generations', query_endpoint: '', priority: 95, is_default: defaultFlag('storyboard_image'), settings: JSON.stringify(profileSettings('image', distributionProfile)) },
-    { service_type: 'video', name: '银子媒体站 视频', provider: 'yinzi', api_protocol: 'yinzi', base_url: baseUrl, api_key: videoKey, model: modelLists.video, default_model: videoModel, endpoint: '/videos', query_endpoint: '/videos/{taskId}', priority: 95, is_default: defaultFlag('video'), settings: JSON.stringify(profileSettings('video', distributionProfile)) },
+    { service_type: 'text', name: '银子媒体站 文本', provider: 'yinzi', api_protocol: 'openai', base_url: textBaseUrl, api_key: textKey, model: modelLists.text, default_model: textModel, endpoint: '/chat/completions', query_endpoint: '', priority: 95, is_default: defaultFlag('text'), settings: JSON.stringify(profileSettings('text', distributionProfile)) },
+    { service_type: 'image', name: '银子媒体站 图片', provider: 'yinzi', api_protocol: 'openai', base_url: imageBaseUrl, api_key: imageKey, model: modelLists.image, default_model: imageModel, endpoint: '/images/generations', query_endpoint: '', priority: 95, is_default: defaultFlag('image'), settings: JSON.stringify(profileSettings('image', distributionProfile)) },
+    { service_type: 'storyboard_image', name: '银子媒体站 分镜图', provider: 'yinzi', api_protocol: 'openai', base_url: imageBaseUrl, api_key: imageKey, model: modelLists.image, default_model: imageModel, endpoint: '/images/generations', query_endpoint: '', priority: 95, is_default: defaultFlag('storyboard_image'), settings: JSON.stringify(profileSettings('image', distributionProfile)) },
+    { service_type: 'video', name: '银子媒体站 视频', provider: 'yinzi', api_protocol: 'yinzi', base_url: videoBaseUrl, api_key: videoKey, model: modelLists.video, default_model: videoModel, endpoint: '/videos', query_endpoint: '/videos/{taskId}', priority: 95, is_default: defaultFlag('video'), settings: JSON.stringify(profileSettings('video', distributionProfile)) },
   ];
 }
 
@@ -112,6 +115,9 @@ function setup(db, log, input = {}) {
     profile: IMAGE_YINZI_PROFILE,
     distribution_profile: resolveDistributionProfile(input),
     base_url: defs[0].base_url,
+    text_base_url: defs.find((item) => item.service_type === 'text')?.base_url || '',
+    image_base_url: defs.find((item) => item.service_type === 'image')?.base_url || '',
+    video_base_url: defs.find((item) => item.service_type === 'video')?.base_url || '',
     routing_mode: 'group',
     smart_routing: false,
     price_snapshot: PRICE_SNAPSHOT,

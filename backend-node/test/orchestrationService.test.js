@@ -289,6 +289,26 @@ describe('Codex orchestration service', () => {
     assert.equal(result.bundle.session.status,'partial');assert.equal(result.bundle.nodes[0].status,'failed');
     assert.equal(service.completeSession(session.id).reused,true);
   });
+  it('persists unattended preference, preserves quality, and honors explicit waiting and analysis intent', () => {
+    const preferences = require('../src/services/creativePreferences');
+    assert.equal(preferences.get(db).unattended_mode, false);
+    preferences.set(db, { quality_profile: 'speed' });
+    preferences.set(db, { unattended_mode: true });
+    assert.deepEqual(preferences.get(db), { quality_profile: 'speed', unattended_mode: true });
+    preferences.set(db, { quality_profile: 'balanced' });
+    assert.equal(preferences.get(db).unattended_mode, true);
+    assert.throws(() => preferences.set(db, { unattended_mode: 'false' }), { code: 'UNATTENDED_MODE_INVALID' });
+    const created = service.beginWork({ idempotency_key: 'afk-create', user_goal: '做视频', intent: 'create' });
+    assert.equal(created.creative_preferences.unattended_mode, true);
+    const nodes = [{ node_key: 'work', module_id: 'manual.override' }];
+    assert.equal(service.submitPlan(created.session.id, { nodes }).session.status, 'planned');
+    assert.equal(service.submitPlan(created.session.id, { nodes, confirm: false }).session.status, 'waiting_confirmation');
+    const analysis = service.beginWork({ idempotency_key: 'afk-analysis', user_goal: '只分析', intent: 'analyze' });
+    assert.equal(service.submitPlan(analysis.session.id, { nodes }).session.status, 'waiting_confirmation');
+    preferences.set(db, { unattended_mode: false });
+    assert.equal(service.getBundle(created.session.id).creative_preferences.unattended_mode, false);
+    assert.equal(service.submitPlan(created.session.id, { nodes }).session.status, 'waiting_confirmation');
+  });
   it('captures quality preference for each session and exposes actionable planning guidance', () => {
     const preferences=require('../src/services/creativePreferences');
     const first=service.createSession({user_goal:'精致视频'}).session;

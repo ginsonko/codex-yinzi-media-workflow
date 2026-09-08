@@ -32,7 +32,7 @@ Codex may diagnose missing protocol support or inadequate code and propose a cha
 
 ```text
 evidence -> diagnosis -> scoped plan -> rollback anchor -> patch proposal
-         -> isolated fixtures/tests -> adversarial review -> user confirmation
+         -> isolated fixtures/tests -> adversarial review -> scope check
          -> apply -> focused/full regression -> runtime readback
 ```
 
@@ -40,4 +40,4 @@ Proposal and sandbox success are not deployment. Never automatically change prod
 
 ## Cost boundary
 
-Before each newly authorized paid batch, read current model/config, capability, unit price, quantity, duration/size, maximum exposure, and budget balance. Submit once with an idempotency key. If those facts drift after confirmation, stop and re-confirm rather than silently using a more expensive or different model.
+Use the user's current task, selected model and spending instructions. Follow the main Skill's unattended preference and existing-authorization rules. Preserve an explicit budget ceiling and record available price estimates with their source; missing metadata is not proof that a model is unusable. Submit once with an idempotency key and reconcile uncertain outcomes. A meaningful change outside the user's authorization requires a new decision; routine progress within it does not.

@@ -149,6 +149,8 @@ async function request(method, path, body) {
 
 const pos = positional()
 const routes = {
+  preferences: ['GET', '/api/v1/creative-preferences'],
+  'set-preferences': ['PUT', '/api/v1/creative-preferences'],
   begin: ['POST', '/api/v1/orchestration-sessions/begin'],
   update: ['PATCH', `/api/v1/orchestration-sessions/${encodeURIComponent(pos[0] || '')}`],
   activity: ['POST', `/api/v1/orchestration-sessions/${encodeURIComponent(pos[0] || '')}/activity`],
@@ -171,7 +173,7 @@ const routes = {
 }
 
 if (command === 'help' || !routes[command]) {
-  process.stdout.write(`Usage: node scripts/orchestration-cli.mjs <command> [session-id] [node-key] [--input file]\nCommands: begin activity event health modules sessions get export create plan confirm start node retry pause resume checkpoint\n`)
+  process.stdout.write(`Usage: node scripts/orchestration-cli.mjs <command> [session-id] [node-key] [--input file]\nCommands: preferences set-preferences begin activity event health modules sessions get export create plan confirm start node retry pause resume checkpoint\n`)
   process.exit(command === 'help' ? 0 : 1)
 }
 

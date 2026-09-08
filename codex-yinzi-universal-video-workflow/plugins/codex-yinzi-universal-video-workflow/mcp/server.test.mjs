@@ -15,6 +15,7 @@ let state
 function resetState(overrides = {}) {
   state = {
     imageSubmissions: 0,
+    preferences: { quality_profile: 'quality', unattended_mode: false },
     videoSubmissions: 0,
     patches: [],
     actions: [],
@@ -54,6 +55,10 @@ before(async () => {
   apiServer = http.createServer(async (req, res) => {
     const url = new URL(req.url, 'http://127.0.0.1')
     const body = await readBody(req)
+    if (url.pathname === '/api/v1/creative-preferences') {
+      if (req.method === 'PUT') state.preferences = { ...state.preferences, ...body }
+      return json(res, 200, { success: true, data: state.preferences })
+    }
     if (req.method === 'GET' && url.pathname === '/') { res.writeHead(200,{'content-type':'text/html'});return res.end('<div id="app"></div><script src="/assets/app.js"></script>') }
     if (req.method === 'GET' && url.pathname === '/assets/app.js') { res.writeHead(200,{'content-type':'application/javascript'});return res.end('export default 1') }
     if (req.method === 'GET' && url.pathname === '/health') {
@@ -553,7 +558,6 @@ test('unconfirmed video generation and invalid locked configs stop before reserv
     { patch: { model: ['other'], default_model: 'other' }, expected: /不包含请求视频模型/ },
     { patch: { is_active: false }, expected: /未启用/ },
     { patch: { has_api_key: false }, expected: /没有已保存凭据/ },
-    { patch: { api_protocol: 'openai-video' }, expected: /协议不是 yinzi/ },
   ]
   for (const scenario of scenarios) {
     resetState({ nodeKey: 'video' })
@@ -571,7 +575,6 @@ test('unconfirmed video generation and invalid locked configs stop before reserv
 
 test('video capability, duration, resolution, reference count, and prompt limits are enforced before paid submission', async () => {
   const scenarios = [
-    { mutate: () => { state.videoCapabilities.models[0].contract_status = 'missing'; state.videoCapabilities.models[0].capability = null }, expected: /没有可验证能力合同/ },
     { args: { duration: 15 }, expected: /请求时长 15 秒不符合/ },
     { args: { resolution: '1080p' }, expected: /分辨率/ },
     { args: { reference_image_urls: Array.from({ length: 31 }, (_, index) => `https:\/\/example.invalid\/${index}.png`) }, expected: /图片数量 31/ },
@@ -582,7 +585,7 @@ test('video capability, duration, resolution, reference count, and prompt limits
     scenario.mutate?.()
     const client = makeClient()
     try {
-      const result = await client.call('generate_video_once', videoArgs(scenario.args))
+      const result = await client.call('generate_video_once', videoArgs({ contract_validation_mode: 'strict', ...scenario.args }))
       assert.equal(result.isError, true)
       assert.match(result.data.message, scenario.expected)
       assert.equal(state.videoSubmissions, 0)
@@ -614,7 +617,7 @@ test('video price must use a proven exact capability-family alias and remain wit
   }
 })
 
-test('guarded video preflight requires a no-persist key-scoped video offer before reservation', async () => {
+test('empty, misleading, and failed discovery cannot veto the user selected video model', async () => {
   const scenarios = [
     {
       mutate: () => { state.modelDiscovery.catalog.video = [] },
@@ -639,17 +642,17 @@ test('guarded video preflight requires a no-persist key-scoped video offer befor
     const client = makeClient()
     try {
       const result = await client.call('generate_video_once', videoArgs())
-      assert.equal(result.isError, true)
-      assert.match(result.data.message, scenario.expected)
-      assert.equal(state.reservedHash, null)
-      assert.equal(state.videoSubmissions, 0)
-      assert.equal(state.modelDiscoveryCalls.length, 1)
-      assert.deepEqual(state.modelDiscoveryCalls[0], { config_id: 12, service_type: 'video', persist_snapshot: false })
+      assert.equal(result.isError, false, JSON.stringify(result.data))
+      assert.equal(state.videoSubmissions, 1)
+      assert.equal(state.lastVideoBody.model, 'seedance-2.5-720p')
+      assert.equal(state.modelDiscoveryCalls.length, 0)
+      await client.call('generate_video_once', videoArgs())
+      assert.equal(state.videoSubmissions, 1)
     } finally { client.close() }
   }
 })
 
-test('guarded video preflight accepts an exact key-scoped capability alias', async () => {
+test('video uses the selected model independently of discovery aliases', async () => {
   resetState({ nodeKey: 'video' })
   state.modelDiscovery.catalog.video[0].model = 'provider-seedance-25-alias'
   const client = makeClient()
@@ -657,7 +660,46 @@ test('guarded video preflight accepts an exact key-scoped capability alias', asy
     const result = await client.call('generate_video_once', videoArgs())
     assert.equal(result.isError, false)
     assert.equal(result.data.submitted, true)
-    assert.equal(state.modelDiscoveryCalls.length, 1)
+    assert.equal(state.modelDiscoveryCalls.length, 0)
+    assert.equal(state.videoSubmissions, 1)
+  } finally { client.close() }
+})
+
+test('unattended mode enables one submission without per-call confirmation, and disabling affects new work', async () => {
+  resetState({ nodeKey: 'video' })
+  const client = makeClient()
+  try {
+    assert.equal((await client.call('get_workflow_preferences', {})).data.unattended_mode, false)
+    await client.call('set_workflow_preferences', { unattended_mode: true })
+    state.videoCapabilities.models = []
+    state.yinziCatalog.video = []
+    const args = videoArgs({ confirmed_paid_action: undefined, max_cost_cny: undefined })
+    const first = await client.call('generate_video_once', args)
+    assert.equal(first.isError, false, JSON.stringify(first.data))
+    assert.equal(first.data.estimated_cost_cny, null)
+    assert.equal(state.videoSubmissions, 1)
+    await client.call('set_workflow_preferences', { unattended_mode: false })
+    const duplicate = await client.call('generate_video_once', args)
+    assert.equal(duplicate.data.reconciliation_required, true)
+    const next = await client.call('generate_video_once', { ...args, idempotency_key: 'new-work', prompt: 'new work' })
+    assert.equal(next.isError, true)
+    assert.match(next.data.message, /confirmed_paid_action/)
+    assert.equal(state.videoSubmissions, 1)
+  } finally { client.close() }
+})
+
+test('unattended mode preserves an explicit cost ceiling and uncertain submissions', async () => {
+  resetState({ nodeKey: 'video', preferences: { unattended_mode: true } })
+  const client = makeClient()
+  try {
+    const over = await client.call('generate_video_once', videoArgs({ confirmed_paid_action: undefined, max_cost_cny: 1 }))
+    assert.equal(over.isError, true)
+    assert.equal(state.videoSubmissions, 0)
+    state.videoCreateError = { status: 504, message: 'timeout' }
+    const args = videoArgs({ confirmed_paid_action: undefined, max_cost_cny: undefined })
+    assert.equal((await client.call('generate_video_once', args)).isError, true)
+    assert.equal(state.videoSubmissions, 1)
+    assert.equal((await client.call('generate_video_once', args)).data.reconciliation_required, true)
     assert.equal(state.videoSubmissions, 1)
   } finally { client.close() }
 })

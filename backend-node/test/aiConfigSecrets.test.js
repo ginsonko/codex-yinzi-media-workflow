@@ -322,6 +322,116 @@ describe('AI config secret boundaries', () => {
     }
   });
 
+  it('retries bounded transient catalog failures and reports the verified attempt count', async () => {
+    let calls = 0;
+    const result = await aiConfigService.discoverModels({
+      id: 9, provider: 'yinzi', base_url: 'https://api.example/v1', api_key: 'private-value',
+    }, {
+      retry_delay_ms: 0,
+      retry_attempts: 3,
+      timeout_ms: 1000,
+      fetchImpl: async () => {
+        calls += 1;
+        if (calls < 3) return { status: 503, ok: false, async json() { return {}; } };
+        return { status: 200, ok: true, async json() { return { data: [{ id: 'Seedance 2.5-720', endpoint_types: ['openai-video'] }] }; } };
+      },
+    });
+    assert.equal(calls, 3);
+    assert.equal(result.attempts, 3);
+    assert.equal(result.discovery_status, 'verified');
+    assert.equal(result.models[0].model, 'Seedance 2.5-720');
+  });
+
+  it('does not retry authentication failures and preserves a configured model as manual-only', async () => {
+    let calls = 0;
+    await assert.rejects(() => aiConfigService.discoverModels({
+      provider: 'yinzi', base_url: 'https://api.example/v1', api_key: 'private-value',
+    }, {
+      retry_delay_ms: 0,
+      fetchImpl: async () => { calls += 1; return { status: 401, ok: false, async json() { return {}; } }; },
+    }), (error) => error.code === 'MODEL_DISCOVERY_AUTH_FAILED' && error.attempts === 1);
+    assert.equal(calls, 1);
+
+    const fallback = aiConfigService.buildDiscoveryFallback({
+      id: 2, provider: 'yinzi', service_type: 'video', base_url: 'https://api.example/v1',
+      model: ['Seedance 2.5-720'], default_model: 'Seedance 2.5-720',
+    }, Object.assign(new Error('模型目录鉴权失败 (401)'), { code: 'MODEL_DISCOVERY_AUTH_FAILED', status: 401, attempts: 1 }), { service_type: 'video' });
+    const merged = aiConfigService.mergeDiscoveredCatalog(fallback, null, { provider: 'yinzi', service_type: 'video' });
+    assert.equal(merged.video[0].model, 'Seedance 2.5-720');
+    assert.equal(merged.video[0].manual_only, true);
+    assert.equal(merged.video[0].automatic_eligible, false);
+    assert.equal(merged.video[0].credential_verified, false);
+  });
+
+  it('classifies network, timeout, and missing-endpoint failures without leaking credentials', async () => {
+    await assert.rejects(() => aiConfigService.discoverModels({ base_url: 'https://api.example/v1', api_key: 'private-value' }, {
+      retry_delay_ms: 0,
+      retry_attempts: 2,
+      fetchImpl: async () => { throw new Error('socket refused'); },
+    }), (error) => error.code === 'MODEL_DISCOVERY_NETWORK_ERROR' && error.attempts === 2 && !error.message.includes('private-value'));
+    await assert.rejects(() => aiConfigService.discoverModels({ base_url: 'https://api.example/v1', api_key: 'private-value' }, {
+      retry_delay_ms: 0,
+      retry_attempts: 1,
+      timeout_ms: 500,
+      fetchImpl: () => new Promise(() => {}),
+    }), (error) => error.code === 'MODEL_DISCOVERY_TIMEOUT' && error.attempts === 1);
+    await assert.rejects(() => aiConfigService.discoverModels({ base_url: 'https://api.example/v1', api_key: 'private-value' }, {
+      retry_delay_ms: 0,
+      fetchImpl: async () => ({ status: 404, ok: false, async json() { return {}; } }),
+    }), (error) => error.code === 'MODEL_DISCOVERY_ENDPOINT_NOT_FOUND' && error.status === 404 && error.attempts === 1);
+  });
+
+  it('returns a partial manual catalog from the route instead of erasing the saved model', async () => {
+    const db = createDb();
+    const created = aiConfigService.createConfig(db, log, {
+      service_type: 'video', provider: 'yinzi', name: 'Partial video',
+      base_url: 'https://api.example/v1', api_key: 'private-value', model: ['Seedance 2.5-720'],
+      default_model: 'Seedance 2.5-720',
+    });
+    const originalFetch = global.fetch;
+    global.fetch = async () => ({ status: 401, ok: false, async json() { return {}; } });
+    try {
+      const res = captureResponse();
+      await createAiConfigRoutes(db, log, {}).discoverModels({ body: { config_id: created.id, service_type: 'video' } }, res);
+      assert.equal(res.statusCode, 200);
+      assert.equal(res.body.success, true);
+      assert.equal(res.body.data.diagnostic.code, 'MODEL_DISCOVERY_AUTH_FAILED');
+      assert.equal(res.body.data.catalog.video[0].model, 'Seedance 2.5-720');
+      assert.equal(res.body.data.catalog.video[0].manual_only, true);
+      assert.equal(res.body.data.catalog.video[0].automatic_eligible, false);
+    } finally {
+      global.fetch = originalFetch;
+    }
+  });
+
+  it('keeps independent URLs for each Yinzi service in one-click setup definitions', () => {
+    const defs = require('../src/services/yinziService').yinziConfigDefinitions({
+      base_url: 'https://api.yinziapi.top/v1',
+      text_base_url: 'https://text.example/v1',
+      image_base_url: 'https://image.example/v1',
+      video_base_url: 'https://video.example/v1',
+      api_key: 'universal', text_api_key: 'text', image_api_key: 'image', video_api_key: 'video',
+      text_model: 'text-model', image_model: 'image-model', video_model: 'video-model',
+    });
+    assert.equal(defs.find((item) => item.service_type === 'text').base_url, 'https://text.example/v1');
+    assert.equal(defs.find((item) => item.service_type === 'image').base_url, 'https://image.example/v1');
+    assert.equal(defs.find((item) => item.service_type === 'video').base_url, 'https://video.example/v1');
+    assert.equal(defs.find((item) => item.service_type === 'text').api_key, 'text');
+    assert.equal(defs.find((item) => item.service_type === 'video').api_key, 'video');
+  });
+
+  it('keeps an independent text URL for the media-site one-click setup', () => {
+    const defs = require('../src/services/yinziImageSiteService').definitions({
+      base_url: 'https://image.yinziapi.top/v1',
+      text_base_url: 'https://text.example/v1',
+      image_base_url: 'https://image.yinziapi.top/v1',
+      video_base_url: 'https://image.yinziapi.top/v1',
+      text_api_key: 'text', image_api_key: 'image', video_api_key: 'video',
+    });
+    assert.equal(defs.find((item) => item.service_type === 'text').base_url, 'https://text.example/v1');
+    assert.equal(defs.find((item) => item.service_type === 'image').base_url, 'https://image.yinziapi.top/v1');
+  });
+
   it('merges discovered Yinzi models with only matching public prices and local known capabilities', () => {
     const merged = aiConfigService.mergeDiscoveredCatalog({
       availability_scope: 'credential',

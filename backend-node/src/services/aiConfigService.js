@@ -965,56 +965,153 @@ async function discoverModels(opts = {}, options = {}) {
   const catalogPath = normalizeCatalogPath(options.catalog_path || opts.catalog_path || opts.settings?.model_catalog_path);
   const url = `${base}${catalogPath}`;
   const fetchImpl = options.fetchImpl || fetch;
+  const maxAttempts = Math.max(1, Math.min(3, Number(options.retry_attempts || 3)));
+  const timeoutMs = Math.max(500, Math.min(15000, Number(options.timeout_ms || 8000)));
+  const retryDelayMs = Math.max(0, Math.min(1000, Number(options.retry_delay_ms ?? 180)));
   let response;
-  try {
-    response = await fetchImpl(url, {
-      method: 'GET',
-      headers: { Authorization: `Bearer ${apiKey}`, Accept: 'application/json' },
-    });
-  } catch (error) {
-    const wrapped = new Error(`模型目录请求失败：${error.message}`);
-    wrapped.code = 'MODEL_DISCOVERY_NETWORK_ERROR';
-    throw wrapped;
+  let lastError = null;
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    const controller = typeof AbortController === 'function' ? new AbortController() : null;
+    let timer = null;
+    try {
+      const request = Promise.resolve(fetchImpl(url, {
+        method: 'GET',
+        headers: { Authorization: `Bearer ${apiKey}`, Accept: 'application/json' },
+        ...(controller ? { signal: controller.signal } : {}),
+      })).then(async (result) => {
+        let payload = null;
+        if (result.ok) {
+          try { payload = await result.json(); }
+          catch (cause) { throw Object.assign(new Error('模型目录返回格式无法解析'), { code: 'MODEL_DISCOVERY_INVALID_RESPONSE', status: result.status, attempts: attempt, cause }); }
+        }
+        return { response: result, payload };
+      });
+      const timed = new Promise((resolve, reject) => {
+        timer = setTimeout(() => {
+          controller?.abort();
+          const timeout = new Error(`模型目录请求超时（${timeoutMs}ms）`);
+          timeout.code = 'MODEL_DISCOVERY_TIMEOUT';
+          reject(timeout);
+        }, timeoutMs);
+        Promise.resolve(request).then(resolve, reject);
+      });
+      const received = await timed;
+      response = received.response;
+      if (timer) clearTimeout(timer);
+      if (response.status === 401 || response.status === 403) {
+        const error = new Error(`模型目录鉴权失败 (${response.status})`);
+        error.code = 'MODEL_DISCOVERY_AUTH_FAILED';
+        error.status = response.status;
+        error.attempts = attempt;
+        throw error;
+      }
+      if (response.status === 404 || response.status === 405) {
+        const error = new Error(`模型目录端点不存在：${catalogPath}`);
+        error.code = 'MODEL_DISCOVERY_ENDPOINT_NOT_FOUND';
+        error.status = response.status;
+        error.attempts = attempt;
+        throw error;
+      }
+      if (!response.ok) {
+        const error = new Error(`模型目录返回 HTTP ${response.status}`);
+        error.code = response.status >= 500 ? 'MODEL_DISCOVERY_UPSTREAM_ERROR' : 'MODEL_DISCOVERY_HTTP_ERROR';
+        error.status = response.status;
+        error.attempts = attempt;
+        if (response.status < 500 || attempt >= maxAttempts) throw error;
+        lastError = error;
+      } else {
+        const payload = received.payload;
+        const models = extractCatalogEntries(payload);
+        const fetchedAt = new Date().toISOString();
+        const snapshot = {
+          version: 1,
+          config_id: Number.isSafeInteger(Number(opts.id)) ? Number(opts.id) : null,
+          source_url: url,
+          availability_scope: 'credential',
+          scope_verified: String(opts.provider || '').toLowerCase() === 'yinzi',
+          fetched_at: fetchedAt,
+          models: models.map(({ model, name, endpoint_types, owned_by }) => ({ model, name, endpoint_types, owned_by })),
+        };
+        snapshot.content_hash = crypto.createHash('sha256').update(JSON.stringify(snapshot)).digest('hex');
+        const snapshotPersisted = options.persist_snapshot !== false && Boolean(options.db);
+        if (snapshotPersisted) persistModelCatalogSnapshot(options.db, opts.id, snapshot);
+        return {
+          models,
+          snapshot,
+          source_url: url,
+          availability_scope: snapshot.availability_scope,
+          snapshot_persisted: snapshotPersisted,
+          discovery_status: 'verified',
+          attempts: attempt,
+        };
+      }
+    } catch (error) {
+      if (timer) clearTimeout(timer);
+      if (error?.code === 'MODEL_DISCOVERY_AUTH_FAILED'
+        || error?.code === 'MODEL_DISCOVERY_ENDPOINT_NOT_FOUND'
+        || error?.code === 'MODEL_DISCOVERY_HTTP_ERROR'
+        || error?.code === 'MODEL_DISCOVERY_INVALID_RESPONSE'
+        || (error?.code === 'MODEL_DISCOVERY_UPSTREAM_ERROR' && attempt >= maxAttempts)) throw error;
+      lastError = error;
+      if (attempt >= maxAttempts) {
+        const wrapped = new Error(error?.code === 'MODEL_DISCOVERY_TIMEOUT'
+          ? error.message
+          : `模型目录请求失败：${error?.message || '网络错误'}`);
+        wrapped.code = error?.code === 'MODEL_DISCOVERY_TIMEOUT'
+          ? 'MODEL_DISCOVERY_TIMEOUT' : 'MODEL_DISCOVERY_NETWORK_ERROR';
+        wrapped.attempts = attempt;
+        throw wrapped;
+      }
+    }
+    if (attempt < maxAttempts && retryDelayMs) await new Promise((resolve) => setTimeout(resolve, retryDelayMs));
   }
-  if (response.status === 401 || response.status === 403) {
-    const error = new Error(`模型目录鉴权失败 (${response.status})`);
-    error.code = 'MODEL_DISCOVERY_AUTH_FAILED';
-    error.status = response.status;
-    throw error;
-  }
-  if (response.status === 404 || response.status === 405) {
-    const error = new Error(`模型目录端点不存在：${catalogPath}`);
-    error.code = 'MODEL_DISCOVERY_ENDPOINT_NOT_FOUND';
-    error.status = response.status;
-    throw error;
-  }
-  if (!response.ok) {
-    const error = new Error(`模型目录返回 HTTP ${response.status}`);
-    error.code = 'MODEL_DISCOVERY_HTTP_ERROR';
-    error.status = response.status;
-    throw error;
-  }
-  const payload = await response.json().catch(() => ({}));
-  const models = extractCatalogEntries(payload);
-  const fetchedAt = new Date().toISOString();
+  throw lastError || Object.assign(new Error('模型目录请求失败'), { code: 'MODEL_DISCOVERY_NETWORK_ERROR' });
+}
+
+function buildDiscoveryFallback(opts = {}, error, options = {}) {
+  const serviceType = String(options.service_type || opts.service_type || 'video').trim() || 'video';
+  const configured = [
+    ...(Array.isArray(opts.model) ? opts.model : [opts.model]),
+    opts.default_model,
+    options.fallback_model,
+  ].map((item) => String(item || '').trim()).filter(Boolean);
+  const seen = new Set();
+  const models = configured.filter((model) => {
+    const key = model.toLowerCase();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  }).map((model) => ({
+    model,
+    name: model,
+    endpoint_types: serviceType === 'video' ? ['openai-video'] : serviceType === 'image' || serviceType === 'storyboard_image' ? ['image-generation'] : ['openai'],
+    owned_by: null,
+    manual_only: true,
+  }));
+  const diagnostic = {
+    code: error?.code || 'MODEL_DISCOVERY_FAILED',
+    status: Number.isFinite(Number(error?.status)) ? Number(error.status) : null,
+    message: String(error?.message || '模型目录暂时不可用').slice(0, 800),
+    attempts: Number(error?.attempts || 0),
+  };
   const snapshot = {
     version: 1,
     config_id: Number.isSafeInteger(Number(opts.id)) ? Number(opts.id) : null,
-    source_url: url,
+    source_url: `${String(opts.base_url || '').replace(/\/$/, '')}/models`,
     availability_scope: 'credential',
-    scope_verified: String(opts.provider || '').toLowerCase() === 'yinzi',
-    fetched_at: fetchedAt,
-    models: models.map(({ model, name, endpoint_types, owned_by }) => ({ model, name, endpoint_types, owned_by })),
+    scope_verified: false,
+    fetched_at: new Date().toISOString(),
+    models: models.map(({ model, name, endpoint_types }) => ({ model, name, endpoint_types })),
   };
-  snapshot.content_hash = crypto.createHash('sha256').update(JSON.stringify(snapshot)).digest('hex');
-  const snapshotPersisted = options.persist_snapshot !== false && Boolean(options.db);
-  if (snapshotPersisted) persistModelCatalogSnapshot(options.db, opts.id, snapshot);
   return {
     models,
     snapshot,
-    source_url: url,
-    availability_scope: snapshot.availability_scope,
-    snapshot_persisted: snapshotPersisted,
+    source_url: snapshot.source_url,
+    availability_scope: 'credential',
+    snapshot_persisted: false,
+    discovery_status: 'fallback',
+    partial: true,
+    diagnostic,
   };
 }
 
@@ -1024,6 +1121,7 @@ function mergeDiscoveredCatalog(discovery, pricingCatalog, options = {}) {
   const serviceType = String(options.service_type || 'video').trim() || 'video';
   const provider = String(options.provider || '').trim().toLowerCase();
   const smartRouting = provider === 'yinzi' && options.smart_routing === true;
+  const discoveryFallback = discovery?.partial === true || discovery?.discovery_status === 'fallback';
   const endpointTypes = (entry) => [...new Set((Array.isArray(entry?.endpoint_types)
     ? entry.endpoint_types : Array.isArray(entry?.supported_endpoint_types)
       ? entry.supported_endpoint_types : [])
@@ -1121,16 +1219,17 @@ function mergeDiscoveredCatalog(discovery, pricingCatalog, options = {}) {
         : localOverride ? 'local' : builtinCapability ? 'builtin' : 'unknown'),
       contract_status: contractItem?.contract_status || publicItem?.contract_status || (builtinCapability ? 'known' : localOverride ? 'local' : 'missing'),
       local_capability_override: localOverride || null,
-      automatic_eligible: capability?.automatic_eligible === true,
+      automatic_eligible: !discoveryFallback && capability?.automatic_eligible === true,
       availability_scope: discovery?.availability_scope || 'credential',
       scope_verified: discovery?.snapshot?.scope_verified === true,
-      credential_verified: discovery?.snapshot?.scope_verified === true,
-      smart_routing_candidate: smartRouting,
+      credential_verified: !discoveryFallback && discovery?.snapshot?.scope_verified === true,
+      smart_routing_candidate: !discoveryFallback && smartRouting,
       public_catalog: Boolean(publicItem),
-      manual_only: false,
+      manual_only: discoveryFallback,
+      discovery_diagnostic: discovery?.diagnostic || null,
       catalog_source: discovery?.source_url || null,
       provider,
-      catalog_verified: capabilityCatalogVerified,
+      catalog_verified: !discoveryFallback && capabilityCatalogVerified,
     };
   });
   if (provider === 'yinzi' && serviceType === 'video' && options.include_public_catalog === true) {
@@ -1345,6 +1444,7 @@ module.exports = {
   deleteConfig,
   testConnection,
   discoverModels,
+  buildDiscoveryFallback,
   mergeDiscoveredCatalog,
   resolveConnectionTestConfig,
   redactConnectionTestError,
