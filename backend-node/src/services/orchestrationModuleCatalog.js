@@ -56,6 +56,15 @@ const MODULES = Object.freeze([
   moduleContract('copy.generate', 'V2', 'create', 'codex', 'bridge', 'Create script, voiceover, subtitles or CTA grounded in confirmed facts.', ['fact_sheet', 'creative_direction'], ['copy_assets']),
   moduleContract('qa.claim-trace', 'V2', 'qa', 'codex', 'bridge', 'Check that product claims, figures and citations trace back to evidence.', ['fact_sheet', 'deliverable'], ['qa_receipt']),
 
+  // V3 - local-first identity and commerce helpers. These contracts expose
+  // capability choices before an executor is installed; unknown availability
+  // remains visible and can be fulfilled by a lazy local component later.
+  moduleContract('video.character-replace-local', 'V3', 'edit', 'local', 'advisory', 'Replace a visible character while preserving the source video motion, camera and background where the material supports it; a verified local component is required before execution.', ['source_video', 'character_reference', 'target_subject'], ['video_asset', 'quality_receipt'], { filesystem_write: true }),
+  moduleContract('video.identity-repair-local', 'V3', 'edit', 'local', 'advisory', 'Repair face and identity drift in a generated video without regenerating the whole scene; a verified local component is required before execution.', ['video_asset', 'character_reference'], ['video_asset', 'quality_receipt'], { filesystem_write: true }),
+  moduleContract('video.to-animation-local', 'V3', 'edit', 'local', 'advisory', 'Stylize a live-action subject into an animated or illustrated character while retaining motion and timing; a verified local component is required before execution.', ['source_video', 'style_reference', 'character_reference'], ['video_asset', 'quality_receipt'], { filesystem_write: true }),
+  moduleContract('video.beauty-local', 'V3', 'edit', 'local', 'advisory', 'Apply bounded face and skin retouching with reversible parameters and temporal consistency; a verified local component is required before execution.', ['video_asset', 'beauty_settings'], ['video_asset', 'quality_receipt'], { filesystem_write: true }),
+  moduleContract('image.batch-generate-fast', 'V3', 'create', 'provider', 'bridge', 'Submit a bounded batch of independent image jobs with concurrency, retry and per-item receipts.', ['prompts', 'reference_assets', 'concurrency'], ['image_assets', 'batch_receipt'], { network: true, external_write: true, paid: true }),
+
   // V3 - maps onto existing workflow/media capabilities. Codex chooses and
   // calls the concrete existing API, then records the returned artifact.
   moduleContract('video.import', 'V3', 'create', 'local', 'bridge', 'Import a user-owned video as a direct timeline clip.', ['video_asset', 'timeline_target'], ['direct_clip'], { filesystem_write: true }),

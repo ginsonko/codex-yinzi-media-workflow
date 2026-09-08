@@ -25,3 +25,15 @@ test('registered modules hot-load, survive reload, and cannot replace builtins o
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('catalog exposes local-first character, animation, beauty and fast batch choices', () => {
+  const ids = catalog.listModules().items.map((item) => item.module_id);
+  for (const id of [
+    'video.character-replace-local',
+    'video.identity-repair-local',
+    'video.to-animation-local',
+    'video.beauty-local',
+    'image.batch-generate-fast',
+  ]) assert.ok(ids.includes(id), `missing ${id}`);
+  assert.equal(catalog.getModule('video.character-replace-local').side_effects.paid, false);
+});
