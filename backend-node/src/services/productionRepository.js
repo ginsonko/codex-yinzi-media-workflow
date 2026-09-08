@@ -1814,6 +1814,16 @@ function getRunSummary(db, runId) {
     )
     ? latestProviderAction
     : null;
+  const executionPlan = run.policy?.execution_plan || {};
+  const recoverySummary = {
+    original_goal: run.input?.story || run.input?.text || run.input?.premise || null,
+    constraints: Array.isArray(executionPlan.constraints) ? executionPlan.constraints : [],
+    prohibited: Array.isArray(executionPlan.prohibited) ? executionPlan.prohibited : [],
+    completed_stages: stageSummary.filter((stage) => stage.complete).map((stage) => stage.key),
+    remaining_stages: stageSummary.filter((stage) => !stage.complete).map((stage) => stage.key),
+    current_stage: run.current_stage,
+    next_action: run.waiting_reason || (run.status === 'running' ? '继续当前阶段' : '查看当前阶段'),
+  };
   return {
     run,
     stages: stageSummary,
@@ -1821,6 +1831,7 @@ function getRunSummary(db, runId) {
     unresolved: runStageCompletion(db, run),
     current_action: currentAction,
     recovery_action: recoveryAction,
+    recovery_summary: recoverySummary,
     actions: listActions(db, runId, { page_size: 10 }).items,
   };
 }

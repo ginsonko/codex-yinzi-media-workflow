@@ -300,6 +300,16 @@
           </div>
           <div class="user-guidance-next"><span>下一步</span><b>{{ userGuidance.next }}</b></div>
         </section>
+        <details v-if="runSummary?.recovery_summary" class="recovery-summary-card">
+          <summary>查看恢复摘要：原任务要求、约束和未完成阶段</summary>
+          <div class="recovery-summary-grid">
+            <div><small>原始目标</small><p>{{ runSummary.recovery_summary.original_goal || '未记录' }}</p></div>
+            <div><small>当前阶段</small><p>{{ stageLabel(runSummary.recovery_summary.current_stage) }}</p></div>
+            <div><small>已完成</small><p>{{ runSummary.recovery_summary.completed_stages?.map(stageLabel).join('、') || '暂无' }}</p></div>
+            <div><small>未完成</small><p>{{ runSummary.recovery_summary.remaining_stages?.map(stageLabel).join('、') || '暂无' }}</p></div>
+          </div>
+          <p v-if="runSummary.recovery_summary.prohibited?.length" class="recovery-prohibited">明确约束：{{ runSummary.recovery_summary.prohibited.join('；') }}</p>
+        </details>
 
         <section class="run-input-access" aria-label="创作输入与素材">
           <div>
@@ -4480,4 +4490,9 @@ onBeforeUnmount(clearPoll)
 .user-guidance-card.is-warning { border-color:#e4cfb5; background:#fffaf3; color:#76583b; }.user-guidance-card.is-success { border-color:#bedcca; background:#f3faf5; color:#397253; }
 .user-guidance-icon { width:30px; height:30px; display:grid; place-items:center; border-radius:50%; background:rgba(72,142,133,.12); color:var(--accent); }.user-guidance-copy { min-width:0; display:grid; gap:3px; }.user-guidance-copy strong { font-size:13px; }.user-guidance-copy p { margin:0; font-size:12px; line-height:1.5; overflow-wrap:anywhere; }.user-guidance-copy small { color:#7b898e; font-size:10px; }.user-guidance-next { min-width:0; padding-left:14px; border-left:1px solid rgba(120,140,145,.25); display:grid; gap:3px; }.user-guidance-next span { color:#869398; font-size:10px; }.user-guidance-next b { font-size:12px; overflow-wrap:anywhere; }
 @media (max-width:840px) { .user-guidance-card { grid-template-columns:34px minmax(0,1fr); }.user-guidance-next { grid-column:2; padding-left:0; border-left:0; border-top:1px solid rgba(120,140,145,.25); padding-top:8px; } }
+</style>
+
+<style scoped>
+.recovery-summary-card { margin:0 0 16px; padding:12px 15px; border:1px solid #dce5e5; background:#fbfcfc; color:#4d6266; }.recovery-summary-card summary { cursor:pointer; font-size:12px; font-weight:650; }.recovery-summary-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; margin-top:12px; }.recovery-summary-grid > div { min-width:0; padding:9px; background:#fff; border:1px solid #e8eeee; }.recovery-summary-grid small { color:#879598; font-size:10px; }.recovery-summary-grid p { margin:4px 0 0; font-size:11px; line-height:1.5; overflow-wrap:anywhere; }.recovery-prohibited { margin:10px 0 0; padding-top:9px; border-top:1px solid #e5ecec; color:#76583b; font-size:11px; line-height:1.5; }
+@media (max-width:640px) { .recovery-summary-grid { grid-template-columns:1fr; } }
 </style>

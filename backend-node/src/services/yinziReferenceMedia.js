@@ -110,6 +110,20 @@ function sha256File(filePath) {
   return crypto.createHash('sha256').update(fs.readFileSync(filePath)).digest('hex');
 }
 
+// Windows can place the temporary render and cache on different volumes
+// (for example a synced F: drive and the local data directory). renameSync
+// then fails with EXDEV although the file is valid. Copy atomically into the
+// destination and remove the temp file only after the copy succeeds.
+function moveAcrossDevices(sourcePath, targetPath) {
+  try {
+    fs.renameSync(sourcePath, targetPath);
+  } catch (error) {
+    if (error?.code !== 'EXDEV') throw error;
+    fs.copyFileSync(sourcePath, targetPath, fs.constants.COPYFILE_EXCL);
+    fs.unlinkSync(sourcePath);
+  }
+}
+
 function targetReferenceCanvas(aspectRatio, probe = {}) {
   const known = {
     '16:9': { width: 1280, height: 720 },
@@ -238,7 +252,7 @@ function prepareYinziReferenceVideo(filePath, options = {}) {
     }
     if (fs.existsSync(targetPath)) fs.unlinkSync(targetPath);
     try {
-      fs.renameSync(tempPath, targetPath);
+      moveAcrossDevices(tempPath, targetPath);
     } catch (error) {
       const concurrentProbe = validCachedVideo(targetPath, canvas, clip.duration_seconds, clip.windowed);
       if (!concurrentProbe) throw error;
@@ -267,6 +281,7 @@ function prepareYinziReferenceVideo(filePath, options = {}) {
 
 module.exports = {
   prepareYinziReferenceVideo,
+  moveAcrossDevices,
   probeReferenceVideo,
   providerSafeMp4,
   targetReferenceCanvas,
