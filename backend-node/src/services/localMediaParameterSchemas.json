@@ -875,5 +875,313 @@
   "local.audio.crossfeed": {
     "type": "object",
     "properties": {}
+  },
+  "local.image.social-square": {
+    "type": "object",
+    "properties": {}
+  },
+  "local.image.social-portrait": {
+    "type": "object",
+    "properties": {}
+  },
+  "local.image.social-landscape": {
+    "type": "object",
+    "properties": {}
+  },
+  "local.image.avatar": {
+    "type": "object",
+    "properties": {}
+  },
+  "local.image.thumbnail": {
+    "type": "object",
+    "properties": {}
+  },
+  "local.image.contain-white": {
+    "type": "object",
+    "properties": {}
+  },
+  "local.image.contain-black": {
+    "type": "object",
+    "properties": {}
+  },
+  "local.image.contain-transparent": {
+    "type": "object",
+    "properties": {}
+  },
+  "local.image.pad-square-white": {
+    "type": "object",
+    "properties": {}
+  },
+  "local.image.pad-square-black": {
+    "type": "object",
+    "properties": {}
+  },
+  "local.image.rotate-180": {
+    "type": "object",
+    "properties": {}
+  },
+  "local.image.rotate-270": {
+    "type": "object",
+    "properties": {}
+  },
+  "local.image.flip-both": {
+    "type": "object",
+    "properties": {}
+  },
+  "local.image.ensure-rgba": {
+    "type": "object",
+    "properties": {}
+  },
+  "local.image.flatten-black": {
+    "type": "object",
+    "properties": {}
+  },
+  "local.image.flatten-gray": {
+    "type": "object",
+    "properties": {}
+  },
+  "local.image.jpeg-quality": {
+    "type": "object",
+    "properties": {}
+  },
+  "local.image.webp-quality": {
+    "type": "object",
+    "properties": {}
+  },
+  "local.image.png-compress": {
+    "type": "object",
+    "properties": {}
+  },
+  "local.image.border-black": {
+    "type": "object",
+    "properties": {}
+  },
+  "local.image.border-white": {
+    "type": "object",
+    "properties": {}
+  },
+  "local.image.watermark-corner": {
+    "type": "object",
+    "properties": {}
+  },
+  "local.image.watermark-center": {
+    "type": "object",
+    "properties": {}
+  },
+  "local.image.label-corner": {
+    "type": "object",
+    "properties": {}
+  },
+  "local.image.shadow": {
+    "type": "object",
+    "properties": {}
+  },
+  "local.image.tint-red": {
+    "type": "object",
+    "properties": {}
+  },
+  "local.image.tint-blue": {
+    "type": "object",
+    "properties": {}
+  },
+  "local.image.tint-green": {
+    "type": "object",
+    "properties": {}
+  },
+  "local.image.brightness-up": {
+    "type": "object",
+    "properties": {}
+  },
+  "local.image.brightness-down": {
+    "type": "object",
+    "properties": {}
+  },
+  "local.image.saturation-up": {
+    "type": "object",
+    "properties": {}
+  },
+  "local.image.saturation-down": {
+    "type": "object",
+    "properties": {}
+  },
+  "local.image.sharpen-strong": {
+    "type": "object",
+    "properties": {}
+  },
+  "local.image.blur-soft": {
+    "type": "object",
+    "properties": {}
+  },
+  "local.image.poster-border": {
+    "type": "object",
+    "properties": {}
+  },
+  "local.video.drawgrid": {
+    "type": "object",
+    "properties": {}
+  },
+  "local.video.drawtext": {
+    "type": "object",
+    "properties": {}
+  },
+  "local.video.tblend": {
+    "type": "object",
+    "properties": {}
+  },
+  "local.video.framestep": {
+    "type": "object",
+    "properties": {}
+  },
+  "local.video.select-even": {
+    "type": "object",
+    "properties": {}
+  },
+  "local.video.tinterlace": {
+    "type": "object",
+    "properties": {}
+  },
+  "local.video.fieldorder": {
+    "type": "object",
+    "properties": {}
+  },
+  "local.video.format-gray": {
+    "type": "object",
+    "properties": {}
+  },
+  "local.video.format-rgb": {
+    "type": "object",
+    "properties": {}
+  },
+  "local.video.smartblur": {
+    "type": "object",
+    "properties": {}
+  },
+  "local.video.convolution": {
+    "type": "object",
+    "properties": {}
+  },
+  "local.video.kirsch": {
+    "type": "object",
+    "properties": {}
+  },
+  "local.video.roberts": {
+    "type": "object",
+    "properties": {}
+  },
+  "local.video.showinfo": {
+    "type": "object",
+    "properties": {}
+  },
+  "local.video.settb": {
+    "type": "object",
+    "properties": {}
+  },
+  "local.video.setpts-start": {
+    "type": "object",
+    "properties": {}
+  },
+  "local.video.fps-24": {
+    "type": "object",
+    "properties": {}
+  },
+  "local.video.fps-30": {
+    "type": "object",
+    "properties": {}
+  },
+  "local.video.half-size": {
+    "type": "object",
+    "properties": {}
+  },
+  "local.video.even-canvas": {
+    "type": "object",
+    "properties": {}
+  },
+  "local.video.blackwhite": {
+    "type": "object",
+    "properties": {}
+  },
+  "local.video.colorize-warm": {
+    "type": "object",
+    "properties": {}
+  },
+  "local.audio.pan-mono": {
+    "type": "object",
+    "properties": {}
+  },
+  "local.audio.channelmap-stereo": {
+    "type": "object",
+    "properties": {}
+  },
+  "local.audio.aformat-s16": {
+    "type": "object",
+    "properties": {}
+  },
+  "local.audio.stereowiden": {
+    "type": "object",
+    "properties": {}
+  },
+  "local.audio.stereotools": {
+    "type": "object",
+    "properties": {}
+  },
+  "local.audio.extrastereo": {
+    "type": "object",
+    "properties": {}
+  },
+  "local.audio.earwax": {
+    "type": "object",
+    "properties": {}
+  },
+  "local.audio.haas": {
+    "type": "object",
+    "properties": {}
+  },
+  "local.audio.apulsator": {
+    "type": "object",
+    "properties": {}
+  },
+  "local.audio.afreqshift": {
+    "type": "object",
+    "properties": {}
+  },
+  "local.audio.aphaseshift": {
+    "type": "object",
+    "properties": {}
+  },
+  "local.audio.asoftclip": {
+    "type": "object",
+    "properties": {}
+  },
+  "local.audio.speechnorm": {
+    "type": "object",
+    "properties": {}
+  },
+  "local.audio.firequalizer": {
+    "type": "object",
+    "properties": {}
+  },
+  "local.audio.superequalizer": {
+    "type": "object",
+    "properties": {}
+  },
+  "local.audio.mcompand": {
+    "type": "object",
+    "properties": {}
+  },
+  "local.audio.dialoguenhance": {
+    "type": "object",
+    "properties": {}
+  },
+  "local.audio.loudnorm-dual": {
+    "type": "object",
+    "properties": {}
+  },
+  "local.audio.volume-ramp": {
+    "type": "object",
+    "properties": {}
+  },
+  "local.audio.aresample-48k": {
+    "type": "object",
+    "properties": {}
   }
 }

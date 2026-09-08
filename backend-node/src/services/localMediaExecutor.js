@@ -19,7 +19,14 @@ async function execute(request, options = {}) {
   }
   const inputHash = await sha256(input);
   report({ stage: 'executing', message: op.title + '，完成后自动检查成果' });
-  const ext = op.kind === 'audio' ? 'wav' : op.kind === 'video' ? 'mp4' : op.id.endsWith('.cmyk') ? 'jpg' : op.id.endsWith('.convert') ? params.format : 'png';
+  // Keep the container/codec extension aligned with the Sharp operation. A
+  // mismatched extension makes downstream previews and MIME sniffers report a
+  // successful file that cannot actually be decoded as the advertised type.
+  const imageExt = op.id.endsWith('.cmyk') || op.id.endsWith('.jpeg-quality') ? 'jpg'
+    : op.id.endsWith('.webp-quality') ? 'webp'
+    : op.id.endsWith('.convert') ? (params.format || 'webp')
+    : 'png';
+  const ext = op.kind === 'audio' ? 'wav' : op.kind === 'video' ? 'mp4' : imageExt;
   const output = path.join(dir, 'result.' + ext); let details;
   if (op.kind === 'image') {
     const workerInput = path.join(dir, 'image-job.json');
