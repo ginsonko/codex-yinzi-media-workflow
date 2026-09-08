@@ -922,7 +922,11 @@ const tools = [
   { name: 'list_model_candidates', description: '读取本机已启用的文本、图片或视频模型候选；返回脱敏配置、备注、用途、优先级和可选能力提示。不会测试 Key、不会提交付费请求。', inputSchema: { type: 'object', properties: { service_type: { enum: ['text', 'image', 'storyboard_image', 'video'] } } } },
   { name: 'complete_session', description: '所有活动节点已有真实终态后，完成任务并收口交付；不会把未完成节点自动标为成功。', inputSchema: { type:'object', required:['session_id'], properties:{ session_id:{type:'string'}, summary:{type:'string'}, expected_version:{type:'integer'} } } },
   { name: 'record_event', description: '把 Codex 的事实、决定、进度、研究或验收记录写入指定编排会话；使用幂等键且拒绝密钥。', inputSchema: { type: 'object', required: ['session_id', 'event_type', 'event_idempotency_key'], properties: { session_id: { type: 'string' }, event_type: { type: 'string' }, event_idempotency_key: { type: 'string' }, node_id: { type: 'string' }, payload: { type: 'object' } } } },
-  { name: 'list_modules', description: '读取开放式 V1-V4 模块合同目录；未知模块仍可进入计划。', inputSchema: { type: 'object', properties: { version_track: { type: 'string' }, availability: { type: 'string' } } } },
+  { name: 'list_modules', description: '按需求搜索媒体合同；V5 为有执行器的本地操作。无需在任务前读取完整目录。', inputSchema: { type: 'object', properties: { q: { type: 'string' }, version_track: { type: 'string' }, availability: { type: 'string' } } } },
+  { name: 'local_media_run', description: '提交本地媒体处理，缺少组件会自动下载、安装和实际运行检查，然后继续原作业。立即返回持久作业编号；相同请求键复用原作业。', inputSchema: { type:'object',required:['session_id','request_key','module_id','input_path'],properties:{session_id:{type:'string'},request_key:{type:'string'},module_id:{type:'string'},input_path:{type:'string'},node_key:{type:'string'},parameters:{type:'object'}} } },
+  { name: 'local_media_get_job', description: '读取本地作业组件下载、安装、执行、验收进度与成果。', inputSchema: { type:'object',required:['job_id'],properties:{job_id:{type:'string'}} } },
+  { name: 'local_media_resume', description: '恢复失败的原本地作业，复用下载缓存和成功安装的组件。', inputSchema: { type:'object',required:['job_id'],properties:{job_id:{type:'string'}} } },
+  { name: 'local_media_components', description: '读取设备摘要和登记组件状态，不触发供应商鉴权。', inputSchema: { type:'object',properties:{} } },
   { name: 'list_sessions', description: '检索已存在的可恢复编排任务，避免重复创建。', inputSchema: { type: 'object', properties: { status: { type: 'string' }, linked_run_id: { type: 'string' }, limit: { type: 'integer' } } } },
   { name: 'get_session', description: '读取一个编排任务的会话、节点、事件和回执真值。', inputSchema: { type: 'object', required: ['session_id'], properties: { session_id: { type: 'string' }, include_inactive: { type: 'boolean' }, event_limit: { type: 'integer' } } } },
   { name: 'begin_media_task', description: '立即登记或恢复当前媒体任务并打开对应页面；分析阶段即可展示，不发起付费生成。', inputSchema: { type:'object', required:['user_goal','idempotency_key'], properties:{ user_goal:{type:'string'}, idempotency_key:{type:'string'}, title:{type:'string'}, intent:{enum:['analyze','create']}, source_context:{type:'object'}, open_browser:{type:'boolean',default:true} } } },
@@ -1009,6 +1013,10 @@ async function callTool(name, args = {}) {
       const query = new URLSearchParams(Object.entries(args).filter(([, value]) => value != null).map(([key, value]) => [key, String(value)]))
       return api('GET', `/api/v1/orchestration-modules${query.size ? `?${query}` : ''}`)
     }
+    case 'local_media_run': rejectSecrets(args); return api('POST', '/api/v1/local-media/jobs', args);
+    case 'local_media_get_job': return api('GET', `/api/v1/local-media/jobs/${encodeURIComponent(args.job_id)}`);
+    case 'local_media_resume': return api('POST', `/api/v1/local-media/jobs/${encodeURIComponent(args.job_id)}/resume`, {});
+    case 'local_media_components': return api('GET', '/api/v1/media-components/profile');
     case 'list_sessions': {
       const query = new URLSearchParams(Object.entries(args).filter(([, value]) => value != null).map(([key, value]) => [key, String(value)]))
       return api('GET', `/api/v1/orchestration-sessions${query.size ? `?${query}` : ''}`)

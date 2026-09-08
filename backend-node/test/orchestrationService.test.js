@@ -39,10 +39,10 @@ describe('Codex orchestration service', () => {
     }), (error) => error.code === 'EVENT_SECRET_REJECTED');
   });
 
-  it('exposes V1-V4 module contracts while keeping the catalog open-world', () => {
+  it('exposes V1-V5 module contracts while keeping the catalog open-world', () => {
     const result = moduleCatalog.listModules();
     assert.equal(result.open_world, true);
-    assert.deepEqual([...new Set(result.items.map((item) => item.version_track))], ['V1', 'V2', 'V3', 'V4']);
+    assert.deepEqual([...new Set(result.items.map((item) => item.version_track))], ['V1', 'V2', 'V3', 'V4', 'V5']);
     assert.equal(moduleCatalog.getModule('video.generate').side_effects.paid, true);
     assert.equal(moduleCatalog.getModule('research.request').side_effects.network, true);
   });

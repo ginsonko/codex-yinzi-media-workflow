@@ -60,6 +60,10 @@ Ordinary local reads, reversible planning, audit writes, status updates, retries
 
 ## Execute and report truthfully
 
+For existing-media processing, search `list_modules` by the needed operation instead of loading every contract. `local.*` V5 contracts have concrete local executors. Use `local_media_run` with the current `session_id`, stable `request_key`, `module_id`, authorized `input_path` and structured `parameters`. This immediately returns a durable job; the backend automatically downloads a missing registered component, verifies and installs it, then continues processing. No separate install action or provider authentication is needed. Read `local_media_get_job` for real progress and results; `local_media_resume` continues the same failed job. CLI fallback commands are `local-run --input FILE`, `local-job JOB_ID`, `local-resume JOB_ID`, and `components`.
+
+Tell the user why a component fits and that a successful installation is reused. Progress appears inside their task under 本地处理进度; do not replace progress with developer test counts. The tested installer profile currently covers Windows x64. Read actual component compatibility on other platforms and retain the existing task if unavailable. Cartoon palette/edge filters are local styling, and cannot replace semantic character replacement or guarantee identity consistency. Wan-Animate and other model candidates must have their own installed executor and real acceptance before being advertised as executable. See the repository's `docs/LOCAL-MEDIA-COMPONENTS.md` for the operation catalog, hardware choices and measured boundaries.
+
 - Mark a node `running` only when its executor actually began. Attach outputs by stable ID/path/hash and save the final prompt or edit parameters when relevant.
 - On failure, preserve the original code/message, normalized category, attempt, correlation/task ID, billing certainty, retryability, what was tried, and actionable next choices.
 - If provider submission is uncertain, query/reconcile the same request or task ID; do not resubmit. A retry keeps the same logical `node_key` and increments `attempt`.

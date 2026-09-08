@@ -149,6 +149,10 @@ async function request(method, path, body) {
 
 const pos = positional()
 const routes = {
+  components: ['GET', '/api/v1/media-components/profile'],
+  'local-run': ['POST', '/api/v1/local-media/jobs'],
+  'local-job': ['GET', `/api/v1/local-media/jobs/${encodeURIComponent(pos[0] || '')}`],
+  'local-resume': ['POST', `/api/v1/local-media/jobs/${encodeURIComponent(pos[0] || '')}/resume`],
   preferences: ['GET', '/api/v1/creative-preferences'],
   'set-preferences': ['PUT', '/api/v1/creative-preferences'],
   begin: ['POST', '/api/v1/orchestration-sessions/begin'],
@@ -156,7 +160,7 @@ const routes = {
   activity: ['POST', `/api/v1/orchestration-sessions/${encodeURIComponent(pos[0] || '')}/activity`],
   health: ['GET', '/health'],
   onboarding: ['GET', '/api/v1/orchestration-onboarding'],
-  modules: ['GET', '/api/v1/orchestration-modules'],
+  modules: ['GET', `/api/v1/orchestration-modules${option('--query') ? '?q=' + encodeURIComponent(option('--query')) : ''}`],
   sessions: ['GET', '/api/v1/orchestration-sessions?limit=50'],
   get: ['GET', `/api/v1/orchestration-sessions/${encodeURIComponent(pos[0] || '')}?include_inactive=true&event_limit=500`],
   export: ['GET', `/api/v1/orchestration-sessions/${encodeURIComponent(pos[0] || '')}/export`],
@@ -173,7 +177,7 @@ const routes = {
 }
 
 if (command === 'help' || !routes[command]) {
-  process.stdout.write(`Usage: node scripts/orchestration-cli.mjs <command> [session-id] [node-key] [--input file]\nCommands: preferences set-preferences begin activity event health modules sessions get export create plan confirm start node retry pause resume checkpoint\n`)
+  process.stdout.write(`Usage: node scripts/orchestration-cli.mjs <command> [session-id] [node-key] [--input file]\nCommands: preferences set-preferences begin activity event health modules sessions get export create plan confirm start node retry pause resume checkpoint components local-run local-job local-resume\nLocal: local-run --input request.json; local-job JOB_ID; local-resume JOB_ID; modules --query SEARCH\n`)
   process.exit(command === 'help' ? 0 : 1)
 }
 

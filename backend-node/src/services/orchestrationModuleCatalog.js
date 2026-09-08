@@ -29,6 +29,8 @@ function moduleContract(moduleId, versionTrack, phase, executor, status, descrip
   });
 }
 
+const LOCAL_MEDIA_MODULES = require('./localMediaOperations').contracts();
+
 const MODULES = Object.freeze([
   // V1 - orchestration foundation
   moduleContract('session.create', 'V1', 'intake', 'local', 'integrated', 'Create a durable Codex orchestration session.', ['user_goal', 'source_context'], ['session']),
@@ -95,6 +97,7 @@ const MODULES = Object.freeze([
   moduleContract('module.register', 'V4', 'deliver', 'manual', 'advisory', 'Register an approved module contract without redefining unknown work as invalid.', ['module_contract'], ['module_registration'], { filesystem_write: true }),
   moduleContract('skill.export', 'V4', 'deliver', 'codex', 'integrated', 'Export the current orchestration contract and examples as a versioned Skill package.', ['module_contracts', 'usage_examples'], ['skill_bundle'], { filesystem_write: true }),
   moduleContract('session.replay', 'V4', 'qa', 'codex', 'integrated', 'Replay persisted decisions and receipts without re-executing paid side effects.', ['session_bundle'], ['replay_report']),
+  ...LOCAL_MEDIA_MODULES,
 ]);
 
 function registryDirectory() { return path.resolve(process.env.YINZI_WORKFLOW_MODULE_DIR || path.join(process.cwd(), 'data', 'orchestration-modules')); }

@@ -103,9 +103,14 @@ function setupRouter(cfg, db, log, injected = {}) {
   r.get('/media-components/profile', orchestration.componentProfile);
   r.get('/media-components/:componentId', orchestration.componentState);
   r.post('/media-components/ensure', orchestration.ensureComponent);
+  r.get('/local-media/jobs', orchestration.listLocalMediaJobs);
+  r.post('/local-media/jobs', orchestration.createLocalMediaJob);
+  r.get('/local-media/jobs/:jobId', orchestration.getLocalMediaJob);
+  r.post('/local-media/jobs/:jobId/resume', orchestration.resumeLocalMediaJob);
+  orchestration.localMediaService.recover();
   r.get('/orchestration-onboarding', orchestration.onboarding);
   r.get('/runtime-work-status', (req, res) => {
-    const sources = { async_tasks:['pending','processing','running'], media_batches:['queued','running','paused'], production_runs:['running'], orchestration_blender_jobs:['queued','running'] };
+    const sources = { async_tasks:['pending','processing','running'], media_batches:['queued','running','paused'], production_runs:['running'], orchestration_blender_jobs:['queued','running'], local_media_jobs:['queued','running'] };
     const counts = {};
     for (const [table, statuses] of Object.entries(sources)) {
       if (!db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(table)) continue;

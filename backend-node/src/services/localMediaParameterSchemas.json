@@ -1,0 +1,879 @@
+{
+  "local.image.resize": {
+    "type": "object",
+    "properties": {
+      "width": {
+        "type": "number",
+        "default": 96,
+        "minimum": 1,
+        "maximum": 8192
+      },
+      "height": {
+        "type": "number",
+        "default": 64,
+        "minimum": 1,
+        "maximum": 8192
+      }
+    }
+  },
+  "local.image.crop": {
+    "type": "object",
+    "properties": {
+      "left": {
+        "type": "number",
+        "default": 8,
+        "minimum": 0,
+        "maximum": 8192
+      },
+      "top": {
+        "type": "number",
+        "default": 8,
+        "minimum": 0,
+        "maximum": 8192
+      },
+      "width": {
+        "type": "number",
+        "default": 64,
+        "minimum": 1,
+        "maximum": 8192
+      },
+      "height": {
+        "type": "number",
+        "default": 48,
+        "minimum": 1,
+        "maximum": 8192
+      }
+    }
+  },
+  "local.image.extend": {
+    "type": "object",
+    "properties": {
+      "pixels": {
+        "type": "number",
+        "default": 8,
+        "minimum": 0,
+        "maximum": 2048
+      }
+    }
+  },
+  "local.image.rotate": {
+    "type": "object",
+    "properties": {
+      "angle": {
+        "type": "number",
+        "default": 90,
+        "minimum": -360,
+        "maximum": 360
+      }
+    }
+  },
+  "local.image.flip": {
+    "type": "object",
+    "properties": {}
+  },
+  "local.image.flop": {
+    "type": "object",
+    "properties": {}
+  },
+  "local.image.grayscale": {
+    "type": "object",
+    "properties": {}
+  },
+  "local.image.negate": {
+    "type": "object",
+    "properties": {}
+  },
+  "local.image.blur": {
+    "type": "object",
+    "properties": {
+      "sigma": {
+        "type": "number",
+        "default": 1.2,
+        "minimum": 0.3,
+        "maximum": 100
+      }
+    }
+  },
+  "local.image.sharpen": {
+    "type": "object",
+    "properties": {
+      "sigma": {
+        "type": "number",
+        "default": 1,
+        "minimum": 0.01,
+        "maximum": 10
+      }
+    }
+  },
+  "local.image.median": {
+    "type": "object",
+    "properties": {
+      "size": {
+        "type": "number",
+        "default": 3,
+        "minimum": 1,
+        "maximum": 9
+      }
+    }
+  },
+  "local.image.threshold": {
+    "type": "object",
+    "properties": {
+      "threshold": {
+        "type": "number",
+        "default": 128,
+        "minimum": 0,
+        "maximum": 255
+      }
+    }
+  },
+  "local.image.normalize": {
+    "type": "object",
+    "properties": {}
+  },
+  "local.image.gamma": {
+    "type": "object",
+    "properties": {
+      "gamma": {
+        "type": "number",
+        "default": 1.8,
+        "minimum": 1,
+        "maximum": 3
+      }
+    }
+  },
+  "local.image.tint": {
+    "type": "object",
+    "properties": {}
+  },
+  "local.image.modulate": {
+    "type": "object",
+    "properties": {
+      "brightness": {
+        "type": "number",
+        "default": 1.1,
+        "minimum": 0.1,
+        "maximum": 3
+      },
+      "saturation": {
+        "type": "number",
+        "default": 1.15,
+        "minimum": 0,
+        "maximum": 3
+      },
+      "hue": {
+        "type": "number",
+        "default": 15,
+        "minimum": 0,
+        "maximum": 360
+      }
+    }
+  },
+  "local.image.linear": {
+    "type": "object",
+    "properties": {
+      "gain": {
+        "type": "number",
+        "default": 1.1,
+        "minimum": 0.1,
+        "maximum": 3
+      },
+      "offset": {
+        "type": "number",
+        "default": 3,
+        "minimum": -255,
+        "maximum": 255
+      }
+    }
+  },
+  "local.image.recomb": {
+    "type": "object",
+    "properties": {}
+  },
+  "local.image.emboss": {
+    "type": "object",
+    "properties": {}
+  },
+  "local.image.edges": {
+    "type": "object",
+    "properties": {}
+  },
+  "local.image.flatten": {
+    "type": "object",
+    "properties": {}
+  },
+  "local.image.remove-alpha": {
+    "type": "object",
+    "properties": {}
+  },
+  "local.image.ensure-alpha": {
+    "type": "object",
+    "properties": {
+      "alpha": {
+        "type": "number",
+        "default": 0.7,
+        "minimum": 0,
+        "maximum": 1
+      }
+    }
+  },
+  "local.image.extract-alpha": {
+    "type": "object",
+    "properties": {}
+  },
+  "local.image.extract-red": {
+    "type": "object",
+    "properties": {}
+  },
+  "local.image.srgb": {
+    "type": "object",
+    "properties": {}
+  },
+  "local.image.cmyk": {
+    "type": "object",
+    "properties": {}
+  },
+  "local.image.palette": {
+    "type": "object",
+    "properties": {
+      "colors": {
+        "type": "number",
+        "default": 16,
+        "minimum": 2,
+        "maximum": 256
+      }
+    }
+  },
+  "local.image.convert": {
+    "type": "object",
+    "properties": {
+      "format": {
+        "type": "string",
+        "default": "webp",
+        "enum": [
+          "png",
+          "jpeg",
+          "webp",
+          "avif",
+          "tiff"
+        ]
+      }
+    }
+  },
+  "local.image.trim": {
+    "type": "object",
+    "properties": {}
+  },
+  "local.image.pixelate": {
+    "type": "object",
+    "properties": {
+      "width": {
+        "type": "number",
+        "default": 24,
+        "minimum": 1,
+        "maximum": 256
+      }
+    }
+  },
+  "local.image.clahe": {
+    "type": "object",
+    "properties": {}
+  },
+  "local.image.threshold-alpha": {
+    "type": "object",
+    "properties": {}
+  },
+  "local.image.affine": {
+    "type": "object",
+    "properties": {}
+  },
+  "local.image.join-border": {
+    "type": "object",
+    "properties": {
+      "thickness": {
+        "type": "number",
+        "default": 4,
+        "minimum": 1,
+        "maximum": 128
+      }
+    }
+  },
+  "local.image.metadata-strip": {
+    "type": "object",
+    "properties": {}
+  },
+  "local.video.scale": {
+    "type": "object",
+    "properties": {
+      "width": {
+        "type": "number",
+        "default": 128,
+        "minimum": 16,
+        "maximum": 4096
+      },
+      "height": {
+        "type": "number",
+        "default": 72,
+        "minimum": 16,
+        "maximum": 4096
+      }
+    }
+  },
+  "local.video.crop": {
+    "type": "object",
+    "properties": {
+      "width": {
+        "type": "number",
+        "default": 128,
+        "minimum": 16,
+        "maximum": 4096
+      },
+      "height": {
+        "type": "number",
+        "default": 72,
+        "minimum": 16,
+        "maximum": 4096
+      },
+      "x": {
+        "type": "number",
+        "default": 8,
+        "minimum": 0,
+        "maximum": 4096
+      },
+      "y": {
+        "type": "number",
+        "default": 8,
+        "minimum": 0,
+        "maximum": 4096
+      }
+    }
+  },
+  "local.video.pad": {
+    "type": "object",
+    "properties": {}
+  },
+  "local.video.transpose": {
+    "type": "object",
+    "properties": {
+      "direction": {
+        "type": "number",
+        "default": 1,
+        "minimum": 0,
+        "maximum": 3
+      }
+    }
+  },
+  "local.video.hflip": {
+    "type": "object",
+    "properties": {}
+  },
+  "local.video.vflip": {
+    "type": "object",
+    "properties": {}
+  },
+  "local.video.reverse": {
+    "type": "object",
+    "properties": {}
+  },
+  "local.video.grayscale": {
+    "type": "object",
+    "properties": {}
+  },
+  "local.video.negate": {
+    "type": "object",
+    "properties": {}
+  },
+  "local.video.eq": {
+    "type": "object",
+    "properties": {
+      "brightness": {
+        "type": "number",
+        "default": 0.03,
+        "minimum": -1,
+        "maximum": 1
+      },
+      "contrast": {
+        "type": "number",
+        "default": 1.1,
+        "minimum": 0.1,
+        "maximum": 3
+      },
+      "saturation": {
+        "type": "number",
+        "default": 1.1,
+        "minimum": 0,
+        "maximum": 3
+      }
+    }
+  },
+  "local.video.hue": {
+    "type": "object",
+    "properties": {
+      "degrees": {
+        "type": "number",
+        "default": 20,
+        "minimum": -180,
+        "maximum": 180
+      }
+    }
+  },
+  "local.video.gblur": {
+    "type": "object",
+    "properties": {
+      "sigma": {
+        "type": "number",
+        "default": 1,
+        "minimum": 0.1,
+        "maximum": 10
+      }
+    }
+  },
+  "local.video.boxblur": {
+    "type": "object",
+    "properties": {}
+  },
+  "local.video.unsharp": {
+    "type": "object",
+    "properties": {}
+  },
+  "local.video.hqdn3d": {
+    "type": "object",
+    "properties": {}
+  },
+  "local.video.nlmeans": {
+    "type": "object",
+    "properties": {}
+  },
+  "local.video.deflicker": {
+    "type": "object",
+    "properties": {}
+  },
+  "local.video.bwdif": {
+    "type": "object",
+    "properties": {}
+  },
+  "local.video.vignette": {
+    "type": "object",
+    "properties": {}
+  },
+  "local.video.lenscorrection": {
+    "type": "object",
+    "properties": {
+      "k1": {
+        "type": "number",
+        "default": -0.05,
+        "minimum": -0.5,
+        "maximum": 0.5
+      }
+    }
+  },
+  "local.video.chromakey": {
+    "type": "object",
+    "properties": {}
+  },
+  "local.video.drawbox": {
+    "type": "object",
+    "properties": {}
+  },
+  "local.video.edgedetect": {
+    "type": "object",
+    "properties": {}
+  },
+  "local.video.sobel": {
+    "type": "object",
+    "properties": {}
+  },
+  "local.video.posterize": {
+    "type": "object",
+    "properties": {}
+  },
+  "local.video.fade-in": {
+    "type": "object",
+    "properties": {
+      "duration": {
+        "type": "number",
+        "default": 0.3,
+        "minimum": 0.01,
+        "maximum": 60
+      }
+    }
+  },
+  "local.video.fade-out": {
+    "type": "object",
+    "properties": {
+      "start": {
+        "type": "number",
+        "default": 0.4,
+        "minimum": 0,
+        "maximum": 86400
+      },
+      "duration": {
+        "type": "number",
+        "default": 0.3,
+        "minimum": 0.01,
+        "maximum": 60
+      }
+    }
+  },
+  "local.video.fps": {
+    "type": "object",
+    "properties": {
+      "fps": {
+        "type": "number",
+        "default": 12,
+        "minimum": 1,
+        "maximum": 120
+      }
+    }
+  },
+  "local.video.tmix": {
+    "type": "object",
+    "properties": {}
+  },
+  "local.video.minterpolate": {
+    "type": "object",
+    "properties": {
+      "fps": {
+        "type": "number",
+        "default": 24,
+        "minimum": 1,
+        "maximum": 60
+      }
+    }
+  },
+  "local.video.speed": {
+    "type": "object",
+    "properties": {
+      "speed": {
+        "type": "number",
+        "default": 1.5,
+        "minimum": 0.5,
+        "maximum": 2
+      }
+    }
+  },
+  "local.video.trim": {
+    "type": "object",
+    "properties": {
+      "start": {
+        "type": "number",
+        "default": 0.1,
+        "minimum": 0,
+        "maximum": 86400
+      },
+      "duration": {
+        "type": "number",
+        "default": 0.4,
+        "minimum": 0.01,
+        "maximum": 86400
+      }
+    }
+  },
+  "local.video.tpad": {
+    "type": "object",
+    "properties": {
+      "duration": {
+        "type": "number",
+        "default": 0.2,
+        "minimum": 0,
+        "maximum": 60
+      }
+    }
+  },
+  "local.video.tile": {
+    "type": "object",
+    "properties": {}
+  },
+  "local.video.colorbalance": {
+    "type": "object",
+    "properties": {}
+  },
+  "local.video.colorchannelmixer": {
+    "type": "object",
+    "properties": {}
+  },
+  "local.video.curves": {
+    "type": "object",
+    "properties": {}
+  },
+  "local.video.deband": {
+    "type": "object",
+    "properties": {}
+  },
+  "local.video.deblock": {
+    "type": "object",
+    "properties": {}
+  },
+  "local.video.dejudder": {
+    "type": "object",
+    "properties": {}
+  },
+  "local.video.deshake": {
+    "type": "object",
+    "properties": {}
+  },
+  "local.video.pixelate": {
+    "type": "object",
+    "properties": {}
+  },
+  "local.video.lagfun": {
+    "type": "object",
+    "properties": {}
+  },
+  "local.video.noise": {
+    "type": "object",
+    "properties": {
+      "amount": {
+        "type": "number",
+        "default": 5,
+        "minimum": 0,
+        "maximum": 30
+      }
+    }
+  },
+  "local.video.setsar": {
+    "type": "object",
+    "properties": {}
+  },
+  "local.video.setdar": {
+    "type": "object",
+    "properties": {}
+  },
+  "local.video.colorlevels": {
+    "type": "object",
+    "properties": {}
+  },
+  "local.video.lut-yuv": {
+    "type": "object",
+    "properties": {}
+  },
+  "local.audio.volume": {
+    "type": "object",
+    "properties": {
+      "gain": {
+        "type": "number",
+        "default": 0.8,
+        "minimum": 0,
+        "maximum": 4
+      }
+    }
+  },
+  "local.audio.loudnorm": {
+    "type": "object",
+    "properties": {}
+  },
+  "local.audio.alimiter": {
+    "type": "object",
+    "properties": {}
+  },
+  "local.audio.acompressor": {
+    "type": "object",
+    "properties": {}
+  },
+  "local.audio.compand": {
+    "type": "object",
+    "properties": {}
+  },
+  "local.audio.agate": {
+    "type": "object",
+    "properties": {}
+  },
+  "local.audio.highpass": {
+    "type": "object",
+    "properties": {
+      "frequency": {
+        "type": "number",
+        "default": 80,
+        "minimum": 10,
+        "maximum": 10000
+      }
+    }
+  },
+  "local.audio.lowpass": {
+    "type": "object",
+    "properties": {
+      "frequency": {
+        "type": "number",
+        "default": 8000,
+        "minimum": 100,
+        "maximum": 20000
+      }
+    }
+  },
+  "local.audio.bandpass": {
+    "type": "object",
+    "properties": {}
+  },
+  "local.audio.bandreject": {
+    "type": "object",
+    "properties": {}
+  },
+  "local.audio.bass": {
+    "type": "object",
+    "properties": {
+      "gain": {
+        "type": "number",
+        "default": 3,
+        "minimum": -20,
+        "maximum": 20
+      }
+    }
+  },
+  "local.audio.treble": {
+    "type": "object",
+    "properties": {
+      "gain": {
+        "type": "number",
+        "default": 2,
+        "minimum": -20,
+        "maximum": 20
+      }
+    }
+  },
+  "local.audio.equalizer": {
+    "type": "object",
+    "properties": {}
+  },
+  "local.audio.aecho": {
+    "type": "object",
+    "properties": {}
+  },
+  "local.audio.chorus": {
+    "type": "object",
+    "properties": {}
+  },
+  "local.audio.flanger": {
+    "type": "object",
+    "properties": {}
+  },
+  "local.audio.aphaser": {
+    "type": "object",
+    "properties": {}
+  },
+  "local.audio.tremolo": {
+    "type": "object",
+    "properties": {}
+  },
+  "local.audio.vibrato": {
+    "type": "object",
+    "properties": {}
+  },
+  "local.audio.pitch": {
+    "type": "object",
+    "properties": {
+      "factor": {
+        "type": "number",
+        "default": 1.1,
+        "minimum": 0.5,
+        "maximum": 2
+      }
+    }
+  },
+  "local.audio.atempo": {
+    "type": "object",
+    "properties": {
+      "speed": {
+        "type": "number",
+        "default": 1.2,
+        "minimum": 0.5,
+        "maximum": 2
+      }
+    }
+  },
+  "local.audio.areverse": {
+    "type": "object",
+    "properties": {}
+  },
+  "local.audio.fade-in": {
+    "type": "object",
+    "properties": {}
+  },
+  "local.audio.fade-out": {
+    "type": "object",
+    "properties": {}
+  },
+  "local.audio.atrim": {
+    "type": "object",
+    "properties": {
+      "start": {
+        "type": "number",
+        "default": 0.1,
+        "minimum": 0,
+        "maximum": 86400
+      },
+      "duration": {
+        "type": "number",
+        "default": 0.4,
+        "minimum": 0.01,
+        "maximum": 86400
+      }
+    }
+  },
+  "local.audio.adelay": {
+    "type": "object",
+    "properties": {}
+  },
+  "local.audio.apad": {
+    "type": "object",
+    "properties": {}
+  },
+  "local.audio.silenceremove": {
+    "type": "object",
+    "properties": {}
+  },
+  "local.audio.afftdn": {
+    "type": "object",
+    "properties": {}
+  },
+  "local.audio.adeclick": {
+    "type": "object",
+    "properties": {}
+  },
+  "local.audio.adeclip": {
+    "type": "object",
+    "properties": {}
+  },
+  "local.audio.dcshift": {
+    "type": "object",
+    "properties": {}
+  },
+  "local.audio.dynaudnorm": {
+    "type": "object",
+    "properties": {}
+  },
+  "local.audio.stereo": {
+    "type": "object",
+    "properties": {}
+  },
+  "local.audio.mono": {
+    "type": "object",
+    "properties": {}
+  },
+  "local.audio.resample": {
+    "type": "object",
+    "properties": {
+      "sample_rate": {
+        "type": "number",
+        "default": 44100,
+        "minimum": 8000,
+        "maximum": 96000
+      }
+    }
+  },
+  "local.audio.asetrate": {
+    "type": "object",
+    "properties": {}
+  },
+  "local.audio.anull": {
+    "type": "object",
+    "properties": {}
+  },
+  "local.audio.asubboost": {
+    "type": "object",
+    "properties": {}
+  },
+  "local.audio.crossfeed": {
+    "type": "object",
+    "properties": {}
+  }
+}

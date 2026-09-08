@@ -64,6 +64,7 @@
           <template v-if="bundle?.session">
             <div v-if="refreshError" class="refresh-warning" role="status">{{ refreshError }}；仍显示 {{ formatTime(lastUpdated) }} 的状态，正在尝试重新连接。</div>
             <WorkActivity v-if="bundle.session.source_context?.activity || bundle.session.source_context?.analysis_report" :session="bundle.session" />
+            <LocalMediaProgress v-if="bundle.session.id" :session-id="bundle.session.id" />
             <header class="session-header">
               <div>
                 <div class="status-line"><span :class="['status-pill', statusTone(bundle.session.status)]">{{ statusLabel(bundle.session.status) }}</span><span v-if="showTechnical">计划版本 {{ bundle.session.plan_revision }}</span><span v-if="showTechnical">状态版本 {{ bundle.session.version }}</span></div>
@@ -279,6 +280,7 @@
 
 <script setup>
 import WorkActivity from '@/components/orchestration/WorkActivity.vue'
+import LocalMediaProgress from '@/components/orchestration/LocalMediaProgress.vue'
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'

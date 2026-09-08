@@ -3,6 +3,7 @@ const moduleCatalog = require('../services/orchestrationModuleCatalog');
 const { createOrchestrationService } = require('../services/orchestrationService');
 const { createOrchestrationBlenderService } = require('../services/orchestrationBlenderService');
 const componentManager = require('../services/mediaComponentManager');
+const { createLocalMediaJobs } = require('../services/localMediaJobs');
 
 function sendError(res, log, label, error) {
   log.error?.(label, { error: error.message, code: error.code });
@@ -22,8 +23,14 @@ function sendError(res, log, label, error) {
 module.exports = function orchestrationRoutes(db, log = console, cfg = {}, injected = {}) {
   const service = createOrchestrationService(db);
   const blender = createOrchestrationBlenderService(db, cfg, log, { ...injected, orchestration: service });
+  const localMedia = createLocalMediaJobs(db, cfg, service, injected.localMedia || {});
   return {
     blenderService: blender,
+    localMediaService: localMedia,
+    createLocalMediaJob(req,res) { try { response.created(res,localMedia.create(req.body||{})); } catch(e) { sendError(res,log,'local media submit',e); } },
+    getLocalMediaJob(req,res) { try { const job=localMedia.get(req.params.jobId); if(!job)return response.error(res,404,'LOCAL_JOB_MISSING','本地任务不存在'); response.success(res,job); } catch(e) { sendError(res,log,'local media read',e); } },
+    listLocalMediaJobs(req,res) { try { response.success(res,{items:localMedia.list(req.query.session_id)}); } catch(e) { sendError(res,log,'local media list',e); } },
+    resumeLocalMediaJob(req,res) { try { response.success(res,localMedia.resume(req.params.jobId)); } catch(e) { sendError(res,log,'local media resume',e); } },
     searchArtifacts(req, res) {
       try { response.success(res, service.searchArtifacts(req.query || {})); }
       catch (error) { sendError(res, log, 'search orchestration artifacts', error); }
@@ -61,17 +68,15 @@ module.exports = function orchestrationRoutes(db, log = console, cfg = {}, injec
       return response.success(res, item);
     },
     componentProfile(req, res) {
-      return response.success(res, { schema_version: 1, machine: componentManager.machineProfile() });
+      return response.success(res, { schema_version: 1, machine: componentManager.machineProfile(), components: localMedia.manager.runtimeComponents() });
     },
     componentState(req, res) {
-      try { return response.success(res, componentManager.readState(req.params.componentId) || { component_id: req.params.componentId, status: 'missing' }); }
+      try { return response.success(res, { ...(localMedia.manager.readState(req.params.componentId) || { component_id: req.params.componentId, status: 'missing' }), progress:localMedia.manager.readProgress(req.params.componentId) }); }
       catch (error) { return sendError(res, log, 'component state', error); }
     },
     ensureComponent(req, res) {
-      const progress = [];
-      Promise.resolve().then(() => componentManager.ensureComponent(req.body || {}, (event) => progress.push({ ...event, at: new Date().toISOString() })))
-        .then((result) => response.success(res, { ...result, progress }))
-        .catch((error) => sendError(res, log, 'component ensure', error));
+      try { const pending=localMedia.manager.ensureComponent(req.body||{}); pending.catch(error=>log.error?.('component install',{code:error.code,message:error.message})); response.success(res,{component_id:req.body.component_id,status:'preparing'}); }
+      catch(error) { sendError(res,log,'component ensure',error); }
     },
     listSessions(req, res) {
       try { response.success(res, service.listSessions(req.query || {})); }
