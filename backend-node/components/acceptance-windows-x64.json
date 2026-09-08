@@ -2,14 +2,14 @@
   "schema_version": 1,
   "status": "passed",
   "platform": "win32-x64",
-  "at": "2026-09-08T18:51:09.020Z",
-  "total": 124,
+  "at": "2026-09-08T20:07:16.229Z",
+  "total": 201,
   "source_fingerprints": {
-    "localMediaOperations.js": "0eea9d3a7f2c595792904df464c01e28b401d209173841bf24b033ea4bde1c24",
+    "localMediaOperations.js": "a033dbc0db882238765fa2e671e4ba226ebf6f4ec88f2304ae240d34f62f9113",
     "localMediaParameterSchemas.json": "927cd8ba0ea20e80904f5c7dc3ba1f1d8c03e370c9c49600b6fc1bba0daae0c5",
     "localMediaExecutor.js": "7f889f19f20c890ca92878e3b3fca85346ee0f5dcd6d87a022644dacab9870db",
     "localMediaWorker.js": "639102f27ae62b92d667a7acc87efbfafe30396d05ea79487f556d5de5f8fd45",
-    "componentRuntime.js": "06cec763e1362c2088cad213bc6b14965d55549fd6e6ddd96743ae511bcf9e69"
+    "componentRuntime.js": "e6af386e99bce4b74b3f719a326c4676eeb3021f3099c5d880ba1e8847732c24"
   },
   "fingerprint_normalization": "UTF-8 with CRLF normalized to LF; observed source matched before normalization",
   "components": [
@@ -1035,16 +1035,460 @@
       "verified_at": "2026-09-08T18:50:40.554Z"
     },
     {
+      "id": "local.image.social-square",
+      "title": "制作社媒 1:1 方图",
+      "status": "passed",
+      "component_id": "media.sharp",
+      "component_version": "0.35.3",
+      "input_sha256": "f79779ce297205d5370f9423b6e3eba0e35e372a55012e9c65cd9133462e3212",
+      "output_sha256": "797d638c0dc86589d359dae05aba62d3c010d6fbe16cc4b78fa2fa1d6b68134d",
+      "bytes": 25483,
+      "parameters": {},
+      "verified_at": "2026-09-08T19:51:36.960Z"
+    },
+    {
+      "id": "local.image.social-portrait",
+      "title": "制作社媒 4:5 竖图",
+      "status": "passed",
+      "component_id": "media.sharp",
+      "component_version": "0.35.3",
+      "input_sha256": "f79779ce297205d5370f9423b6e3eba0e35e372a55012e9c65cd9133462e3212",
+      "output_sha256": "9ea2e9196cd5887fb65974607e0b49876a9b7969141aa282102ea42e1093da84",
+      "bytes": 31795,
+      "parameters": {},
+      "verified_at": "2026-09-08T19:51:37.429Z"
+    },
+    {
+      "id": "local.image.social-landscape",
+      "title": "制作社媒横图",
+      "status": "passed",
+      "component_id": "media.sharp",
+      "component_version": "0.35.3",
+      "input_sha256": "f79779ce297205d5370f9423b6e3eba0e35e372a55012e9c65cd9133462e3212",
+      "output_sha256": "734ca6fc4664ee2cc3e40d8496773d9a99c7e76a0cdb23b4c1805e2108e76655",
+      "bytes": 16472,
+      "parameters": {},
+      "verified_at": "2026-09-08T19:51:37.827Z"
+    },
+    {
+      "id": "local.image.avatar",
+      "title": "制作头像方图",
+      "status": "passed",
+      "component_id": "media.sharp",
+      "component_version": "0.35.3",
+      "input_sha256": "f79779ce297205d5370f9423b6e3eba0e35e372a55012e9c65cd9133462e3212",
+      "output_sha256": "66c4c108eeead3ca72deea3e4ef7ea5e6a8a9ae3dd0c900e7d4ea5b1fd8376f3",
+      "bytes": 6275,
+      "parameters": {},
+      "verified_at": "2026-09-08T19:51:38.210Z"
+    },
+    {
+      "id": "local.image.thumbnail",
+      "title": "制作缩略图",
+      "status": "passed",
+      "component_id": "media.sharp",
+      "component_version": "0.35.3",
+      "input_sha256": "f79779ce297205d5370f9423b6e3eba0e35e372a55012e9c65cd9133462e3212",
+      "output_sha256": "295b77cdfba125d174e736fd93ff1ef09389c745f0f5e777cc481b5f2899aada",
+      "bytes": 2667,
+      "parameters": {},
+      "verified_at": "2026-09-08T19:51:38.551Z"
+    },
+    {
+      "id": "local.image.contain-white",
+      "title": "完整主体白底适配",
+      "status": "passed",
+      "component_id": "media.sharp",
+      "component_version": "0.35.3",
+      "input_sha256": "f79779ce297205d5370f9423b6e3eba0e35e372a55012e9c65cd9133462e3212",
+      "output_sha256": "6006c0357ed7b80ecc5d393c3b98aa626b3788ff44baf4bbec3c49f2ec42824f",
+      "bytes": 12320,
+      "parameters": {},
+      "verified_at": "2026-09-08T19:51:38.942Z"
+    },
+    {
+      "id": "local.image.contain-black",
+      "title": "完整主体黑底适配",
+      "status": "passed",
+      "component_id": "media.sharp",
+      "component_version": "0.35.3",
+      "input_sha256": "f79779ce297205d5370f9423b6e3eba0e35e372a55012e9c65cd9133462e3212",
+      "output_sha256": "cd8c669134dcb3c6f41fa78d23bdb7fe1184519c68d70b526d0effe74dcf7fe9",
+      "bytes": 14930,
+      "parameters": {},
+      "verified_at": "2026-09-08T19:51:39.406Z"
+    },
+    {
+      "id": "local.image.contain-transparent",
+      "title": "完整主体透明适配",
+      "status": "passed",
+      "component_id": "media.sharp",
+      "component_version": "0.35.3",
+      "input_sha256": "f79779ce297205d5370f9423b6e3eba0e35e372a55012e9c65cd9133462e3212",
+      "output_sha256": "ce9dee11077fc54091740ebc00c7e3499b78c049bde08c66f11d66b973432fde",
+      "bytes": 11630,
+      "parameters": {},
+      "verified_at": "2026-09-08T19:51:39.849Z"
+    },
+    {
+      "id": "local.image.pad-square-white",
+      "title": "补白边为正方形",
+      "status": "passed",
+      "component_id": "media.sharp",
+      "component_version": "0.35.3",
+      "input_sha256": "f79779ce297205d5370f9423b6e3eba0e35e372a55012e9c65cd9133462e3212",
+      "output_sha256": "dbd870150029211da85ab1bd10dabd0188bd43ba2e921c0f925744c3c4c6883f",
+      "bytes": 595,
+      "parameters": {},
+      "verified_at": "2026-09-08T19:51:40.202Z"
+    },
+    {
+      "id": "local.image.pad-square-black",
+      "title": "补黑边为正方形",
+      "status": "passed",
+      "component_id": "media.sharp",
+      "component_version": "0.35.3",
+      "input_sha256": "f79779ce297205d5370f9423b6e3eba0e35e372a55012e9c65cd9133462e3212",
+      "output_sha256": "2427ccb55f6f0709fe8012c1ab842191bbde116105bd3ccf5d8cd533cca030e4",
+      "bytes": 654,
+      "parameters": {},
+      "verified_at": "2026-09-08T19:51:40.540Z"
+    },
+    {
+      "id": "local.image.rotate-180",
+      "title": "旋转 180 度",
+      "status": "passed",
+      "component_id": "media.sharp",
+      "component_version": "0.35.3",
+      "input_sha256": "f79779ce297205d5370f9423b6e3eba0e35e372a55012e9c65cd9133462e3212",
+      "output_sha256": "f79779ce297205d5370f9423b6e3eba0e35e372a55012e9c65cd9133462e3212",
+      "bytes": 477,
+      "parameters": {},
+      "verified_at": "2026-09-08T19:51:40.903Z"
+    },
+    {
+      "id": "local.image.rotate-270",
+      "title": "旋转 270 度",
+      "status": "passed",
+      "component_id": "media.sharp",
+      "component_version": "0.35.3",
+      "input_sha256": "f79779ce297205d5370f9423b6e3eba0e35e372a55012e9c65cd9133462e3212",
+      "output_sha256": "4d38602c9e47096767f24145a788e4580100408fac7e89f8f816eeaad0b2bf1e",
+      "bytes": 444,
+      "parameters": {},
+      "verified_at": "2026-09-08T19:51:41.266Z"
+    },
+    {
+      "id": "local.image.flip-both",
+      "title": "垂直与水平翻转",
+      "status": "passed",
+      "component_id": "media.sharp",
+      "component_version": "0.35.3",
+      "input_sha256": "f79779ce297205d5370f9423b6e3eba0e35e372a55012e9c65cd9133462e3212",
+      "output_sha256": "f79779ce297205d5370f9423b6e3eba0e35e372a55012e9c65cd9133462e3212",
+      "bytes": 477,
+      "parameters": {},
+      "verified_at": "2026-09-08T19:51:41.685Z"
+    },
+    {
+      "id": "local.image.ensure-rgba",
+      "title": "统一为 RGBA 通道",
+      "status": "passed",
+      "component_id": "media.sharp",
+      "component_version": "0.35.3",
+      "input_sha256": "f79779ce297205d5370f9423b6e3eba0e35e372a55012e9c65cd9133462e3212",
+      "output_sha256": "f79779ce297205d5370f9423b6e3eba0e35e372a55012e9c65cd9133462e3212",
+      "bytes": 477,
+      "parameters": {},
+      "verified_at": "2026-09-08T19:51:42.102Z"
+    },
+    {
+      "id": "local.image.flatten-black",
+      "title": "透明图铺黑底",
+      "status": "passed",
+      "component_id": "media.sharp",
+      "component_version": "0.35.3",
+      "input_sha256": "f79779ce297205d5370f9423b6e3eba0e35e372a55012e9c65cd9133462e3212",
+      "output_sha256": "51c3a4440bd8225d33c1b1ac0753edc127dcf096eff557424b07daa081838371",
+      "bytes": 364,
+      "parameters": {},
+      "verified_at": "2026-09-08T19:51:42.473Z"
+    },
+    {
+      "id": "local.image.flatten-gray",
+      "title": "透明图铺灰底",
+      "status": "passed",
+      "component_id": "media.sharp",
+      "component_version": "0.35.3",
+      "input_sha256": "f79779ce297205d5370f9423b6e3eba0e35e372a55012e9c65cd9133462e3212",
+      "output_sha256": "51c3a4440bd8225d33c1b1ac0753edc127dcf096eff557424b07daa081838371",
+      "bytes": 364,
+      "parameters": {},
+      "verified_at": "2026-09-08T19:51:42.869Z"
+    },
+    {
+      "id": "local.image.jpeg-quality",
+      "title": "导出高质量 JPEG",
+      "status": "passed",
+      "component_id": "media.sharp",
+      "component_version": "0.35.3",
+      "input_sha256": "f79779ce297205d5370f9423b6e3eba0e35e372a55012e9c65cd9133462e3212",
+      "output_sha256": "49ab744bd2666d8f224c71902d1ca15b3c27e4dde10cd1eda9765dccdae6dd7e",
+      "bytes": 329,
+      "parameters": {},
+      "verified_at": "2026-09-08T19:51:43.214Z"
+    },
+    {
+      "id": "local.image.webp-quality",
+      "title": "导出高质量 WebP",
+      "status": "passed",
+      "component_id": "media.sharp",
+      "component_version": "0.35.3",
+      "input_sha256": "f79779ce297205d5370f9423b6e3eba0e35e372a55012e9c65cd9133462e3212",
+      "output_sha256": "c05a9a05368d30eb6b7fe7ad797cb07c8cbe2eb1b7ed3fec71147fd3d7d8c533",
+      "bytes": 102,
+      "parameters": {},
+      "verified_at": "2026-09-08T19:51:43.584Z"
+    },
+    {
+      "id": "local.image.png-compress",
+      "title": "压缩 PNG 文件",
+      "status": "passed",
+      "component_id": "media.sharp",
+      "component_version": "0.35.3",
+      "input_sha256": "f79779ce297205d5370f9423b6e3eba0e35e372a55012e9c65cd9133462e3212",
+      "output_sha256": "9f50167b3892d14977dfc2acc2bf5dd9355b4cf2ed8fd8e8fc753584964b34e4",
+      "bytes": 227,
+      "parameters": {},
+      "verified_at": "2026-09-08T19:51:43.919Z"
+    },
+    {
+      "id": "local.image.border-black",
+      "title": "叠加黑色边框",
+      "status": "passed",
+      "component_id": "media.sharp",
+      "component_version": "0.35.3",
+      "input_sha256": "f79779ce297205d5370f9423b6e3eba0e35e372a55012e9c65cd9133462e3212",
+      "output_sha256": "074eb14579006dc3b090e60a2efed542d02568f913879a84e38f00597ed8989c",
+      "bytes": 563,
+      "parameters": {},
+      "verified_at": "2026-09-08T19:51:44.286Z"
+    },
+    {
+      "id": "local.image.border-white",
+      "title": "叠加白色边框",
+      "status": "passed",
+      "component_id": "media.sharp",
+      "component_version": "0.35.3",
+      "input_sha256": "f79779ce297205d5370f9423b6e3eba0e35e372a55012e9c65cd9133462e3212",
+      "output_sha256": "bc41695dec5655153c335ecd77495ea370223923adf01d950095e71a56385908",
+      "bytes": 570,
+      "parameters": {},
+      "verified_at": "2026-09-08T19:51:44.659Z"
+    },
+    {
+      "id": "local.image.watermark-corner",
+      "title": "右下角叠加水印",
+      "status": "passed",
+      "component_id": "media.sharp",
+      "component_version": "0.35.3",
+      "input_sha256": "f79779ce297205d5370f9423b6e3eba0e35e372a55012e9c65cd9133462e3212",
+      "output_sha256": "1e26e6ab5645142d72f31bddd831ad4238efe169d44ee57d3f474b6d0c9f608f",
+      "bytes": 1202,
+      "parameters": {},
+      "verified_at": "2026-09-08T19:51:45.032Z"
+    },
+    {
+      "id": "local.image.watermark-center",
+      "title": "居中叠加半透明水印",
+      "status": "passed",
+      "component_id": "media.sharp",
+      "component_version": "0.35.3",
+      "input_sha256": "f79779ce297205d5370f9423b6e3eba0e35e372a55012e9c65cd9133462e3212",
+      "output_sha256": "d48f68ccab2b1ed2f16e4ec1244f4177e7d94abd50ed1fef1043411c23499b5f",
+      "bytes": 1036,
+      "parameters": {},
+      "verified_at": "2026-09-08T19:51:45.420Z"
+    },
+    {
+      "id": "local.image.label-corner",
+      "title": "右上角添加标签",
+      "status": "passed",
+      "component_id": "media.sharp",
+      "component_version": "0.35.3",
+      "input_sha256": "f79779ce297205d5370f9423b6e3eba0e35e372a55012e9c65cd9133462e3212",
+      "output_sha256": "1da680d711bb3ac34a73d9653a4814023bfa79fd749f1486e4d006a2145d482c",
+      "bytes": 1396,
+      "parameters": {},
+      "verified_at": "2026-09-08T19:51:45.821Z"
+    },
+    {
+      "id": "local.image.shadow",
+      "title": "为主体添加柔和阴影",
+      "status": "passed",
+      "component_id": "media.sharp",
+      "component_version": "0.35.3",
+      "input_sha256": "f79779ce297205d5370f9423b6e3eba0e35e372a55012e9c65cd9133462e3212",
+      "output_sha256": "a13494e80a40148a16b36d48a2df88f1c730f8f66c25cf292600c5ea59096a84",
+      "bytes": 951,
+      "parameters": {},
+      "verified_at": "2026-09-08T19:51:46.236Z"
+    },
+    {
+      "id": "local.image.tint-red",
+      "title": "暖红色调",
+      "status": "passed",
+      "component_id": "media.sharp",
+      "component_version": "0.35.3",
+      "input_sha256": "f79779ce297205d5370f9423b6e3eba0e35e372a55012e9c65cd9133462e3212",
+      "output_sha256": "85bad4bedf4bb7ae2e5d32815e456238bb9cf86ba1b54712e7a3ef61c6d924e4",
+      "bytes": 476,
+      "parameters": {},
+      "verified_at": "2026-09-08T19:51:46.632Z"
+    },
+    {
+      "id": "local.image.tint-blue",
+      "title": "冷蓝色调",
+      "status": "passed",
+      "component_id": "media.sharp",
+      "component_version": "0.35.3",
+      "input_sha256": "f79779ce297205d5370f9423b6e3eba0e35e372a55012e9c65cd9133462e3212",
+      "output_sha256": "703a8fd43fdd1ea9c99d274e82f16d8d35ebe801ac5c63bf0889d62af2b44cd4",
+      "bytes": 477,
+      "parameters": {},
+      "verified_at": "2026-09-08T19:51:46.955Z"
+    },
+    {
+      "id": "local.image.tint-green",
+      "title": "清新绿色调",
+      "status": "passed",
+      "component_id": "media.sharp",
+      "component_version": "0.35.3",
+      "input_sha256": "f79779ce297205d5370f9423b6e3eba0e35e372a55012e9c65cd9133462e3212",
+      "output_sha256": "c63dcac194f664a01bba4ddd4a3abc605c6b5c0020e32a26e6d581a0f15d472f",
+      "bytes": 477,
+      "parameters": {},
+      "verified_at": "2026-09-08T19:51:47.774Z"
+    },
+    {
+      "id": "local.image.brightness-up",
+      "title": "提亮图片",
+      "status": "passed",
+      "component_id": "media.sharp",
+      "component_version": "0.35.3",
+      "input_sha256": "f79779ce297205d5370f9423b6e3eba0e35e372a55012e9c65cd9133462e3212",
+      "output_sha256": "8ad76cdbe130ed548e06ba89ed527c898ce6cd9ee69e5de4b6a744389885124c",
+      "bytes": 475,
+      "parameters": {},
+      "verified_at": "2026-09-08T19:51:48.282Z"
+    },
+    {
+      "id": "local.image.brightness-down",
+      "title": "压暗图片",
+      "status": "passed",
+      "component_id": "media.sharp",
+      "component_version": "0.35.3",
+      "input_sha256": "f79779ce297205d5370f9423b6e3eba0e35e372a55012e9c65cd9133462e3212",
+      "output_sha256": "19da5b26c647c86cb592d64a1e1510ea55df28f32ddd8d696baa88fbf1317daa",
+      "bytes": 392,
+      "parameters": {},
+      "verified_at": "2026-09-08T19:51:48.700Z"
+    },
+    {
+      "id": "local.image.saturation-up",
+      "title": "增强色彩饱和度",
+      "status": "passed",
+      "component_id": "media.sharp",
+      "component_version": "0.35.3",
+      "input_sha256": "f79779ce297205d5370f9423b6e3eba0e35e372a55012e9c65cd9133462e3212",
+      "output_sha256": "3be89c31dde46a8d618e62ad1720fb726f10eeedb569d4a2ed60b046f8a127a3",
+      "bytes": 388,
+      "parameters": {},
+      "verified_at": "2026-09-08T19:51:49.108Z"
+    },
+    {
+      "id": "local.image.saturation-down",
+      "title": "降低色彩饱和度",
+      "status": "passed",
+      "component_id": "media.sharp",
+      "component_version": "0.35.3",
+      "input_sha256": "f79779ce297205d5370f9423b6e3eba0e35e372a55012e9c65cd9133462e3212",
+      "output_sha256": "1f125a05c813556c5e6cfbd34708cca19e014b2388949abcb7af0c39db35edae",
+      "bytes": 477,
+      "parameters": {},
+      "verified_at": "2026-09-08T19:51:49.460Z"
+    },
+    {
+      "id": "local.image.sharpen-strong",
+      "title": "强力锐化图片",
+      "status": "passed",
+      "component_id": "media.sharp",
+      "component_version": "0.35.3",
+      "input_sha256": "f79779ce297205d5370f9423b6e3eba0e35e372a55012e9c65cd9133462e3212",
+      "output_sha256": "f79779ce297205d5370f9423b6e3eba0e35e372a55012e9c65cd9133462e3212",
+      "bytes": 477,
+      "parameters": {},
+      "verified_at": "2026-09-08T19:51:49.840Z"
+    },
+    {
+      "id": "local.image.blur-soft",
+      "title": "柔和背景模糊",
+      "status": "passed",
+      "component_id": "media.sharp",
+      "component_version": "0.35.3",
+      "input_sha256": "f79779ce297205d5370f9423b6e3eba0e35e372a55012e9c65cd9133462e3212",
+      "output_sha256": "28a28b6561b6e212efaf0cb48717cb9794c91bccaa4a50c3b4fe6ace4daa73e0",
+      "bytes": 477,
+      "parameters": {},
+      "verified_at": "2026-09-08T19:51:50.191Z"
+    },
+    {
+      "id": "local.image.poster-border",
+      "title": "制作宣传图留白边",
+      "status": "passed",
+      "component_id": "media.sharp",
+      "component_version": "0.35.3",
+      "input_sha256": "f79779ce297205d5370f9423b6e3eba0e35e372a55012e9c65cd9133462e3212",
+      "output_sha256": "c440123684b1f5832d5ea3ff6767c298a6245d1f810b878bea466bf0906a5775",
+      "bytes": 600,
+      "parameters": {},
+      "verified_at": "2026-09-08T19:51:50.543Z"
+    },
+    {
+      "id": "local.audio.volume-ramp",
+      "title": "音量渐变",
+      "status": "passed",
+      "component_id": "media.ffmpeg",
+      "component_version": "9.0.1",
+      "input_sha256": "2dfa61880ffb51719ae55d4f21d0ace8d223a57ae204ad94797de093a127eb8a",
+      "output_sha256": "d6ffb4acac8e7472ee6dfc12a87bd04959820d13d86bef634b7525d1f79950a3",
+      "bytes": 88278,
+      "parameters": {},
+      "verified_at": "2026-09-08T20:01:09.778Z"
+    },
+    {
+      "id": "local.audio.aresample-48k",
+      "title": "音频交付 48kHz",
+      "status": "passed",
+      "component_id": "media.ffmpeg",
+      "component_version": "9.0.1",
+      "input_sha256": "2dfa61880ffb51719ae55d4f21d0ace8d223a57ae204ad94797de093a127eb8a",
+      "output_sha256": "e11b1845f6791712453151599b2d7c27a9b05744e701e332a30e2424741badf0",
+      "bytes": 96078,
+      "parameters": {},
+      "verified_at": "2026-09-08T19:56:24.401Z"
+    },
+    {
       "id": "local.audio.volume",
       "title": "调整音频音量",
       "status": "passed",
       "component_id": "media.ffmpeg",
       "component_version": "9.0.1",
-      "input_sha256": "430c05f42bbb0ff92a2a617d577b168736c9f0b9780861745d447dbb54c79e83",
-      "output_sha256": "c65c889c706260f19aa5c78d2d1035c18139c6cea1277fe67414da5b198097e2",
-      "bytes": 96078,
+      "input_sha256": "2dfa61880ffb51719ae55d4f21d0ace8d223a57ae204ad94797de093a127eb8a",
+      "output_sha256": "7eb170015e6115dd95054070aed42583fd2608752a844c595a661b37b169bbce",
+      "bytes": 88278,
       "parameters": {},
-      "verified_at": "2026-09-08T18:50:41.108Z"
+      "verified_at": "2026-09-08T19:56:24.861Z"
     },
     {
       "id": "local.audio.loudnorm",
@@ -1052,11 +1496,11 @@
       "status": "passed",
       "component_id": "media.ffmpeg",
       "component_version": "9.0.1",
-      "input_sha256": "430c05f42bbb0ff92a2a617d577b168736c9f0b9780861745d447dbb54c79e83",
-      "output_sha256": "46e09e00b41d4660568fcc4d29bd1e781277d5f44992d24daa460f4a225a1cab",
+      "input_sha256": "2dfa61880ffb51719ae55d4f21d0ace8d223a57ae204ad94797de093a127eb8a",
+      "output_sha256": "d57dadabbe58c5b662d892f478269e21c6861fcd038cbfad41b7ab191b6747f5",
       "bytes": 384102,
       "parameters": {},
-      "verified_at": "2026-09-08T18:50:41.746Z"
+      "verified_at": "2026-09-08T19:56:25.453Z"
     },
     {
       "id": "local.audio.alimiter",
@@ -1064,11 +1508,11 @@
       "status": "passed",
       "component_id": "media.ffmpeg",
       "component_version": "9.0.1",
-      "input_sha256": "430c05f42bbb0ff92a2a617d577b168736c9f0b9780861745d447dbb54c79e83",
-      "output_sha256": "3cc744375969494271551d52f81def3023e114f5911d81c9f0589e9c825e1456",
-      "bytes": 96078,
+      "input_sha256": "2dfa61880ffb51719ae55d4f21d0ace8d223a57ae204ad94797de093a127eb8a",
+      "output_sha256": "098b67250259489e75fb47e81250f7689f5c0460113bf9e0e374b290e6caa4c5",
+      "bytes": 88278,
       "parameters": {},
-      "verified_at": "2026-09-08T18:50:42.434Z"
+      "verified_at": "2026-09-08T19:56:26.026Z"
     },
     {
       "id": "local.audio.acompressor",
@@ -1076,11 +1520,11 @@
       "status": "passed",
       "component_id": "media.ffmpeg",
       "component_version": "9.0.1",
-      "input_sha256": "430c05f42bbb0ff92a2a617d577b168736c9f0b9780861745d447dbb54c79e83",
-      "output_sha256": "3518e0b328323704ab48d13a9ff367f25d4b3093c02eea3f472d69fcf61633bb",
-      "bytes": 96078,
+      "input_sha256": "2dfa61880ffb51719ae55d4f21d0ace8d223a57ae204ad94797de093a127eb8a",
+      "output_sha256": "b351034f057e5256066eb6ffe118363f0845f945aa602167cdb348dc995c3b1a",
+      "bytes": 88278,
       "parameters": {},
-      "verified_at": "2026-09-08T18:50:43.336Z"
+      "verified_at": "2026-09-08T19:56:26.630Z"
     },
     {
       "id": "local.audio.compand",
@@ -1088,11 +1532,11 @@
       "status": "passed",
       "component_id": "media.ffmpeg",
       "component_version": "9.0.1",
-      "input_sha256": "430c05f42bbb0ff92a2a617d577b168736c9f0b9780861745d447dbb54c79e83",
-      "output_sha256": "0126a28c713bd66b926d7e27987de49931e1659b00aad7679fe7989112d903c9",
-      "bytes": 96078,
+      "input_sha256": "2dfa61880ffb51719ae55d4f21d0ace8d223a57ae204ad94797de093a127eb8a",
+      "output_sha256": "8d53ba28fec221289f46ceec5a43a444c6b994a9ea92761548ea44a7cda5e24e",
+      "bytes": 88278,
       "parameters": {},
-      "verified_at": "2026-09-08T18:50:43.956Z"
+      "verified_at": "2026-09-08T19:56:27.231Z"
     },
     {
       "id": "local.audio.agate",
@@ -1100,11 +1544,11 @@
       "status": "passed",
       "component_id": "media.ffmpeg",
       "component_version": "9.0.1",
-      "input_sha256": "430c05f42bbb0ff92a2a617d577b168736c9f0b9780861745d447dbb54c79e83",
-      "output_sha256": "292918cc19efd02f48eb89e9f26e10440467c7b70a9bd6556f68d5dcc13a00c5",
-      "bytes": 96078,
+      "input_sha256": "2dfa61880ffb51719ae55d4f21d0ace8d223a57ae204ad94797de093a127eb8a",
+      "output_sha256": "9c784d2329edea439fb90d9c4a1a096e8fb70cae2652c4ef6bfb942f7d491c8d",
+      "bytes": 88278,
       "parameters": {},
-      "verified_at": "2026-09-08T18:50:44.510Z"
+      "verified_at": "2026-09-08T19:56:27.744Z"
     },
     {
       "id": "local.audio.highpass",
@@ -1112,11 +1556,11 @@
       "status": "passed",
       "component_id": "media.ffmpeg",
       "component_version": "9.0.1",
-      "input_sha256": "430c05f42bbb0ff92a2a617d577b168736c9f0b9780861745d447dbb54c79e83",
-      "output_sha256": "894c24c090eaea0226ff2b5cdf6c55e4d82c09e07c19daf72264c96cff0f7b2d",
-      "bytes": 96078,
+      "input_sha256": "2dfa61880ffb51719ae55d4f21d0ace8d223a57ae204ad94797de093a127eb8a",
+      "output_sha256": "a13276d28266e16306046352379bd5ba630db14e5cc9a3a990f20d508cb3ec74",
+      "bytes": 88278,
       "parameters": {},
-      "verified_at": "2026-09-08T18:50:45.060Z"
+      "verified_at": "2026-09-08T19:56:28.294Z"
     },
     {
       "id": "local.audio.lowpass",
@@ -1124,11 +1568,11 @@
       "status": "passed",
       "component_id": "media.ffmpeg",
       "component_version": "9.0.1",
-      "input_sha256": "430c05f42bbb0ff92a2a617d577b168736c9f0b9780861745d447dbb54c79e83",
-      "output_sha256": "b970c9fe27c4f782f969d80809075283436e714ad7be29790db3516c314326a6",
-      "bytes": 96078,
+      "input_sha256": "2dfa61880ffb51719ae55d4f21d0ace8d223a57ae204ad94797de093a127eb8a",
+      "output_sha256": "4706743f4da32ede31de83b29eac0a8892a80e4dcbbef43af91e8e670cad966d",
+      "bytes": 88278,
       "parameters": {},
-      "verified_at": "2026-09-08T18:50:45.569Z"
+      "verified_at": "2026-09-08T19:56:28.828Z"
     },
     {
       "id": "local.audio.bandpass",
@@ -1136,11 +1580,11 @@
       "status": "passed",
       "component_id": "media.ffmpeg",
       "component_version": "9.0.1",
-      "input_sha256": "430c05f42bbb0ff92a2a617d577b168736c9f0b9780861745d447dbb54c79e83",
-      "output_sha256": "5c2916f388107673d15929998d67948febfb9b7814c700ed56cc56083ad8e9de",
-      "bytes": 96078,
+      "input_sha256": "2dfa61880ffb51719ae55d4f21d0ace8d223a57ae204ad94797de093a127eb8a",
+      "output_sha256": "80cd59848ec8af46d39000707bdb8a890eed2300c7f439f109a80e99f79ee09b",
+      "bytes": 88278,
       "parameters": {},
-      "verified_at": "2026-09-08T18:50:46.107Z"
+      "verified_at": "2026-09-08T19:56:29.364Z"
     },
     {
       "id": "local.audio.bandreject",
@@ -1148,11 +1592,11 @@
       "status": "passed",
       "component_id": "media.ffmpeg",
       "component_version": "9.0.1",
-      "input_sha256": "430c05f42bbb0ff92a2a617d577b168736c9f0b9780861745d447dbb54c79e83",
-      "output_sha256": "aa1acec9bb10df679e6981ec46e4350e5d4a6b9fe05798c548b273ce41905e3d",
-      "bytes": 96078,
+      "input_sha256": "2dfa61880ffb51719ae55d4f21d0ace8d223a57ae204ad94797de093a127eb8a",
+      "output_sha256": "539d75a56379968ed6844e017cda5ffe5bfb9076ce748bf0ea0009f32500edaf",
+      "bytes": 88278,
       "parameters": {},
-      "verified_at": "2026-09-08T18:50:46.627Z"
+      "verified_at": "2026-09-08T19:56:29.805Z"
     },
     {
       "id": "local.audio.bass",
@@ -1160,11 +1604,11 @@
       "status": "passed",
       "component_id": "media.ffmpeg",
       "component_version": "9.0.1",
-      "input_sha256": "430c05f42bbb0ff92a2a617d577b168736c9f0b9780861745d447dbb54c79e83",
-      "output_sha256": "64b8616bbb798613cd9442466f014e2a924d774ba791593f2d18b1c325ce83bb",
-      "bytes": 96078,
+      "input_sha256": "2dfa61880ffb51719ae55d4f21d0ace8d223a57ae204ad94797de093a127eb8a",
+      "output_sha256": "a85a3d201d1d560785b38e63312124635de27b7fb64e6538a16a29e8c238e6ba",
+      "bytes": 88278,
       "parameters": {},
-      "verified_at": "2026-09-08T18:50:47.147Z"
+      "verified_at": "2026-09-08T19:56:30.287Z"
     },
     {
       "id": "local.audio.treble",
@@ -1172,11 +1616,11 @@
       "status": "passed",
       "component_id": "media.ffmpeg",
       "component_version": "9.0.1",
-      "input_sha256": "430c05f42bbb0ff92a2a617d577b168736c9f0b9780861745d447dbb54c79e83",
-      "output_sha256": "814ecfbb3696829f69158d2f8a472309eda1fdd83e469445c50b53e81646776d",
-      "bytes": 96078,
+      "input_sha256": "2dfa61880ffb51719ae55d4f21d0ace8d223a57ae204ad94797de093a127eb8a",
+      "output_sha256": "8f0bc50e6f207fa56b69fb928604899350af68f45ede8d244a3c28e67362d424",
+      "bytes": 88278,
       "parameters": {},
-      "verified_at": "2026-09-08T18:50:47.930Z"
+      "verified_at": "2026-09-08T19:56:30.744Z"
     },
     {
       "id": "local.audio.equalizer",
@@ -1184,11 +1628,11 @@
       "status": "passed",
       "component_id": "media.ffmpeg",
       "component_version": "9.0.1",
-      "input_sha256": "430c05f42bbb0ff92a2a617d577b168736c9f0b9780861745d447dbb54c79e83",
-      "output_sha256": "8332a4b7c9d3b793b243ce4f6c5f6d474247a610ded139eb61298d672c9ccf77",
-      "bytes": 96078,
+      "input_sha256": "2dfa61880ffb51719ae55d4f21d0ace8d223a57ae204ad94797de093a127eb8a",
+      "output_sha256": "8d976aa03f39fefd47e3e04824f19738b81d00bc558dc981d2485c528e8c3d33",
+      "bytes": 88278,
       "parameters": {},
-      "verified_at": "2026-09-08T18:50:48.466Z"
+      "verified_at": "2026-09-08T19:56:31.222Z"
     },
     {
       "id": "local.audio.aecho",
@@ -1196,11 +1640,11 @@
       "status": "passed",
       "component_id": "media.ffmpeg",
       "component_version": "9.0.1",
-      "input_sha256": "430c05f42bbb0ff92a2a617d577b168736c9f0b9780861745d447dbb54c79e83",
-      "output_sha256": "ccdf8f05fb60a1022fcd4abcd027ad9db983c8c4c56208c691117993b6f574c5",
-      "bytes": 101838,
+      "input_sha256": "2dfa61880ffb51719ae55d4f21d0ace8d223a57ae204ad94797de093a127eb8a",
+      "output_sha256": "66ea8fb16ae6ba395afbcec3aebb32ef8f6edf0feeb6ae536da9428a8e4a5824",
+      "bytes": 93570,
       "parameters": {},
-      "verified_at": "2026-09-08T18:50:48.996Z"
+      "verified_at": "2026-09-08T19:56:31.712Z"
     },
     {
       "id": "local.audio.chorus",
@@ -1208,11 +1652,11 @@
       "status": "passed",
       "component_id": "media.ffmpeg",
       "component_version": "9.0.1",
-      "input_sha256": "430c05f42bbb0ff92a2a617d577b168736c9f0b9780861745d447dbb54c79e83",
-      "output_sha256": "c5e624617287b0db4df9088eff9e5d60601e2e52cf25fb24d6eff101ceb23b48",
-      "bytes": 101070,
+      "input_sha256": "2dfa61880ffb51719ae55d4f21d0ace8d223a57ae204ad94797de093a127eb8a",
+      "output_sha256": "72e6e4821768ceb847462980fd4b055b8016f88d210a0b2f93e7bc5c88ec6509",
+      "bytes": 92864,
       "parameters": {},
-      "verified_at": "2026-09-08T18:50:49.539Z"
+      "verified_at": "2026-09-08T19:56:32.179Z"
     },
     {
       "id": "local.audio.flanger",
@@ -1220,11 +1664,11 @@
       "status": "passed",
       "component_id": "media.ffmpeg",
       "component_version": "9.0.1",
-      "input_sha256": "430c05f42bbb0ff92a2a617d577b168736c9f0b9780861745d447dbb54c79e83",
-      "output_sha256": "b7d50c8fdf78acab3fcf56b3677cabfda83b3dbd17f021b5b221c35933b1bb08",
-      "bytes": 96078,
+      "input_sha256": "2dfa61880ffb51719ae55d4f21d0ace8d223a57ae204ad94797de093a127eb8a",
+      "output_sha256": "857b14bb553db34caad5088f2c735bbee007b718ad7dd6d4781ac4977a791d8b",
+      "bytes": 88278,
       "parameters": {},
-      "verified_at": "2026-09-08T18:50:50.058Z"
+      "verified_at": "2026-09-08T19:56:32.671Z"
     },
     {
       "id": "local.audio.aphaser",
@@ -1232,11 +1676,11 @@
       "status": "passed",
       "component_id": "media.ffmpeg",
       "component_version": "9.0.1",
-      "input_sha256": "430c05f42bbb0ff92a2a617d577b168736c9f0b9780861745d447dbb54c79e83",
-      "output_sha256": "f6d5759aff40fdbbdd5b5bc392a1df60eb83464c4b38a2c2050a6d1eb239fa37",
-      "bytes": 96078,
+      "input_sha256": "2dfa61880ffb51719ae55d4f21d0ace8d223a57ae204ad94797de093a127eb8a",
+      "output_sha256": "fe8cd9bef473ffec0c27c6f846b7e9222d2ac6c4702555eeb7b5d33fa1a856bf",
+      "bytes": 88278,
       "parameters": {},
-      "verified_at": "2026-09-08T18:50:50.559Z"
+      "verified_at": "2026-09-08T19:56:33.172Z"
     },
     {
       "id": "local.audio.tremolo",
@@ -1244,11 +1688,11 @@
       "status": "passed",
       "component_id": "media.ffmpeg",
       "component_version": "9.0.1",
-      "input_sha256": "430c05f42bbb0ff92a2a617d577b168736c9f0b9780861745d447dbb54c79e83",
-      "output_sha256": "6ba415b269699e10ee3001d940ee6256f9ca863ffc1d9326044b68be7017a4f3",
-      "bytes": 96078,
+      "input_sha256": "2dfa61880ffb51719ae55d4f21d0ace8d223a57ae204ad94797de093a127eb8a",
+      "output_sha256": "e6598d25dba4cf0d1b5575c8032870e0eb2cb04c5861cabca4d891935c229d20",
+      "bytes": 88278,
       "parameters": {},
-      "verified_at": "2026-09-08T18:50:51.068Z"
+      "verified_at": "2026-09-08T19:56:33.629Z"
     },
     {
       "id": "local.audio.vibrato",
@@ -1256,11 +1700,11 @@
       "status": "passed",
       "component_id": "media.ffmpeg",
       "component_version": "9.0.1",
-      "input_sha256": "430c05f42bbb0ff92a2a617d577b168736c9f0b9780861745d447dbb54c79e83",
-      "output_sha256": "c9c9baabdac34f4c2c623083733074031d360189c8e40e432a103777dd25854f",
-      "bytes": 96078,
+      "input_sha256": "2dfa61880ffb51719ae55d4f21d0ace8d223a57ae204ad94797de093a127eb8a",
+      "output_sha256": "5611ea7075625a5d242366c23f1bb90724941f11107f26af1bdc29e8b5df50e7",
+      "bytes": 88278,
       "parameters": {},
-      "verified_at": "2026-09-08T18:50:51.637Z"
+      "verified_at": "2026-09-08T19:56:34.088Z"
     },
     {
       "id": "local.audio.pitch",
@@ -1268,11 +1712,11 @@
       "status": "passed",
       "component_id": "media.ffmpeg",
       "component_version": "9.0.1",
-      "input_sha256": "430c05f42bbb0ff92a2a617d577b168736c9f0b9780861745d447dbb54c79e83",
-      "output_sha256": "6332e40ed76f6c4c3faadad39f7640a32fe7ce3e049934057307cee3cbb1f8ed",
+      "input_sha256": "2dfa61880ffb51719ae55d4f21d0ace8d223a57ae204ad94797de093a127eb8a",
+      "output_sha256": "fa6dea6f6d8853bdf16c0b3a25eb146a4a8b98747c5695b2c84d90979453f95b",
       "bytes": 95864,
       "parameters": {},
-      "verified_at": "2026-09-08T18:50:52.294Z"
+      "verified_at": "2026-09-08T19:56:34.558Z"
     },
     {
       "id": "local.audio.atempo",
@@ -1280,11 +1724,11 @@
       "status": "passed",
       "component_id": "media.ffmpeg",
       "component_version": "9.0.1",
-      "input_sha256": "430c05f42bbb0ff92a2a617d577b168736c9f0b9780861745d447dbb54c79e83",
-      "output_sha256": "bcb16454d2306a6e67f332bd5a8d47025bd0e261930ea16f467be0c25ee5f66c",
-      "bytes": 79942,
+      "input_sha256": "2dfa61880ffb51719ae55d4f21d0ace8d223a57ae204ad94797de093a127eb8a",
+      "output_sha256": "c9ecaef3d4bf43a3de9a9babacfe1131cff8c1b449affee31570f46428126bca",
+      "bytes": 73840,
       "parameters": {},
-      "verified_at": "2026-09-08T18:50:53.711Z"
+      "verified_at": "2026-09-08T19:56:35.018Z"
     },
     {
       "id": "local.audio.areverse",
@@ -1292,11 +1736,11 @@
       "status": "passed",
       "component_id": "media.ffmpeg",
       "component_version": "9.0.1",
-      "input_sha256": "430c05f42bbb0ff92a2a617d577b168736c9f0b9780861745d447dbb54c79e83",
-      "output_sha256": "c47e71fd0aac1d02c611a40dfb8a40b3fbd66b5b55e42961b84648bfb336c0da",
-      "bytes": 96078,
+      "input_sha256": "2dfa61880ffb51719ae55d4f21d0ace8d223a57ae204ad94797de093a127eb8a",
+      "output_sha256": "f9863d3c377879c5acca87c40c600f5a555c18d7ecc5a48d472767a18cd7e4cd",
+      "bytes": 88278,
       "parameters": {},
-      "verified_at": "2026-09-08T18:50:54.417Z"
+      "verified_at": "2026-09-08T19:56:35.477Z"
     },
     {
       "id": "local.audio.fade-in",
@@ -1304,11 +1748,11 @@
       "status": "passed",
       "component_id": "media.ffmpeg",
       "component_version": "9.0.1",
-      "input_sha256": "430c05f42bbb0ff92a2a617d577b168736c9f0b9780861745d447dbb54c79e83",
-      "output_sha256": "8953288d34f716953c6904c2288bdb70206a948f4593c577b17cde5cef70db59",
-      "bytes": 96078,
+      "input_sha256": "2dfa61880ffb51719ae55d4f21d0ace8d223a57ae204ad94797de093a127eb8a",
+      "output_sha256": "c58a866c16189e4364ef26d9f275ebfadf59443498b26e1b18d7e584d9135d77",
+      "bytes": 88278,
       "parameters": {},
-      "verified_at": "2026-09-08T18:50:55.268Z"
+      "verified_at": "2026-09-08T19:56:35.983Z"
     },
     {
       "id": "local.audio.fade-out",
@@ -1316,11 +1760,11 @@
       "status": "passed",
       "component_id": "media.ffmpeg",
       "component_version": "9.0.1",
-      "input_sha256": "430c05f42bbb0ff92a2a617d577b168736c9f0b9780861745d447dbb54c79e83",
-      "output_sha256": "56e5b8c05d11fbe55f54e1be689123a8c90b07fb277bd9c48c62064e11100492",
-      "bytes": 96078,
+      "input_sha256": "2dfa61880ffb51719ae55d4f21d0ace8d223a57ae204ad94797de093a127eb8a",
+      "output_sha256": "df4931eefd034e502682cf653004466ce089cf306556908da2da884ced6b2fd3",
+      "bytes": 88278,
       "parameters": {},
-      "verified_at": "2026-09-08T18:50:56.037Z"
+      "verified_at": "2026-09-08T19:56:36.553Z"
     },
     {
       "id": "local.audio.atrim",
@@ -1328,11 +1772,11 @@
       "status": "passed",
       "component_id": "media.ffmpeg",
       "component_version": "9.0.1",
-      "input_sha256": "430c05f42bbb0ff92a2a617d577b168736c9f0b9780861745d447dbb54c79e83",
-      "output_sha256": "c72efd2c5ca7b0a1e346aaa6bbc6ca77e99c37a70498529f0442c76f38cf0555",
-      "bytes": 38478,
+      "input_sha256": "2dfa61880ffb51719ae55d4f21d0ace8d223a57ae204ad94797de093a127eb8a",
+      "output_sha256": "59539d7bd236b86c8410e7cd8bfc89ee612f4ad4b4aaa7a478010677e2d02633",
+      "bytes": 35358,
       "parameters": {},
-      "verified_at": "2026-09-08T18:50:57.008Z"
+      "verified_at": "2026-09-08T19:56:37.041Z"
     },
     {
       "id": "local.audio.adelay",
@@ -1340,11 +1784,11 @@
       "status": "passed",
       "component_id": "media.ffmpeg",
       "component_version": "9.0.1",
-      "input_sha256": "430c05f42bbb0ff92a2a617d577b168736c9f0b9780861745d447dbb54c79e83",
-      "output_sha256": "e70bd50ca750a1f57475b35da7026bc9436663bee29309075371c03ea4d014e7",
-      "bytes": 105678,
+      "input_sha256": "2dfa61880ffb51719ae55d4f21d0ace8d223a57ae204ad94797de093a127eb8a",
+      "output_sha256": "e2a011d9615fdd73a19aafda095013db8eaccf1d0a85ca876297160ef60a7cb0",
+      "bytes": 97098,
       "parameters": {},
-      "verified_at": "2026-09-08T18:50:58.680Z"
+      "verified_at": "2026-09-08T19:56:37.526Z"
     },
     {
       "id": "local.audio.apad",
@@ -1352,11 +1796,11 @@
       "status": "passed",
       "component_id": "media.ffmpeg",
       "component_version": "9.0.1",
-      "input_sha256": "430c05f42bbb0ff92a2a617d577b168736c9f0b9780861745d447dbb54c79e83",
-      "output_sha256": "98b2d5bb5236c0675eea839fcfcbf878414586f016e32ceb20dd2d00cec13ea0",
-      "bytes": 115278,
+      "input_sha256": "2dfa61880ffb51719ae55d4f21d0ace8d223a57ae204ad94797de093a127eb8a",
+      "output_sha256": "364cd657e5a19914f267279a082166b8a2223a6bddfa16bc9842414d3f4385f5",
+      "bytes": 105918,
       "parameters": {},
-      "verified_at": "2026-09-08T18:50:59.879Z"
+      "verified_at": "2026-09-08T19:56:38.012Z"
     },
     {
       "id": "local.audio.silenceremove",
@@ -1364,11 +1808,11 @@
       "status": "passed",
       "component_id": "media.ffmpeg",
       "component_version": "9.0.1",
-      "input_sha256": "430c05f42bbb0ff92a2a617d577b168736c9f0b9780861745d447dbb54c79e83",
-      "output_sha256": "594d9cfb6c837e453a5bc0d9e1eb014aba8ffd22a741e9e8d87259f517ae20bb",
-      "bytes": 94156,
+      "input_sha256": "2dfa61880ffb51719ae55d4f21d0ace8d223a57ae204ad94797de093a127eb8a",
+      "output_sha256": "249a4f6b002f52647ab568f79d928ccb9bb172cc81c052e7751153d7e431fdf9",
+      "bytes": 86512,
       "parameters": {},
-      "verified_at": "2026-09-08T18:51:01.168Z"
+      "verified_at": "2026-09-08T19:56:38.478Z"
     },
     {
       "id": "local.audio.afftdn",
@@ -1376,11 +1820,11 @@
       "status": "passed",
       "component_id": "media.ffmpeg",
       "component_version": "9.0.1",
-      "input_sha256": "430c05f42bbb0ff92a2a617d577b168736c9f0b9780861745d447dbb54c79e83",
-      "output_sha256": "8dc34b44a3112e1291616fb8ce867317ad35ed6585f13dfe44be2e1e2409be50",
-      "bytes": 96078,
+      "input_sha256": "2dfa61880ffb51719ae55d4f21d0ace8d223a57ae204ad94797de093a127eb8a",
+      "output_sha256": "0805a3d0ac927bfe8b4e394ec97dd4354581c6f84f98312e31f1fd6238e0f477",
+      "bytes": 88278,
       "parameters": {},
-      "verified_at": "2026-09-08T18:51:02.092Z"
+      "verified_at": "2026-09-08T19:56:38.937Z"
     },
     {
       "id": "local.audio.adeclick",
@@ -1388,11 +1832,11 @@
       "status": "passed",
       "component_id": "media.ffmpeg",
       "component_version": "9.0.1",
-      "input_sha256": "430c05f42bbb0ff92a2a617d577b168736c9f0b9780861745d447dbb54c79e83",
-      "output_sha256": "1596dbd21e026bf2dc73a3a9448b146c7b6591ccb7300adb2388277525048993",
-      "bytes": 96078,
+      "input_sha256": "2dfa61880ffb51719ae55d4f21d0ace8d223a57ae204ad94797de093a127eb8a",
+      "output_sha256": "42e5fadf533903c7feeaf1f8504bda52dfe4c2506acdcc5295bebda373abbfa8",
+      "bytes": 88278,
       "parameters": {},
-      "verified_at": "2026-09-08T18:51:02.978Z"
+      "verified_at": "2026-09-08T19:56:39.389Z"
     },
     {
       "id": "local.audio.adeclip",
@@ -1400,11 +1844,11 @@
       "status": "passed",
       "component_id": "media.ffmpeg",
       "component_version": "9.0.1",
-      "input_sha256": "430c05f42bbb0ff92a2a617d577b168736c9f0b9780861745d447dbb54c79e83",
-      "output_sha256": "1596dbd21e026bf2dc73a3a9448b146c7b6591ccb7300adb2388277525048993",
-      "bytes": 96078,
+      "input_sha256": "2dfa61880ffb51719ae55d4f21d0ace8d223a57ae204ad94797de093a127eb8a",
+      "output_sha256": "42e5fadf533903c7feeaf1f8504bda52dfe4c2506acdcc5295bebda373abbfa8",
+      "bytes": 88278,
       "parameters": {},
-      "verified_at": "2026-09-08T18:51:03.600Z"
+      "verified_at": "2026-09-08T19:56:39.874Z"
     },
     {
       "id": "local.audio.dcshift",
@@ -1412,11 +1856,11 @@
       "status": "passed",
       "component_id": "media.ffmpeg",
       "component_version": "9.0.1",
-      "input_sha256": "430c05f42bbb0ff92a2a617d577b168736c9f0b9780861745d447dbb54c79e83",
-      "output_sha256": "438d1a9a358c793f5761cb7ecec7cd65925a3f37353e03e4327e89f6b50ad3f1",
-      "bytes": 96078,
+      "input_sha256": "2dfa61880ffb51719ae55d4f21d0ace8d223a57ae204ad94797de093a127eb8a",
+      "output_sha256": "cb2fe4cced9394fa9ef54da1d9d9393aa473930931f646d5f31d10bc147180d8",
+      "bytes": 88278,
       "parameters": {},
-      "verified_at": "2026-09-08T18:51:04.247Z"
+      "verified_at": "2026-09-08T19:56:40.291Z"
     },
     {
       "id": "local.audio.dynaudnorm",
@@ -1424,11 +1868,11 @@
       "status": "passed",
       "component_id": "media.ffmpeg",
       "component_version": "9.0.1",
-      "input_sha256": "430c05f42bbb0ff92a2a617d577b168736c9f0b9780861745d447dbb54c79e83",
-      "output_sha256": "363b05a15dcae1f80bb322d90f4b4d8a311d606c59219c030109042b2529a810",
-      "bytes": 96078,
+      "input_sha256": "2dfa61880ffb51719ae55d4f21d0ace8d223a57ae204ad94797de093a127eb8a",
+      "output_sha256": "f9002362aea367cf3b91b67c766a280e470241f9d5525cd0a4a6755433e7511c",
+      "bytes": 88278,
       "parameters": {},
-      "verified_at": "2026-09-08T18:51:04.807Z"
+      "verified_at": "2026-09-08T19:56:40.744Z"
     },
     {
       "id": "local.audio.stereo",
@@ -1436,11 +1880,11 @@
       "status": "passed",
       "component_id": "media.ffmpeg",
       "component_version": "9.0.1",
-      "input_sha256": "430c05f42bbb0ff92a2a617d577b168736c9f0b9780861745d447dbb54c79e83",
-      "output_sha256": "6a81c283382cafe1af3ba740b5e79b6cb6dc9e49a3449dc01c6a3cc67a6a0e1a",
-      "bytes": 192078,
+      "input_sha256": "2dfa61880ffb51719ae55d4f21d0ace8d223a57ae204ad94797de093a127eb8a",
+      "output_sha256": "582891a17ba19bf199f5ba23528fe718e19dea1ead59bc9a5184c0a8d99e8dba",
+      "bytes": 176478,
       "parameters": {},
-      "verified_at": "2026-09-08T18:51:05.378Z"
+      "verified_at": "2026-09-08T19:56:41.237Z"
     },
     {
       "id": "local.audio.mono",
@@ -1448,11 +1892,11 @@
       "status": "passed",
       "component_id": "media.ffmpeg",
       "component_version": "9.0.1",
-      "input_sha256": "430c05f42bbb0ff92a2a617d577b168736c9f0b9780861745d447dbb54c79e83",
-      "output_sha256": "430c05f42bbb0ff92a2a617d577b168736c9f0b9780861745d447dbb54c79e83",
-      "bytes": 96078,
+      "input_sha256": "2dfa61880ffb51719ae55d4f21d0ace8d223a57ae204ad94797de093a127eb8a",
+      "output_sha256": "2dfa61880ffb51719ae55d4f21d0ace8d223a57ae204ad94797de093a127eb8a",
+      "bytes": 88278,
       "parameters": {},
-      "verified_at": "2026-09-08T18:51:05.993Z"
+      "verified_at": "2026-09-08T19:56:41.761Z"
     },
     {
       "id": "local.audio.resample",
@@ -1460,11 +1904,11 @@
       "status": "passed",
       "component_id": "media.ffmpeg",
       "component_version": "9.0.1",
-      "input_sha256": "430c05f42bbb0ff92a2a617d577b168736c9f0b9780861745d447dbb54c79e83",
-      "output_sha256": "1bb11ed82e42e72f298236778704a4d02260fb3fc8fc061916f089c283ae3d01",
+      "input_sha256": "2dfa61880ffb51719ae55d4f21d0ace8d223a57ae204ad94797de093a127eb8a",
+      "output_sha256": "2dfa61880ffb51719ae55d4f21d0ace8d223a57ae204ad94797de093a127eb8a",
       "bytes": 88278,
       "parameters": {},
-      "verified_at": "2026-09-08T18:51:06.571Z"
+      "verified_at": "2026-09-08T19:56:42.357Z"
     },
     {
       "id": "local.audio.asetrate",
@@ -1472,11 +1916,11 @@
       "status": "passed",
       "component_id": "media.ffmpeg",
       "component_version": "9.0.1",
-      "input_sha256": "430c05f42bbb0ff92a2a617d577b168736c9f0b9780861745d447dbb54c79e83",
-      "output_sha256": "ea70060b95f9504a883be5b662f8b74a65d8ff216fa10c68dfb05adc8ef1de5d",
-      "bytes": 96078,
+      "input_sha256": "2dfa61880ffb51719ae55d4f21d0ace8d223a57ae204ad94797de093a127eb8a",
+      "output_sha256": "2dfa61880ffb51719ae55d4f21d0ace8d223a57ae204ad94797de093a127eb8a",
+      "bytes": 88278,
       "parameters": {},
-      "verified_at": "2026-09-08T18:51:07.263Z"
+      "verified_at": "2026-09-08T19:56:42.950Z"
     },
     {
       "id": "local.audio.anull",
@@ -1484,11 +1928,11 @@
       "status": "passed",
       "component_id": "media.ffmpeg",
       "component_version": "9.0.1",
-      "input_sha256": "430c05f42bbb0ff92a2a617d577b168736c9f0b9780861745d447dbb54c79e83",
-      "output_sha256": "430c05f42bbb0ff92a2a617d577b168736c9f0b9780861745d447dbb54c79e83",
-      "bytes": 96078,
+      "input_sha256": "2dfa61880ffb51719ae55d4f21d0ace8d223a57ae204ad94797de093a127eb8a",
+      "output_sha256": "2dfa61880ffb51719ae55d4f21d0ace8d223a57ae204ad94797de093a127eb8a",
+      "bytes": 88278,
       "parameters": {},
-      "verified_at": "2026-09-08T18:51:07.890Z"
+      "verified_at": "2026-09-08T19:56:43.587Z"
     },
     {
       "id": "local.audio.asubboost",
@@ -1496,11 +1940,11 @@
       "status": "passed",
       "component_id": "media.ffmpeg",
       "component_version": "9.0.1",
-      "input_sha256": "430c05f42bbb0ff92a2a617d577b168736c9f0b9780861745d447dbb54c79e83",
-      "output_sha256": "1b78179d999831231da0b29e25eb321dc109049a3125349d259b3a09bb01bee0",
-      "bytes": 96078,
+      "input_sha256": "2dfa61880ffb51719ae55d4f21d0ace8d223a57ae204ad94797de093a127eb8a",
+      "output_sha256": "314437b1bb0beae2b87479e30cd87fd432c9091e11d1dd28a5d35455dc0454d3",
+      "bytes": 88278,
       "parameters": {},
-      "verified_at": "2026-09-08T18:51:08.418Z"
+      "verified_at": "2026-09-08T19:56:44.097Z"
     },
     {
       "id": "local.audio.crossfeed",
@@ -1508,11 +1952,491 @@
       "status": "passed",
       "component_id": "media.ffmpeg",
       "component_version": "9.0.1",
-      "input_sha256": "430c05f42bbb0ff92a2a617d577b168736c9f0b9780861745d447dbb54c79e83",
-      "output_sha256": "a2753ee615ac9722a6f4558f46d3ae4d2b4a12a933674abbef638ae59c076501",
-      "bytes": 192078,
+      "input_sha256": "2dfa61880ffb51719ae55d4f21d0ace8d223a57ae204ad94797de093a127eb8a",
+      "output_sha256": "e6895a17e039714f8f02725418106db4a433bc88fedf958a9c76c493a3751f50",
+      "bytes": 176478,
       "parameters": {},
-      "verified_at": "2026-09-08T18:51:09.008Z"
+      "verified_at": "2026-09-08T19:56:44.604Z"
+    },
+    {
+      "id": "local.video.drawgrid",
+      "title": "视频叠加参考网格",
+      "status": "passed",
+      "component_id": "media.ffmpeg",
+      "component_version": "9.0.1",
+      "input_sha256": "bddd19635489d74d47e0e9933aa6f0f7d39eb40b674efc0be74ac217a5853512",
+      "output_sha256": "e0ed62825a15d5fe92b90c4d32df8ae0ee7f636786e276893351e7b4fd6b41a7",
+      "bytes": 15022,
+      "parameters": {},
+      "verified_at": "2026-09-08T20:05:06.489Z"
+    },
+    {
+      "id": "local.video.drawtext",
+      "title": "视频叠加文字",
+      "status": "passed",
+      "component_id": "media.ffmpeg",
+      "component_version": "9.0.1",
+      "input_sha256": "bddd19635489d74d47e0e9933aa6f0f7d39eb40b674efc0be74ac217a5853512",
+      "output_sha256": "21134356b288b5830b6088bcea424b7acd65d576871f0c806d52850030640cb0",
+      "bytes": 15475,
+      "parameters": {},
+      "verified_at": "2026-09-08T20:05:07.734Z"
+    },
+    {
+      "id": "local.video.tblend",
+      "title": "视频帧平均混合",
+      "status": "passed",
+      "component_id": "media.ffmpeg",
+      "component_version": "9.0.1",
+      "input_sha256": "bddd19635489d74d47e0e9933aa6f0f7d39eb40b674efc0be74ac217a5853512",
+      "output_sha256": "8c43d78d25ed6f2938e2ad2fd5e28af34b193cefc7d77d9063567818712f607a",
+      "bytes": 14649,
+      "parameters": {},
+      "verified_at": "2026-09-08T20:05:08.222Z"
+    },
+    {
+      "id": "local.video.framestep",
+      "title": "隔帧抽取视频",
+      "status": "passed",
+      "component_id": "media.ffmpeg",
+      "component_version": "9.0.1",
+      "input_sha256": "bddd19635489d74d47e0e9933aa6f0f7d39eb40b674efc0be74ac217a5853512",
+      "output_sha256": "a0222359cf743eec903eacf5b26ceffdbab40227c8e2a2b7bfe82146e267525b",
+      "bytes": 14282,
+      "parameters": {},
+      "verified_at": "2026-09-08T20:05:08.798Z"
+    },
+    {
+      "id": "local.video.select-even",
+      "title": "保留偶数帧",
+      "status": "passed",
+      "component_id": "media.ffmpeg",
+      "component_version": "9.0.1",
+      "input_sha256": "bddd19635489d74d47e0e9933aa6f0f7d39eb40b674efc0be74ac217a5853512",
+      "output_sha256": "9bbf9d051310f18dc92363fa6a6fe1e904f7f24ccd0d5abb9d0ae8597f8542d8",
+      "bytes": 13963,
+      "parameters": {},
+      "verified_at": "2026-09-08T20:05:09.388Z"
+    },
+    {
+      "id": "local.video.tinterlace",
+      "title": "生成交错视频效果",
+      "status": "passed",
+      "component_id": "media.ffmpeg",
+      "component_version": "9.0.1",
+      "input_sha256": "bddd19635489d74d47e0e9933aa6f0f7d39eb40b674efc0be74ac217a5853512",
+      "output_sha256": "8671bb75b60fd9c080df6d880a86ceb9551a69559ebe75d611a5456047247c18",
+      "bytes": 15901,
+      "parameters": {},
+      "verified_at": "2026-09-08T19:56:07.111Z"
+    },
+    {
+      "id": "local.video.fieldorder",
+      "title": "统一视频场序",
+      "status": "passed",
+      "component_id": "media.ffmpeg",
+      "component_version": "9.0.1",
+      "input_sha256": "bddd19635489d74d47e0e9933aa6f0f7d39eb40b674efc0be74ac217a5853512",
+      "output_sha256": "a90b86d33742329c215c0d342afcdf7685391afb4205bd1bd3e0bd78f842e85c",
+      "bytes": 14847,
+      "parameters": {},
+      "verified_at": "2026-09-08T19:56:07.620Z"
+    },
+    {
+      "id": "local.video.format-gray",
+      "title": "视频输出灰度像素格式",
+      "status": "passed",
+      "component_id": "media.ffmpeg",
+      "component_version": "9.0.1",
+      "input_sha256": "bddd19635489d74d47e0e9933aa6f0f7d39eb40b674efc0be74ac217a5853512",
+      "output_sha256": "f002430d7942f39263678a5234d1aa4a340b93b89175a7168e8d57a5c4ba8761",
+      "bytes": 13527,
+      "parameters": {},
+      "verified_at": "2026-09-08T19:56:08.129Z"
+    },
+    {
+      "id": "local.video.format-rgb",
+      "title": "视频标准化 RGB 像素格式",
+      "status": "passed",
+      "component_id": "media.ffmpeg",
+      "component_version": "9.0.1",
+      "input_sha256": "bddd19635489d74d47e0e9933aa6f0f7d39eb40b674efc0be74ac217a5853512",
+      "output_sha256": "c8711dd6bb433fc551149b28b9646b5b88419bb29d736a96729959b61b0e1ea6",
+      "bytes": 14801,
+      "parameters": {},
+      "verified_at": "2026-09-08T19:56:08.641Z"
+    },
+    {
+      "id": "local.video.smartblur",
+      "title": "视频智能柔化",
+      "status": "passed",
+      "component_id": "media.ffmpeg",
+      "component_version": "9.0.1",
+      "input_sha256": "bddd19635489d74d47e0e9933aa6f0f7d39eb40b674efc0be74ac217a5853512",
+      "output_sha256": "b679c9d5b683d40934c9231240c845ea154c157ca16e81448fd9343cf9cf45fa",
+      "bytes": 14857,
+      "parameters": {},
+      "verified_at": "2026-09-08T19:56:09.286Z"
+    },
+    {
+      "id": "local.video.convolution",
+      "title": "视频卷积锐化",
+      "status": "passed",
+      "component_id": "media.ffmpeg",
+      "component_version": "9.0.1",
+      "input_sha256": "bddd19635489d74d47e0e9933aa6f0f7d39eb40b674efc0be74ac217a5853512",
+      "output_sha256": "232d6c225c61cf3bf6514b136f0f7e598b8a7dd288ef50666aa7495817405008",
+      "bytes": 16384,
+      "parameters": {},
+      "verified_at": "2026-09-08T19:56:10.011Z"
+    },
+    {
+      "id": "local.video.kirsch",
+      "title": "视频 Kirsch 线稿",
+      "status": "passed",
+      "component_id": "media.ffmpeg",
+      "component_version": "9.0.1",
+      "input_sha256": "bddd19635489d74d47e0e9933aa6f0f7d39eb40b674efc0be74ac217a5853512",
+      "output_sha256": "25218c535f6c96b9dc449c35850c87c94716a09030014e6b1e35503d919d9ce9",
+      "bytes": 19704,
+      "parameters": {},
+      "verified_at": "2026-09-08T19:56:10.707Z"
+    },
+    {
+      "id": "local.video.roberts",
+      "title": "视频 Roberts 边缘",
+      "status": "passed",
+      "component_id": "media.ffmpeg",
+      "component_version": "9.0.1",
+      "input_sha256": "bddd19635489d74d47e0e9933aa6f0f7d39eb40b674efc0be74ac217a5853512",
+      "output_sha256": "4d5c83af30a8b48c9fabc25c7112d7d3b10963bb51f99ce6f1d86bb0b1f75b5c",
+      "bytes": 15159,
+      "parameters": {},
+      "verified_at": "2026-09-08T19:56:11.472Z"
+    },
+    {
+      "id": "local.video.showinfo",
+      "title": "写入视频帧信息检查",
+      "status": "passed",
+      "component_id": "media.ffmpeg",
+      "component_version": "9.0.1",
+      "input_sha256": "bddd19635489d74d47e0e9933aa6f0f7d39eb40b674efc0be74ac217a5853512",
+      "output_sha256": "c0031779e6557b6a16fe40c6153b2c790463b9e0555a52b75be42a000abf39fa",
+      "bytes": 14800,
+      "parameters": {},
+      "verified_at": "2026-09-08T19:56:12.113Z"
+    },
+    {
+      "id": "local.video.settb",
+      "title": "统一视频时间基",
+      "status": "passed",
+      "component_id": "media.ffmpeg",
+      "component_version": "9.0.1",
+      "input_sha256": "bddd19635489d74d47e0e9933aa6f0f7d39eb40b674efc0be74ac217a5853512",
+      "output_sha256": "c0031779e6557b6a16fe40c6153b2c790463b9e0555a52b75be42a000abf39fa",
+      "bytes": 14800,
+      "parameters": {},
+      "verified_at": "2026-09-08T19:56:12.676Z"
+    },
+    {
+      "id": "local.video.setpts-start",
+      "title": "从零开始视频时间戳",
+      "status": "passed",
+      "component_id": "media.ffmpeg",
+      "component_version": "9.0.1",
+      "input_sha256": "bddd19635489d74d47e0e9933aa6f0f7d39eb40b674efc0be74ac217a5853512",
+      "output_sha256": "c0031779e6557b6a16fe40c6153b2c790463b9e0555a52b75be42a000abf39fa",
+      "bytes": 14800,
+      "parameters": {},
+      "verified_at": "2026-09-08T19:56:13.209Z"
+    },
+    {
+      "id": "local.video.fps-24",
+      "title": "交付 24fps 视频",
+      "status": "passed",
+      "component_id": "media.ffmpeg",
+      "component_version": "9.0.1",
+      "input_sha256": "bddd19635489d74d47e0e9933aa6f0f7d39eb40b674efc0be74ac217a5853512",
+      "output_sha256": "8817a7dbf02150f63a4bc40cada2d8ac0a1579039bdf5959a7249796c524b34b",
+      "bytes": 15267,
+      "parameters": {},
+      "verified_at": "2026-09-08T19:56:13.721Z"
+    },
+    {
+      "id": "local.video.fps-30",
+      "title": "交付 30fps 视频",
+      "status": "passed",
+      "component_id": "media.ffmpeg",
+      "component_version": "9.0.1",
+      "input_sha256": "bddd19635489d74d47e0e9933aa6f0f7d39eb40b674efc0be74ac217a5853512",
+      "output_sha256": "21f90f8203431f20c4f247c383edab992231f9e7f30317a446fa28988de25d84",
+      "bytes": 15493,
+      "parameters": {},
+      "verified_at": "2026-09-08T19:56:14.204Z"
+    },
+    {
+      "id": "local.video.half-size",
+      "title": "生成一半尺寸预览",
+      "status": "passed",
+      "component_id": "media.ffmpeg",
+      "component_version": "9.0.1",
+      "input_sha256": "bddd19635489d74d47e0e9933aa6f0f7d39eb40b674efc0be74ac217a5853512",
+      "output_sha256": "06c3dc7db9297bd4a6b414269a191d359d8050d2c127e92b8badfa86472baac2",
+      "bytes": 13434,
+      "parameters": {},
+      "verified_at": "2026-09-08T19:56:14.679Z"
+    },
+    {
+      "id": "local.video.even-canvas",
+      "title": "修正偶数视频尺寸",
+      "status": "passed",
+      "component_id": "media.ffmpeg",
+      "component_version": "9.0.1",
+      "input_sha256": "bddd19635489d74d47e0e9933aa6f0f7d39eb40b674efc0be74ac217a5853512",
+      "output_sha256": "c0031779e6557b6a16fe40c6153b2c790463b9e0555a52b75be42a000abf39fa",
+      "bytes": 14800,
+      "parameters": {},
+      "verified_at": "2026-09-08T19:56:15.191Z"
+    },
+    {
+      "id": "local.video.blackwhite",
+      "title": "高对比黑白视频",
+      "status": "passed",
+      "component_id": "media.ffmpeg",
+      "component_version": "9.0.1",
+      "input_sha256": "bddd19635489d74d47e0e9933aa6f0f7d39eb40b674efc0be74ac217a5853512",
+      "output_sha256": "4aca511af00ea47de1e9168f35a932519adf6793167ff4333a3faa25585910bd",
+      "bytes": 13709,
+      "parameters": {},
+      "verified_at": "2026-09-08T19:56:15.671Z"
+    },
+    {
+      "id": "local.video.colorize-warm",
+      "title": "视频暖色调",
+      "status": "passed",
+      "component_id": "media.ffmpeg",
+      "component_version": "9.0.1",
+      "input_sha256": "bddd19635489d74d47e0e9933aa6f0f7d39eb40b674efc0be74ac217a5853512",
+      "output_sha256": "7a6cdbd9aab5d995c574e4d80759de2dfe4b81e1f358bc09bd98b5fbd2318e3d",
+      "bytes": 14685,
+      "parameters": {},
+      "verified_at": "2026-09-08T19:56:16.176Z"
+    },
+    {
+      "id": "local.audio.pan-mono",
+      "title": "双声道混合单声道",
+      "status": "passed",
+      "component_id": "media.ffmpeg",
+      "component_version": "9.0.1",
+      "input_sha256": "2dfa61880ffb51719ae55d4f21d0ace8d223a57ae204ad94797de093a127eb8a",
+      "output_sha256": "824e87edd06cc0195e3854e1078c69076d676fe629f04cfca9fee9525b1a540f",
+      "bytes": 88278,
+      "parameters": {},
+      "verified_at": "2026-09-08T19:56:16.631Z"
+    },
+    {
+      "id": "local.audio.channelmap-stereo",
+      "title": "标准化立体声布局",
+      "status": "passed",
+      "component_id": "media.ffmpeg",
+      "component_version": "9.0.1",
+      "input_sha256": "2dfa61880ffb51719ae55d4f21d0ace8d223a57ae204ad94797de093a127eb8a",
+      "output_sha256": "582891a17ba19bf199f5ba23528fe718e19dea1ead59bc9a5184c0a8d99e8dba",
+      "bytes": 176478,
+      "parameters": {},
+      "verified_at": "2026-09-08T20:01:07.368Z"
+    },
+    {
+      "id": "local.audio.aformat-s16",
+      "title": "标准化 16 位采样",
+      "status": "passed",
+      "component_id": "media.ffmpeg",
+      "component_version": "9.0.1",
+      "input_sha256": "2dfa61880ffb51719ae55d4f21d0ace8d223a57ae204ad94797de093a127eb8a",
+      "output_sha256": "2dfa61880ffb51719ae55d4f21d0ace8d223a57ae204ad94797de093a127eb8a",
+      "bytes": 88278,
+      "parameters": {},
+      "verified_at": "2026-09-08T19:56:17.309Z"
+    },
+    {
+      "id": "local.audio.stereowiden",
+      "title": "扩展立体声宽度",
+      "status": "passed",
+      "component_id": "media.ffmpeg",
+      "component_version": "9.0.1",
+      "input_sha256": "2dfa61880ffb51719ae55d4f21d0ace8d223a57ae204ad94797de093a127eb8a",
+      "output_sha256": "95d76224f36afb8a719be9495bc6dac9001ad8f3dd4cd5c53a843482ea08a8d4",
+      "bytes": 176478,
+      "parameters": {},
+      "verified_at": "2026-09-08T19:56:17.834Z"
+    },
+    {
+      "id": "local.audio.stereotools",
+      "title": "立体声工具调整",
+      "status": "passed",
+      "component_id": "media.ffmpeg",
+      "component_version": "9.0.1",
+      "input_sha256": "2dfa61880ffb51719ae55d4f21d0ace8d223a57ae204ad94797de093a127eb8a",
+      "output_sha256": "68c43a27e1f849dfc2a9c9e11b1ae8e7dca84757d8eefa0ec8db19cd428b1037",
+      "bytes": 176478,
+      "parameters": {},
+      "verified_at": "2026-09-08T19:56:18.398Z"
+    },
+    {
+      "id": "local.audio.extrastereo",
+      "title": "增强左右声道差异",
+      "status": "passed",
+      "component_id": "media.ffmpeg",
+      "component_version": "9.0.1",
+      "input_sha256": "2dfa61880ffb51719ae55d4f21d0ace8d223a57ae204ad94797de093a127eb8a",
+      "output_sha256": "8f841228040eea6774c343e95a5d7a38b5a40c84f2aea50fa690f02a259db0a2",
+      "bytes": 176478,
+      "parameters": {},
+      "verified_at": "2026-09-08T20:01:07.862Z"
+    },
+    {
+      "id": "local.audio.earwax",
+      "title": "耳机空间化音效",
+      "status": "passed",
+      "component_id": "media.ffmpeg",
+      "component_version": "9.0.1",
+      "input_sha256": "2dfa61880ffb51719ae55d4f21d0ace8d223a57ae204ad94797de093a127eb8a",
+      "output_sha256": "4c0f6248c617458317670c9db2c335deaf1ec3c220aab3f8e87acad2134d1cca",
+      "bytes": 176478,
+      "parameters": {},
+      "verified_at": "2026-09-08T19:56:19.146Z"
+    },
+    {
+      "id": "local.audio.haas",
+      "title": "Haas 空间延迟",
+      "status": "passed",
+      "component_id": "media.ffmpeg",
+      "component_version": "9.0.1",
+      "input_sha256": "2dfa61880ffb51719ae55d4f21d0ace8d223a57ae204ad94797de093a127eb8a",
+      "output_sha256": "097c5f41f995e703a5e0a5a7687a7dccf15bf2493616c36c4089858c4094595f",
+      "bytes": 176478,
+      "parameters": {},
+      "verified_at": "2026-09-08T19:56:19.667Z"
+    },
+    {
+      "id": "local.audio.apulsator",
+      "title": "节奏脉冲音量",
+      "status": "passed",
+      "component_id": "media.ffmpeg",
+      "component_version": "9.0.1",
+      "input_sha256": "2dfa61880ffb51719ae55d4f21d0ace8d223a57ae204ad94797de093a127eb8a",
+      "output_sha256": "3e90bd4dce2573b776b72f90171f3957fc6d8965d68cbde3e495376f3b05f2d2",
+      "bytes": 176478,
+      "parameters": {},
+      "verified_at": "2026-09-08T19:56:20.143Z"
+    },
+    {
+      "id": "local.audio.afreqshift",
+      "title": "音频频率平移",
+      "status": "passed",
+      "component_id": "media.ffmpeg",
+      "component_version": "9.0.1",
+      "input_sha256": "2dfa61880ffb51719ae55d4f21d0ace8d223a57ae204ad94797de093a127eb8a",
+      "output_sha256": "caf9bcafbf397c18a60d5cf165d079ff13ab23019cc366c170a3f82ce93be48c",
+      "bytes": 88278,
+      "parameters": {},
+      "verified_at": "2026-09-08T19:56:20.592Z"
+    },
+    {
+      "id": "local.audio.aphaseshift",
+      "title": "音频相位平移",
+      "status": "passed",
+      "component_id": "media.ffmpeg",
+      "component_version": "9.0.1",
+      "input_sha256": "2dfa61880ffb51719ae55d4f21d0ace8d223a57ae204ad94797de093a127eb8a",
+      "output_sha256": "22c191f5bb234c4be1fd39f129e1aec76fcc7c51135459114a371b06d137319c",
+      "bytes": 88278,
+      "parameters": {},
+      "verified_at": "2026-09-08T19:56:21.048Z"
+    },
+    {
+      "id": "local.audio.asoftclip",
+      "title": "软削波音频",
+      "status": "passed",
+      "component_id": "media.ffmpeg",
+      "component_version": "9.0.1",
+      "input_sha256": "2dfa61880ffb51719ae55d4f21d0ace8d223a57ae204ad94797de093a127eb8a",
+      "output_sha256": "5a5c97e1928cbdf96305747b925a7ae6acdc26fcf085522d38dc1ed4ca5f70eb",
+      "bytes": 88278,
+      "parameters": {},
+      "verified_at": "2026-09-08T19:56:21.492Z"
+    },
+    {
+      "id": "local.audio.speechnorm",
+      "title": "语音动态平滑",
+      "status": "passed",
+      "component_id": "media.ffmpeg",
+      "component_version": "9.0.1",
+      "input_sha256": "2dfa61880ffb51719ae55d4f21d0ace8d223a57ae204ad94797de093a127eb8a",
+      "output_sha256": "a025e110e2ec6a122f19596719ac6dda08bfa97469972a96fd8aefd746e1121e",
+      "bytes": 88278,
+      "parameters": {},
+      "verified_at": "2026-09-08T19:56:21.987Z"
+    },
+    {
+      "id": "local.audio.firequalizer",
+      "title": "图形均衡器",
+      "status": "passed",
+      "component_id": "media.ffmpeg",
+      "component_version": "9.0.1",
+      "input_sha256": "2dfa61880ffb51719ae55d4f21d0ace8d223a57ae204ad94797de093a127eb8a",
+      "output_sha256": "728ba5ca72f7be5ea7eeb4e526244277c7734df962f123a120a94e7292aaad16",
+      "bytes": 90042,
+      "parameters": {},
+      "verified_at": "2026-09-08T20:01:08.364Z"
+    },
+    {
+      "id": "local.audio.superequalizer",
+      "title": "多段均衡器",
+      "status": "passed",
+      "component_id": "media.ffmpeg",
+      "component_version": "9.0.1",
+      "input_sha256": "2dfa61880ffb51719ae55d4f21d0ace8d223a57ae204ad94797de093a127eb8a",
+      "output_sha256": "44798b6fc6b9bdf7b16270592cfa96f7c7d09fa04419be17ce15351490e86ff8",
+      "bytes": 88278,
+      "parameters": {},
+      "verified_at": "2026-09-08T20:01:09.319Z"
+    },
+    {
+      "id": "local.audio.mcompand",
+      "title": "多段动态压缩",
+      "status": "passed",
+      "component_id": "media.ffmpeg",
+      "component_version": "9.0.1",
+      "input_sha256": "2dfa61880ffb51719ae55d4f21d0ace8d223a57ae204ad94797de093a127eb8a",
+      "output_sha256": "7bccf304f16ae87810605553f57b995da73c806b1bcc06c6c1b333e01a5cad78",
+      "bytes": 88278,
+      "parameters": {},
+      "verified_at": "2026-09-08T20:01:08.858Z"
+    },
+    {
+      "id": "local.audio.dialoguenhance",
+      "title": "增强人声对白",
+      "status": "passed",
+      "component_id": "media.ffmpeg",
+      "component_version": "9.0.1",
+      "input_sha256": "2dfa61880ffb51719ae55d4f21d0ace8d223a57ae204ad94797de093a127eb8a",
+      "output_sha256": "fa3cfed2cf61484fb1b538ef606605377d9d321c6792a71560835c175924726f",
+      "bytes": 264702,
+      "parameters": {},
+      "verified_at": "2026-09-08T19:56:23.187Z"
+    },
+    {
+      "id": "local.audio.loudnorm-dual",
+      "title": "双遍响度检测兼容模式",
+      "status": "passed",
+      "component_id": "media.ffmpeg",
+      "component_version": "9.0.1",
+      "input_sha256": "2dfa61880ffb51719ae55d4f21d0ace8d223a57ae204ad94797de093a127eb8a",
+      "output_sha256": "50e4f4a9012cbb60982964ef340fd7aa772d6ab31fdb2f8bf44f07f4c4b62275",
+      "bytes": 384102,
+      "parameters": {},
+      "verified_at": "2026-09-08T19:56:23.705Z"
     }
   ]
 }

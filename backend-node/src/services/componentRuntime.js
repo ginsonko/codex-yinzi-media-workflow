@@ -9,7 +9,7 @@ const AdmZip = require('adm-zip');
 const dependencyLock = require('../../../scripts/dependencies.json');
 const ROOT = path.resolve(__dirname, '../..');
 const MAX_BYTES = 512 * 1024 ** 2;
-const HOSTS = new Set(['github.com','release-assets.githubusercontent.com','objects.githubusercontent.com','www.gyan.dev']);
+const HOSTS = new Set(['github.com','release-assets.githubusercontent.com','objects.githubusercontent.com','raw.githubusercontent.com','www.gyan.dev']);
 const fail = (code, message) => Object.assign(new Error(message), { code });
 function safeId(value) { if (!/^[a-z][a-z0-9.-]{1,99}$/.test(value || '')) throw fail('INVALID_COMPONENT_ID','组件编号无效'); return value; }
 function readJson(file) { try { return JSON.parse(fs.readFileSync(file,'utf8')); } catch { return null; } }
@@ -20,7 +20,12 @@ function machineProfile() { return { platform:process.platform,arch:process.arch
 function registry() { return [
   { component_id:'media.ffmpeg',version:dependencyLock.ffmpeg.version,kind:'zip',platforms:['win32-x64'],urls:[dependencyLock.ffmpeg.url,dependencyLock.ffmpeg.fallback_url],sha256:dependencyLock.ffmpeg.sha256,license:dependencyLock.ffmpeg.license,source:dependencyLock.ffmpeg.source,disk_bytes:800*1024**2,executables:{ffmpeg:'ffmpeg-9.0.1-essentials_build/bin/ffmpeg.exe',ffprobe:'ffmpeg-9.0.1-essentials_build/bin/ffprobe.exe'} },
   { component_id:'media.sharp',version:'0.35.3',kind:'npm',platforms:['win32-x64'],sha256:crypto.createHash('sha256').update(fs.readFileSync(path.join(ROOT,'components/sharp/package-lock.json'))).digest('hex'),license:'Apache-2.0; libvips LGPL-2.1-or-later',source:'https://github.com/lovell/sharp',disk_bytes:300*1024**2 }
-]; }
+,...require('../../components/registry.json').map(definition=>{
+  safeId(definition.component_id);safeId(definition.template);
+  const template=path.join(ROOT,'components',definition.template),hash=crypto.createHash('sha256');
+  hash.update(JSON.stringify(definition));for(const file of ['package.json','package-lock.json','healthcheck.cjs'])hash.update(fs.readFileSync(path.join(template,file)));
+  return {...definition,kind:'npm',sha256:hash.digest('hex')};
+})]; }
 function trustedUrl(url) { const u=new URL(url); if(u.protocol!=='https:'||u.username||u.password||!HOSTS.has(u.hostname)) throw fail('UNTRUSTED_COMPONENT_SOURCE','组件来源不在受信 HTTPS 清单'); return u.href; }
 function run(executable,args,options={}) { return new Promise((resolve,reject)=>{
   const child=spawn(executable,args,{cwd:options.cwd,windowsHide:true,shell:false,stdio:['ignore','pipe','pipe']}); let stdout='',stderr='';
@@ -69,6 +74,7 @@ function createComponentManager(options={}){
   function readProgress(id){manifestFor(id);return readJson(path.join(root,id,'progress.json'));}
   async function probe(m,dir){
     if(options.probe)return options.probe(m,dir);
+    if(m.template)return(await run(process.execPath,[path.join(dir,'healthcheck.cjs')],{cwd:dir,timeout:120000})).stdout.trim();
     if(m.kind==='npm'){const code="(async()=>{const s=require('sharp');const b=await s({create:{width:8,height:8,channels:3,background:'red'}}).png().toBuffer();if(!b.length)throw Error('empty');console.log(JSON.stringify({sharp:s.versions.sharp,bytes:b.length}))})().catch(e=>{console.error(e.message);process.exit(1)})";return(await run(process.execPath,['-e',code],{cwd:dir})).stdout.trim();}
     return Promise.all(Object.values(m.executables).map(async file=>(await run(path.join(dir,file),['-version'])).stdout.split(/\r?\n/)[0]));
   }
@@ -79,7 +85,7 @@ function createComponentManager(options={}){
     try{
       const current=readState(id);
       if(current?.sha256===m.sha256&&current.status==='ready'){try{
-        if(m.kind==='npm'&&!Object.keys(current.files||{}).some(file=>file.endsWith('.node')))throw Error('native integrity receipt missing');
+        if(m.kind==='npm'&&!Object.keys(current.files||{}).some(file=>/^node_modules[\\/]/.test(file)))throw Error('installed package integrity receipt missing');
         const signature=JSON.stringify([current.directory,...Object.keys(current.files||{}).map(f=>{const s=fs.statSync(path.join(current.directory,f));return[f,s.size,s.mtimeMs];})]);
         if(verified.get(id)!==signature){for(const[f,h]of Object.entries(current.files||{}))if(await sha256(path.join(current.directory,f))!==h)throw Error('changed');await probe(m,current.directory);verified.set(id,signature);}
         report({stage:'reused',percent:100});return{...current,reused:true};
@@ -91,10 +97,16 @@ function createComponentManager(options={}){
         for(const url of m.urls){try{await download(url,archive,m.sha256,report,options.fetch);error=null;break;}catch(e){error=e;}}if(error)throw error;
         report({stage:'install',message:'下载已验证，正在解压'});extractZip(archive,next);
       }else{
-        const template=path.join(ROOT,'components/sharp');for(const file of ['package.json','package-lock.json'])fs.copyFileSync(path.join(template,file),path.join(next,file));
+        const template=path.join(ROOT,'components',m.template||'sharp');for(const file of ['package.json','package-lock.json',...(m.template?['healthcheck.cjs']:[])])fs.copyFileSync(path.join(template,file),path.join(next,file));
         const cli=[process.env.npm_execpath,path.join(path.dirname(process.execPath),'node_modules/npm/bin/npm-cli.js'),path.resolve(path.dirname(process.execPath),'../lib/node_modules/npm/bin/npm-cli.js')].find(p=>p&&fs.existsSync(p));
         if(!cli)throw fail('NPM_RUNTIME_MISSING','工作流 Node/npm 运行时不完整');report({stage:'install',message:'正在下载锁定版本的图像组件'});
         await run(process.execPath,[cli,'ci','--ignore-scripts','--no-audit','--no-fund','--registry=https://registry.npmjs.org','--fetch-retries=2'],{cwd:next,timeout:15*60*1000});
+      }
+      for(const artifact of m.artifacts||[]){
+        const output=path.resolve(next,artifact.path);if(!output.startsWith(next+path.sep)||artifact.path.includes(':'))throw fail('UNSAFE_COMPONENT_PATH','组件模型路径越界');
+        const cache=path.join(root,'.cache');fs.mkdirSync(cache,{recursive:true});const file=path.join(cache,artifact.sha256+'.part');
+        report({stage:'download',message:'正在准备 '+artifact.name});await download(artifact.url,file,artifact.sha256,event=>report({...event,message:'正在准备 '+artifact.name}),options.fetch);
+        fs.mkdirSync(path.dirname(output),{recursive:true});fs.copyFileSync(file,output);
       }
       report({stage:'healthcheck',message:'组件已安装，正在实际运行检查'});const health=await probe(m,next),files={};for(const file of m.kind==='npm'?installedFiles(next):Object.values(m.executables))files[file]=await sha256(path.join(next,file));
       const state={component_id:id,version:m.version,sha256:m.sha256,status:'ready',directory:next,files,installed_at:new Date().toISOString(),healthcheck_result:health,platform:process.platform,arch:process.arch,executables:m.executables?Object.fromEntries(Object.entries(m.executables).map(([k,v])=>[k,path.join(next,v)])):{},previous:current?.directory||null};
