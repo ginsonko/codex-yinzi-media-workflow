@@ -291,6 +291,16 @@
           </div>
         </section>
 
+        <section v-if="activeRun" class="user-guidance-card" :class="`is-${userGuidance.tone}`" aria-live="polite" data-workflow-anchor="user-guidance">
+          <div class="user-guidance-icon"><el-icon><component :is="userGuidance.icon" /></el-icon></div>
+          <div class="user-guidance-copy">
+            <strong>{{ userGuidance.title }}</strong>
+            <p>{{ userGuidance.detail }}</p>
+            <small v-if="userGuidance.cost">费用状态：{{ userGuidance.cost }}</small>
+          </div>
+          <div class="user-guidance-next"><span>下一步</span><b>{{ userGuidance.next }}</b></div>
+        </section>
+
         <section class="run-input-access" aria-label="创作输入与素材">
           <div>
             <strong>创作输入与素材</strong>
@@ -1708,6 +1718,19 @@ const displayRunStatusLabel = computed(() => {
   if (isUnattendedMode.value && activeRun.value?.status === 'waiting_review') return 'AI 自动处理中'
   if (isUnattendedMode.value && activeRun.value?.status === 'running') return '无人值守运行中'
   return statusLabel(activeRun.value?.status, isFixtureRun.value)
+})
+const userGuidance = computed(() => {
+  const run = activeRun.value || {}
+  const action = activeProviderAction.value
+  const stage = currentStage.value?.label || stageLabel(run.current_stage)
+  const status = String(run.status || '')
+  const waiting = waitingReasonLabel(run.waiting_reason)
+  if (status === 'completed') return { tone: 'success', icon: Check, title: '任务已完成', detail: `${stage}已完成，成果和任务记录已保存在本机。`, cost: costSummaryLabel.value, next: '查看成果或导出' }
+  if (status === 'failed' || status === 'needs_review' || status === 'partial') return { tone: 'warning', icon: Warning, title: '任务需要处理', detail: run.error || run.message || `任务在“${stage}”遇到问题，原任务记录仍保留。`, cost: costSummaryLabel.value, next: latestFailedAction.value ? '重试失败节点' : '查看失败详情' }
+  if (status === 'waiting_provider' || action?.status === 'unknown') return { tone: 'warning', icon: Clock, title: '正在等待供应商确认', detail: '系统会先核对原请求是否已被接受，期间不会自动重复提交。', cost: '待核对', next: '等待核对结果，不要重复提交' }
+  if (run.waiting_reason) return { tone: 'info', icon: Clock, title: `正在等待：${waiting}`, detail: `当前阶段是“${stage}”，后台会在条件满足后继续。`, cost: costSummaryLabel.value, next: waiting || '查看任务日志' }
+  if (status === 'running' || status === 'planned') return { tone: 'info', icon: Loading, title: `正在进行：${stage}`, detail: run.current_action?.label || run.message || '后台正在处理当前阶段，关闭页面不会清除任务。', cost: costSummaryLabel.value, next: '查看当前阶段进度' }
+  return { tone: 'neutral', icon: Clock, title: `任务状态：${displayRunStatusLabel.value}`, detail: run.message || `当前阶段是“${stage}”。`, cost: costSummaryLabel.value, next: '查看任务详情' }
 })
 const activeRunAspect = computed(() => productionAspectSpec(activeRun.value?.policy?.aspect_ratio))
 const projectAspect = computed(() => productionAspectSpec(drama.value?.metadata?.aspect_ratio))
@@ -4450,4 +4473,11 @@ onBeforeUnmount(clearPoll)
 @media (max-width: 700px) { .media-picker-toolbar, .media-picker-toolbar > div { align-items: stretch; flex-direction: column; }.media-picker-toolbar > div:last-child { justify-content: stretch; }.media-picker-toolbar :deep(.el-input) { width: 100%; }.media-picker-toolbar > div:last-child :deep(.el-button) { width: 100%; margin-left: 0; } }
 @media (max-width: 560px) { .cost-summary { grid-template-columns: 1fr; }.cost-summary > :deep(.el-button) { justify-self: start; margin-left: 0; }.cost-summary-metrics { grid-column: 1; display: grid; grid-template-columns: 1fr 1fr; width: 100%; }.cost-dialog-summary { grid-template-columns: 1fr; } }
 @media (max-width: 640px) { .start-assets { padding: 13px; }.start-assets-actions { display: grid; grid-template-columns: 1fr; }.start-assets-actions :deep(.el-button) { width: 100%; }.template-slot-hints { display: grid; grid-template-columns: 1fr; } }
+</style>
+
+<style scoped>
+.user-guidance-card { display:grid; grid-template-columns:34px minmax(0,1fr) minmax(190px,.55fr); align-items:center; gap:12px; margin:0 0 16px; padding:13px 15px; border:1px solid #cfdfe1; background:#f7fbfb; color:#40565c; }
+.user-guidance-card.is-warning { border-color:#e4cfb5; background:#fffaf3; color:#76583b; }.user-guidance-card.is-success { border-color:#bedcca; background:#f3faf5; color:#397253; }
+.user-guidance-icon { width:30px; height:30px; display:grid; place-items:center; border-radius:50%; background:rgba(72,142,133,.12); color:var(--accent); }.user-guidance-copy { min-width:0; display:grid; gap:3px; }.user-guidance-copy strong { font-size:13px; }.user-guidance-copy p { margin:0; font-size:12px; line-height:1.5; overflow-wrap:anywhere; }.user-guidance-copy small { color:#7b898e; font-size:10px; }.user-guidance-next { min-width:0; padding-left:14px; border-left:1px solid rgba(120,140,145,.25); display:grid; gap:3px; }.user-guidance-next span { color:#869398; font-size:10px; }.user-guidance-next b { font-size:12px; overflow-wrap:anywhere; }
+@media (max-width:840px) { .user-guidance-card { grid-template-columns:34px minmax(0,1fr); }.user-guidance-next { grid-column:2; padding-left:0; border-left:0; border-top:1px solid rgba(120,140,145,.25); padding-top:8px; } }
 </style>
