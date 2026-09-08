@@ -10,6 +10,7 @@ $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 . (Join-Path $PSScriptRoot 'scripts\windows-common.ps1')
 $sourceRoot = [IO.Path]::GetFullPath($PSScriptRoot)
+$customSkillsRoot = [bool]$SkillsRoot
 $StateRoot = Get-YinziStateRoot $StateRoot
 New-Item -ItemType Directory -Path $StateRoot -Force | Out-Null
 if ($CodexHome) {
@@ -31,6 +32,10 @@ $node = Get-YinziNode $StateRoot -Install
 $env:PATH = "$(Split-Path -Parent $node);$env:PATH"
 $npm = Join-Path (Split-Path -Parent $node) 'npm.cmd'
 $plugin = Join-Path $sourceRoot 'codex-yinzi-universal-video-workflow\plugins\codex-yinzi-universal-video-workflow'
+if (Test-Path (Join-Path $sourceRoot 'backend-node\node_modules\better-sqlite3')) {
+  & $node (Join-Path $plugin 'scripts\runtime-launcher.mjs') prepare-update --project-root $sourceRoot --runtime-dir $StateRoot --owner-pid $PID
+  if ($LASTEXITCODE -ne 0) { throw 'Update preflight failed. Original tasks and data were preserved; do not start a new empty workbench.' }
+}
 # Release native module handles before npm replaces dependencies on Windows.
 # The launcher verifies ownership and retains the runtime/data directory.
 & $node (Join-Path $plugin 'scripts\runtime-launcher.mjs') stop --json --runtime-dir $StateRoot
@@ -56,9 +61,17 @@ Write-Host '[3/5] Preparing verified FFmpeg and FFprobe...'
 Install-YinziMediaTools $sourceRoot $StateRoot
 $plugin = Join-Path $sourceRoot 'codex-yinzi-universal-video-workflow\plugins\codex-yinzi-universal-video-workflow'
 $manifest = Get-Content -LiteralPath (Join-Path $plugin '.codex-plugin\plugin.json') -Raw | ConvertFrom-Json
+$installedPluginVersion = $manifest.version
+$skillReceipt = $null
 $codexMode = 'skipped'
 if (-not $SkipCodexInstall) {
   Write-Host '[4/5] Registering Codex Skills and tools...'
+  $skillArgs = @((Join-Path $plugin 'scripts\install-skills.mjs'),'--project-root',$sourceRoot,'--runtime-dir',$StateRoot)
+  if ($customSkillsRoot) { $skillArgs += @('--skills-root',$SkillsRoot) }
+  elseif ($CodexHome) { $skillArgs += @('--skills-root',(Join-Path $CodexHome 'skills')) }
+  $skillOutput = & $node @skillArgs
+  if ($LASTEXITCODE -ne 0) { throw "Skill installation failed: $skillOutput" }
+  $skillReceipt = ($skillOutput | Select-Object -Last 1) | ConvertFrom-Json
   $codex = Get-Command codex.exe,codex.cmd -ErrorAction SilentlyContinue | Select-Object -First 1
   if (-not $codex) {
     $cliRoot = Join-Path $StateRoot 'codex-cli'
@@ -86,46 +99,34 @@ if (-not $SkipCodexInstall) {
     $mcp.mcpServers.yinzi_video_workflow.args = @((Join-Path $installedPlugin 'mcp\server.mjs'))
     $mcp.mcpServers.yinzi_video_workflow.cwd = $installedPlugin
     $mcp.mcpServers.yinzi_video_workflow | Add-Member -MemberType NoteProperty -Name env -Value @{YINZI_WORKFLOW_PROJECT_ROOT=$sourceRoot;YINZI_WORKFLOW_RUNTIME_DIR=$StateRoot} -Force
-    $mcp | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $mcpPath -Encoding utf8
+    [IO.File]::WriteAllText($mcpPath, ($mcp | ConvertTo-Json -Depth 10), (New-Object Text.UTF8Encoding $false))
+    # A source update must invalidate the installed plugin cache as well.
+    $installedManifestPath = Join-Path $installedPlugin '.codex-plugin\plugin.json'
+    $installedManifest = Get-Content $installedManifestPath -Raw | ConvertFrom-Json
+    $installedManifest.version = ($manifest.version -split '\+')[0] + '+codex.' + $skillReceipt.digest
+    $installedPluginVersion = $installedManifest.version
+    [IO.File]::WriteAllText($installedManifestPath, ($installedManifest | ConvertTo-Json -Depth 15), (New-Object Text.UTF8Encoding $false))
     & $codexPath plugin marketplace add $marketplace
     if ($LASTEXITCODE -ne 0) { throw 'Codex marketplace registration failed.' }
     & $codexPath plugin add 'codex-yinzi-universal-video-workflow@yinzi-video-workflow'
     if ($LASTEXITCODE -ne 0) { throw 'Codex plugin registration failed.' }
     $codexMode = 'plugin'
   } else {
-    # Junctions preserve relative imports between the Skill and its sibling runtime.
-    New-Item -ItemType Directory -Path $SkillsRoot -Force | Out-Null
-    $recordPath = Join-Path $StateRoot 'skill-installation.json'
-    $previous = if (Test-Path -LiteralPath $recordPath) { Get-Content -LiteralPath $recordPath -Raw | ConvertFrom-Json } else { $null }
-    $links = @()
-    foreach ($skill in (Get-ChildItem -LiteralPath (Join-Path $plugin 'skills') -Directory)) {
-      $destination = Join-Path $SkillsRoot $skill.Name
-      if (Test-Path -LiteralPath $destination) {
-        $item = Get-Item -LiteralPath $destination -Force
-        if ($item.LinkType -eq 'Junction' -and [string]$item.Target -eq $skill.FullName) {
-          $links += @{ path=$destination; target=$skill.FullName }; continue
-        }
-        $owned = $previous -and @($previous.links | Where-Object { $_.path -eq $destination -and $_.target -eq [string]$item.Target }).Count -gt 0
-        if (-not $owned -or $item.LinkType -ne 'Junction') { throw "An existing Skill was preserved: $destination. Ask Codex to migrate it, then rerun the installer." }
-        [IO.Directory]::Delete($destination) # Remove this verified junction only; never recurse into its target.
-      }
-      New-Item -ItemType Junction -Path $destination -Target $skill.FullName | Out-Null
-      $links += @{ path=$destination; target=$skill.FullName }
-    }
-    @{ source_root=$sourceRoot; links=$links } | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $recordPath -Encoding utf8
-    & $codexPath mcp add yinzi_video_workflow --env "YINZI_WORKFLOW_PROJECT_ROOT=$sourceRoot" --env "YINZI_WORKFLOW_RUNTIME_DIR=$StateRoot" -- $node (Join-Path $plugin 'mcp\server.mjs')
+    & $codexPath mcp add yinzi_video_workflow --env "YINZI_WORKFLOW_PROJECT_ROOT=$sourceRoot" --env "YINZI_WORKFLOW_RUNTIME_DIR=$StateRoot" -- $node $skillReceipt.mcp_entry
     if ($LASTEXITCODE -ne 0) { throw 'MCP registration failed. Skills are installed; rerun install.cmd to finish.' }
     $codexMode = 'skills-and-mcp'
   }
 }
 Write-Host '[5/5] Building and opening the verified local workbench...'
-$runtimeArgs = @((Join-Path $plugin 'scripts\runtime-launcher.mjs'),'ensure','--json','--project-root',$sourceRoot,'--runtime-dir',$StateRoot)
+& $node (Join-Path $plugin 'scripts\runtime-launcher.mjs') prepare-update --project-root $sourceRoot --runtime-dir $StateRoot --owner-pid $PID
+if ($LASTEXITCODE -ne 0) { throw 'Original database could not be verified. Existing data was preserved.' }
+$runtimeArgs = @((Join-Path $plugin 'scripts\runtime-launcher.mjs'),'ensure','--json','--project-root',$sourceRoot,'--runtime-dir',$StateRoot,'--maintenance-owner',"$PID")
 if (-not $NoBrowser) { $runtimeArgs += '--open' }
 $output = & $node @runtimeArgs
 if ($LASTEXITCODE -ne 0) { throw "Workbench startup failed: $output" }
 $runtime = ($output | Select-Object -Last 1) | ConvertFrom-Json
-$result = [ordered]@{ ok=$true; source_root=$sourceRoot; frontend_url=$runtime.frontend_url; runtime_id=$runtime.runtime_id; codex_installation=$codexMode; skills_root=$SkillsRoot; plugin_version=$manifest.version; paid_calls_started=$false; next_step='Open a new Codex task; if Skills/tools do not appear yet, restart Codex. Describe your media task. Model keys are optional and configured in the workbench.' }
-$result | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $StateRoot 'installation.json') -Encoding utf8
+$result = [ordered]@{ ok=$true; source_root=$sourceRoot; runtime_root=$runtime.runtime_root; database_fingerprint=$runtime.database_fingerprint; frontend_url=$runtime.frontend_url; runtime_id=$runtime.runtime_id; codex_installation=$codexMode; skills_root=$SkillsRoot; skill_receipt=$skillReceipt; plugin_version=$installedPluginVersion; paid_calls_started=$false; next_step='Existing tasks are preserved. If this Codex task has not refreshed its tools, read the installed Skill and use its CLI to continue the SAME task; a new Codex task/restart only refreshes tool discovery.' }
+[IO.File]::WriteAllText((Join-Path $StateRoot 'installation.json'), ($result | ConvertTo-Json -Depth 8), (New-Object Text.UTF8Encoding $false))
 & $node (Join-Path $plugin 'scripts\check-update.mjs') --acknowledge --project-root $sourceRoot | Out-Null
 Write-Host "Ready: $($runtime.frontend_url)"
 $result | ConvertTo-Json -Depth 5

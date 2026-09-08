@@ -3,10 +3,11 @@ const path = require('path');
 const yaml = require('js-yaml');
 
 const configPaths = [
+  process.env.YINZI_WORKFLOW_CONFIG,
   path.join(process.cwd(), 'configs', 'config.yaml'),
   path.join(process.cwd(), 'config.yaml'),
   path.join(__dirname, '..', '..', 'configs', 'config.yaml'),
-];
+].filter(Boolean);
 
 function loadConfig() {
   let raw = null;

@@ -1,14 +1,28 @@
 import os from 'node:os'
 import path from 'node:path'
 import fs from 'node:fs/promises'
+import {existsSync} from 'node:fs'
 import { spawn } from 'node:child_process'
 export function stateRoot() {
   if (process.env.YINZI_WORKFLOW_RUNTIME_DIR) return path.resolve(process.env.YINZI_WORKFLOW_RUNTIME_DIR)
   if (process.platform === 'win32') return path.join(process.env.LOCALAPPDATA || path.join(os.homedir(),'AppData','Local'),'Yinzi','CodexVideoWorkflow')
-  if (process.platform === 'darwin') return path.join(os.homedir(),'Library','Application Support','Yinzi','CodexVideoWorkflow')
-  return path.join(process.env.XDG_STATE_HOME || path.join(os.homedir(),'.local','state'),'yinzi-codex-video-workflow')
+  const canonical=process.platform==='darwin'?path.join(os.homedir(),'Library','Application Support','Yinzi','CodexVideoWorkflow'):
+    path.join(process.env.XDG_STATE_HOME || path.join(os.homedir(),'.local','state'),'yinzi-codex-video-workflow')
+  const legacy=path.join(process.env.XDG_STATE_HOME || path.join(os.homedir(),'.local','state'),'codex-yinzi-media-workflow')
+  const registered=root=>['runtime.json','data-binding.json','installation.json'].some(name=>existsSync(path.join(root,name)))
+  if(registered(canonical) && registered(legacy)) throw new Error('发现两套旧安装状态目录；请通过 --runtime-dir 选择原数据目录，不会自动创建第三套数据')
+  return registered(legacy)?legacy:canonical
 }
-export async function readRegistry() { try { return JSON.parse(await fs.readFile(path.join(stateRoot(),'runtime.json'),'utf8')) } catch { return null } }
+export async function readJson(file) {
+  try { return JSON.parse((await fs.readFile(file,'utf8')).replace(/^\uFEFF/,'')) }
+  catch(error) { if(error.code==='ENOENT') return null; throw new Error(`登记文件不可读，已保留数据：${file}`, {cause:error}) }
+}
+export async function readRegistry() {
+  const file=path.join(stateRoot(),'runtime.json')
+  try { const value=await readJson(file);if(value) return value }
+  catch(error) { const backup=await readJson(file+'.bak');if(backup?.runtime_root) return {...backup,registry_recovered:true};throw error }
+  return await readJson(file+'.bak')
+}
 export function localOrigin(value) { const url = new URL(value); if (url.protocol !== 'http:' || !['localhost','127.0.0.1','[::1]'].includes(url.hostname) || url.username || url.password) throw new Error('工作台地址必须是本机 HTTP 地址'); return url.origin }
 export async function verifyUi(origin) {
   try {

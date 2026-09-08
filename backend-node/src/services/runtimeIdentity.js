@@ -54,6 +54,7 @@ function buildRuntimeIdentity(config, options = {}) {
     : '';
   const identity = {
     schema: 'yinzi.workflow-runtime-identity/v1',
+    pid: process.pid,
     runtime_id: `yinzi-${crypto.createHash('sha256').update(`${process.pid}:${process.cwd()}`).digest('hex').slice(0, 12)}`,
     app_version: packageVersion,
     source_revision: sha256Files(sourceFiles),

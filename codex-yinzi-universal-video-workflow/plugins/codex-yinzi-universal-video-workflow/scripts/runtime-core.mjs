@@ -5,7 +5,9 @@ import net from 'node:net'
 import crypto from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 import { spawn } from 'node:child_process'
-import { stateRoot, readRegistry, localOrigin, verifyUi, openBrowser } from './runtime-state.mjs'
+import { stateRoot, readRegistry, readJson, localOrigin, verifyUi, openBrowser } from './runtime-state.mjs'
+import { atomicJson, resolveData, discoverData, backupData, verifyContinuity } from './runtime-data.mjs'
+import {requireIdle,consolidateLegacy,verifiedRuntimePid} from './runtime-processes.mjs'
 const here=path.dirname(fileURLToPath(import.meta.url))
 const delay=ms=>new Promise(resolve=>setTimeout(resolve,ms))
 const alive=pid=>{try { process.kill(pid,0);return true } catch {return false}}
@@ -38,7 +40,11 @@ export async function probe(origin) {
     return health.status==='ok' && value.orchestration_router===true ? value : null
   } catch {return null}
 }
-async function writeRegistry(value) { const file=path.join(stateRoot(),'runtime.json'); const temporary=`${file}.${process.pid}.tmp`;await fsp.writeFile(temporary,JSON.stringify(value,null,2),{mode:0o600});await fsp.rename(temporary,file) }
+async function writeRegistry(value) {
+  const file=path.join(stateRoot(),'runtime.json')
+  await atomicJson(file,value)
+  await atomicJson(file+'.bak',value)
+}
 async function lock() {
   await fsp.mkdir(stateRoot(),{recursive:true});const file=path.join(stateRoot(),'launch.lock');const end=Date.now()+180000
   while(Date.now()<end) {
@@ -77,45 +83,70 @@ export async function buildFrontend(source) {
   await new Promise((resolve,reject)=>{const child=spawn(process.execPath,[vite,'build'],{cwd:root,stdio:['ignore','ignore','pipe'],windowsHide:true});let error='';child.stderr.on('data',chunk=>{error=(error+chunk).slice(-6000)});child.once('error',reject);child.once('exit',code=>code===0?resolve():reject(new Error(`前端构建失败：${error}`)))})
   await fsp.writeFile(marker,digest);return digest
 }
-function startBackend(source,root,port,digest,token) {
+function startBackend(source,root,port,digest,token,configPath) {
   const log=path.join(root,'logs',`backend-${Date.now()}.log`);const fd=fs.openSync(log,'a')
-  try {const child=spawn(process.execPath,[path.join(source,'backend-node/src/server.js')],{cwd:root,env:{...process.env,PORT:String(port),HOST:'127.0.0.1',WEB_DIST_PATH:path.join(source,'frontweb/dist'),YINZI_WORKFLOW_PROJECT_ROOT:source,YINZI_WORKFLOW_CANONICAL:'1',YINZI_WORKFLOW_SOURCE_DIGEST:digest,YINZI_WORKFLOW_LAUNCH_TOKEN:token},detached:true,stdio:['ignore',fd,fd],windowsHide:true});child.unref();return {pid:child.pid,log,child} }
+  try {const child=spawn(process.execPath,[path.join(source,'backend-node/src/server.js')],{cwd:root,env:{...process.env,PORT:String(port),HOST:'127.0.0.1',WEB_DIST_PATH:path.join(source,'frontweb/dist'),YINZI_WORKFLOW_PROJECT_ROOT:source,YINZI_WORKFLOW_RUNTIME_DIR:stateRoot(),YINZI_WORKFLOW_CONFIG:configPath,YINZI_WORKFLOW_CANONICAL:'1',YINZI_WORKFLOW_SOURCE_DIGEST:digest,YINZI_WORKFLOW_LAUNCH_TOKEN:token},detached:true,stdio:['ignore',fd,fd],windowsHide:true});child.unref();return {pid:child.pid,log,child} }
   finally {fs.closeSync(fd)}
 }
 export async function ensure(options={}) {
   const unlock=await lock()
   try {
+    const maintenance=await readJson(path.join(stateRoot(),'maintenance.json'))
+    if(maintenance?.owner_pid && alive(maintenance.owner_pid) && Number(options.maintenanceOwner)!==maintenance.owner_pid)
+      throw new Error('安装器正在更新，原任务和数据已保留；安装完成后继续使用同一工作台')
     const registered=await readRegistry(); const hint=options.apiBase || process.env.YINZI_WORKFLOW_URL
     const source=findProjectRoot(options.projectRoot || process.env.YINZI_WORKFLOW_PROJECT_ROOT,registered?.source_root)
+    const data=await resolveData(source,registered,options.runtimeRoot)
+    const root=data.runtime_root
     const frontendDigest=await buildFrontend(source)
     const sourceDigest=await fingerprint(path.join(source,'backend-node'),['src','package.json','package-lock.json'])
-    const root=path.resolve(options.runtimeRoot || registered?.runtime_root || path.join(stateRoot(),'runtimes/default'))
-    const origin=hint ? localOrigin(hint) : registered?.api_base
-    const live=origin ? await probe(origin) : null
-    const sameDatabase=live && (!registered?.database_fingerprint || registered.database_fingerprint===live.database?.fingerprint)
-    const sameRoot=options.runtimeRoot ? Boolean(registered?.runtime_root && path.resolve(registered.runtime_root)===root) : !registered?.runtime_root || path.resolve(registered.runtime_root)===root
-    if(live && (hint || sameDatabase && sameRoot)) {
+    const lease=await readJson(data.database_path+'.runtime-lock')
+    let origin=hint ? localOrigin(hint) : lease?.api_base || registered?.api_base
+    let live=origin ? await probe(origin) : null
+    if(hint && live && live.database?.fingerprint!==data.database_fingerprint)throw new Error('指定地址不属于原数据库，已保留原绑定和任务')
+    // Recover older entry points without creating another process beside them.
+    let consolidated=[]
+    {
+      const candidates=[...new Set([origin,registered?.api_base,lease?.api_base,...[5679,5683,5680,5682].map(p=>`http://127.0.0.1:${p}`)].filter(Boolean))]
+      const found=(await Promise.all(candidates.map(async api=>({api,identity:await probe(api)})))).filter(x=>x.identity?.database?.fingerprint===data.database_fingerprint)
+      if(found.length>1) {
+        await backupData(source,data,'before-duplicate-consolidation')
+        const result=await consolidateLegacy(found,registered,root,probe)
+        consolidated=result.stopped;origin=result.primary.api;live=result.primary.identity
+      } else if(!live && found.length) {origin=found[0].api;live=found[0].identity}
+    }
+    const sameDatabase=live && data.database_fingerprint===live.database?.fingerprint
+    const sameRoot=!registered?.runtime_root || path.resolve(registered.runtime_root)===root
+    if(live && sameDatabase && sameRoot) {
       // Only a process launched by this registry is eligible for replacement.
-      const owned=registered?.pid && registered.runtime_id===live.runtime_id && sameDatabase && sameRoot
-      const stale=owned && registered.source_digest && registered.source_digest!==sourceDigest
-      if(stale) { process.kill(registered.pid);for(let i=0;i<40&&alive(registered.pid);i++) await delay(125);if(alive(registered.pid)) throw new Error('旧运行时仍在退出，已保留原数据库，请稍后重新打开') }
+      const ownerPid=registered?.runtime_id===live.runtime_id?registered.pid:
+        lease?.launch_token && lease.launch_token===live.launch_token?lease.pid:await verifiedRuntimePid(live,root)
+      const stale=ownerPid && live.source_digest!==sourceDigest
+      let updateDeferred=null
+      if(stale) {try {await requireIdle(origin)}catch(error){updateDeferred=error.message}}
+      if(stale && !updateDeferred) { await backupData(source,data,'source-upgrade');process.kill(ownerPid);for(let i=0;i<80&&alive(ownerPid);i++) await delay(125);if(alive(ownerPid)) throw new Error('旧运行时仍在退出，已保留原数据库，请稍后重新打开') }
       else {
         if(!await verifyUi(origin)) throw new Error('后端在线，但首页或脚本资源不可读；请检查前端构建路径')
-        const record={...registered,ok:true,api_base:origin,frontend_url:`${origin}/`,source_root:source,runtime_root:registered?.runtime_root || null,runtime_id:live.runtime_id,database_fingerprint:live.database?.fingerprint,frontend_digest:frontendDigest,reused:true}
-        await writeRegistry(record);return {...record,identity:live,...(options.open ? {browser:await openBrowser(record.frontend_url)}:{})}
+        const record={...registered,ok:true,api_base:origin,frontend_url:`${origin}/`,source_root:source,runtime_root:root,pid:ownerPid,runtime_id:live.runtime_id,database_fingerprint:live.database?.fingerprint,source_digest:live.source_digest || null,frontend_digest:frontendDigest,reused:true}
+        await writeRegistry(record);return {...record,identity:live,consolidated,update_deferred:updateDeferred,...(options.open ? {browser:await openBrowser(record.frontend_url)}:{})}
       }
-    } else if(live && registered?.pid && alive(registered.pid)) {
+    } else if(live) {
       throw new Error('登记地址属于另一数据库，原运行时仍在运行；已保留实例和数据，请检查 runtime.json')
     }
+    if(!live && ((lease?.pid && alive(lease.pid)) || (registered?.pid && alive(registered.pid)))) throw new Error('原后台进程仍在但暂时未响应；保留原实例，不会另开端口创建重复后台')
     await prepareRuntime(source,root)
+    if(data.exists && !live) await backupData(source,data,'restart-before-migrations')
+    const configPath=fs.existsSync(path.join(root,'configs/config.yaml'))?path.join(root,'configs/config.yaml'):path.join(root,'config.yaml')
     for(let attempt=0;attempt<4;attempt++) {
-      const port=await findPort(attempt ? 0 : options.port);const apiBase=`http://127.0.0.1:${port}`;const token=crypto.randomUUID();const processInfo=startBackend(source,root,port,sourceDigest,token)
+      const port=await findPort(attempt ? 0 : options.port);const apiBase=`http://127.0.0.1:${port}`;const token=crypto.randomUUID();const processInfo=startBackend(source,root,port,sourceDigest,token,configPath)
       let exited=false;let spawnError;processInfo.child.once('exit',()=>{exited=true});processInfo.child.once('error',error=>{spawnError=error;exited=true})
       let identity=null;let collided=false;const end=Date.now()+45000
       while(!exited && Date.now()<end) {identity=await probe(apiBase);if(identity?.launch_token===token && identity.source_digest===sourceDigest) break;if(identity) {collided=true;identity=null;break} await delay(250)}
       if(identity && await verifyUi(apiBase)) {
+        let continuity
+        try {continuity=await verifyContinuity(source,data)} catch(error) {try {process.kill(processInfo.pid)}catch{};throw error}
         const record={ok:true,schema:'yinzi.codex-runtime/v2',source_root:source,runtime_root:root,api_base:apiBase,frontend_url:`${apiBase}/`,pid:processInfo.pid,log:processInfo.log,started_at:new Date().toISOString(),runtime_id:identity.runtime_id,database_fingerprint:identity.database?.fingerprint,source_revision:identity.source_revision,source_digest:sourceDigest,frontend_digest:frontendDigest,paid_calls_started:false}
-        await writeRegistry(record);return {...record,reused:false,identity,...(options.open?{browser:await openBrowser(record.frontend_url)}:{})}
+        await writeRegistry(record);return {...record,reused:false,identity,continuity,...(options.open?{browser:await openBrowser(record.frontend_url)}:{})}
       }
       if(!exited && processInfo.pid) {try {process.kill(processInfo.pid)}catch{}}
       const output=await fsp.readFile(processInfo.log,'utf8').catch(()=>'')
@@ -127,7 +158,17 @@ export async function ensure(options={}) {
 export async function stopOwnedRuntime() {
   const unlock=await lock()
   try {
-    const record=await readRegistry()
+    let record=await readRegistry()
+    if(!record?.pid) {
+      const binding=await readJson(path.join(stateRoot(),'data-binding.json'))
+      const lease=binding?.database_path?await readJson(binding.database_path+'.runtime-lock'):null
+      if(lease?.pid && alive(lease.pid)) {
+        const identity=await probe(lease.api_base)
+        if(!lease.launch_token || identity?.launch_token!==lease.launch_token || identity.database?.fingerprint!==binding.database_fingerprint)
+          throw new Error('原后台仍在，但丢失登记后无法核对身份；已保留进程与数据')
+        record={...lease,runtime_id:identity.runtime_id,database_fingerprint:binding.database_fingerprint}
+      }
+    }
     if(!record?.pid || !alive(record.pid)) return {ok:true,stopped:false}
     const identity=record.api_base ? await probe(record.api_base) : null
     if(!identity || identity.runtime_id!==record.runtime_id ||
@@ -141,14 +182,38 @@ export async function stopOwnedRuntime() {
     return {ok:true,stopped:true}
   } finally {await unlock()}
 }
+export async function prepareUpdate(options={}) {
+  const unlock=await lock()
+  try {
+    const file=path.join(stateRoot(),'maintenance.json')
+    const prior=await readJson(file)
+    if(prior?.owner_pid && alive(prior.owner_pid) && Number(options.ownerPid)!==prior.owner_pid) throw new Error('另一个安装器仍在更新，保留当前安装并等待完成')
+    const registered=await readRegistry()
+    const source=findProjectRoot(options.projectRoot,registered?.source_root)
+    const data=await resolveData(source,registered,options.runtimeRoot)
+    const lease=await readJson(data.database_path+'.runtime-lock')
+    const origin=lease?.api_base || registered?.api_base
+    if(origin && await probe(origin)) await requireIdle(origin)
+    const backup=await backupData(source,data,'installer-before-dependencies')
+    if(Number.isInteger(Number(options.ownerPid)) && Number(options.ownerPid)>0)
+      await atomicJson(file,{owner_pid:Number(options.ownerPid),runtime_root:data.runtime_root,started_at:new Date().toISOString()})
+    return {ok:true,runtime_root:data.runtime_root,database_fingerprint:data.database_fingerprint,backup:backup?.backup || null}
+  } finally {await unlock()}
+}
 export async function main(args=process.argv.slice(2)) {
   const option=name=>{const index=args.indexOf(name);return index<0?undefined:args[index+1]}
   if(option('--runtime-dir')) process.env.YINZI_WORKFLOW_RUNTIME_DIR=path.resolve(option('--runtime-dir'))
   try {
     const command=args[0] || 'status';let result
-    if(command==='ensure') result=await ensure({projectRoot:option('--project-root'),runtimeRoot:option('--runtime-root'),port:option('--backend-port'),apiBase:option('--api-base'),open:args.includes('--open')})
+    if(command==='ensure') result=await ensure({projectRoot:option('--project-root'),runtimeRoot:option('--runtime-root'),port:option('--backend-port'),apiBase:option('--api-base'),maintenanceOwner:option('--maintenance-owner'),open:args.includes('--open')})
     else if(command==='status') {const record=await readRegistry();const identity=record?.api_base?await probe(record.api_base):null;result={ok:true,active:Boolean(identity && (!record.runtime_id || record.runtime_id===identity.runtime_id)),registry:path.join(stateRoot(),'runtime.json'),runtime:record}}
     else if(command==='stop') result=await stopOwnedRuntime()
+    else if(command==='prepare-update') result=await prepareUpdate({projectRoot:option('--project-root'),runtimeRoot:option('--runtime-root'),ownerPid:option('--owner-pid')})
+    else if(command==='state-root') result={ok:true,state_root:stateRoot()}
+    else if(command==='doctor') {
+      const record=await readRegistry();const source=findProjectRoot(option('--project-root'),record?.source_root)
+      result={ok:true,registry:record,data_binding:await readJson(path.join(stateRoot(),'data-binding.json')),candidates:await discoverData(source,record,option('--search-root')?[option('--search-root')]:[])}
+    }
     else {process.exitCode=2;result={ok:false,error:'可用命令：ensure、status、stop'}}
     process.stdout.write(JSON.stringify(result)+'\n')
   } catch(error) {process.exitCode=3;process.stdout.write(JSON.stringify({ok:false,error:error.message})+'\n')}

@@ -35,5 +35,5 @@ jobs:
         working-directory: frontweb
       - run: npm run build
         working-directory: frontweb
-      - run: node --test mcp/server.test.mjs scripts/check-update.test.mjs scripts/runtime-launcher.test.mjs skills/yinzi-text-model/scripts/text-task.test.mjs
+      - run: node --test mcp/server.test.mjs scripts/check-update.test.mjs scripts/runtime-launcher.test.mjs scripts/runtime-continuity.test.mjs skills/yinzi-text-model/scripts/text-task.test.mjs
         working-directory: codex-yinzi-universal-video-workflow/plugins/codex-yinzi-universal-video-workflow
