@@ -94,8 +94,8 @@ export async function ensure(options={}) {
     const maintenance=await readJson(path.join(stateRoot(),'maintenance.json'))
     if(maintenance?.owner_pid && alive(maintenance.owner_pid) && Number(options.maintenanceOwner)!==maintenance.owner_pid)
       throw new Error('安装器正在更新，原任务和数据已保留；安装完成后继续使用同一工作台')
-    const registered=await readRegistry(); const hint=options.apiBase || process.env.YINZI_WORKFLOW_URL
-    const source=findProjectRoot(options.projectRoot || process.env.YINZI_WORKFLOW_PROJECT_ROOT,registered?.source_root)
+    const registered=await readRegistry(); const installation=await readJson(path.join(stateRoot(),'installation.json')); const hint=options.apiBase || process.env.YINZI_WORKFLOW_URL
+    const source=findProjectRoot(options.projectRoot || process.env.YINZI_WORKFLOW_PROJECT_ROOT,registered?.source_root || installation?.source_root)
     const data=await resolveData(source,registered,options.runtimeRoot)
     const root=data.runtime_root
     const frontendDigest=await buildFrontend(source)
