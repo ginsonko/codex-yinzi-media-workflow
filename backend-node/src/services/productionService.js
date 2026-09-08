@@ -28,6 +28,7 @@ const {
   routingBindingSignature,
 } = require('./productionVideoRouter');
 const { hasLocalFfmpeg, hasLocalFfprobe } = require('../utils/ffmpegPath');
+const { inspectLocalAssets } = require('../utils/localAssetPreflight');
 const promptRegistry = require('./productionPromptRegistry');
 const promptRuntime = require('./productionPromptRuntime');
 const accounting = require('./productionRuntimeAccounting');
@@ -3942,6 +3943,12 @@ function createProductionService(db, cfg, log, injected = {}) {
     const run = repo.getRun(db, runId);
     if (!run) throw new Error('制作任务不存在');
     const checks = [];
+    const localAssets = inspectLocalAssets(input);
+    if (localAssets.checked) checks.push({
+      key: 'local_assets', label: '本地素材', ok: localAssets.ok,
+      detail: localAssets.ok ? `已检查 ${localAssets.checked} 个文件，可读取` : localAssets.checks.filter((item) => !item.ok).map((item) => item.reason).join('；'),
+      blocking: true, items: localAssets.checks,
+    });
     const textConfig = aiClient.getDefaultConfig(db, 'text');
     const assetImageModel = run.policy?.asset_image_model || run.policy?.image_model;
     const storyboardImageModel = run.policy?.storyboard_image_model || run.policy?.image_model;
