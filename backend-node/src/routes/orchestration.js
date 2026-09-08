@@ -2,6 +2,7 @@ const response = require('../response');
 const moduleCatalog = require('../services/orchestrationModuleCatalog');
 const { createOrchestrationService } = require('../services/orchestrationService');
 const { createOrchestrationBlenderService } = require('../services/orchestrationBlenderService');
+const componentManager = require('../services/mediaComponentManager');
 
 function sendError(res, log, label, error) {
   log.error?.(label, { error: error.message, code: error.code });
@@ -58,6 +59,19 @@ module.exports = function orchestrationRoutes(db, log = console, cfg = {}, injec
       const item = moduleCatalog.getModule(req.params.moduleId);
       if (!item) return response.error(res, 404, 'MODULE_CONTRACT_MISSING', '本地尚未登记该模块合同；它仍可作为未知模块写入计划并由 Codex 或人工执行');
       return response.success(res, item);
+    },
+    componentProfile(req, res) {
+      return response.success(res, { schema_version: 1, machine: componentManager.machineProfile() });
+    },
+    componentState(req, res) {
+      try { return response.success(res, componentManager.readState(req.params.componentId) || { component_id: req.params.componentId, status: 'missing' }); }
+      catch (error) { return sendError(res, log, 'component state', error); }
+    },
+    ensureComponent(req, res) {
+      const progress = [];
+      Promise.resolve().then(() => componentManager.ensureComponent(req.body || {}, (event) => progress.push({ ...event, at: new Date().toISOString() })))
+        .then((result) => response.success(res, { ...result, progress }))
+        .catch((error) => sendError(res, log, 'component ensure', error));
     },
     listSessions(req, res) {
       try { response.success(res, service.listSessions(req.query || {})); }

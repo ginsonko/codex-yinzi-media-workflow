@@ -100,6 +100,9 @@ function setupRouter(cfg, db, log, injected = {}) {
   r.put('/orchestration-modules/:moduleId', orchestration.updateModule);
   r.delete('/orchestration-modules/:moduleId', orchestration.deleteModule);
   r.get('/orchestration-modules/:moduleId', orchestration.getModule);
+  r.get('/media-components/profile', orchestration.componentProfile);
+  r.get('/media-components/:componentId', orchestration.componentState);
+  r.post('/media-components/ensure', orchestration.ensureComponent);
   r.get('/orchestration-onboarding', orchestration.onboarding);
   r.get('/runtime-work-status', (req, res) => {
     const sources = { async_tasks:['pending','processing','running'], media_batches:['queued','running','paused'], production_runs:['running'], orchestration_blender_jobs:['queued','running'] };

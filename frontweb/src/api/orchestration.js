@@ -13,6 +13,9 @@ export const orchestrationAPI = {
   updateModule(id, body) { return request.put(`/orchestration-modules/${encodeURIComponent(id)}`, body) },
   deleteModule(id) { return request.delete(`/orchestration-modules/${encodeURIComponent(id)}`) },
   module(id) { return request.get(`/orchestration-modules/${encodeURIComponent(id)}`) },
+  componentProfile() { return request.get('/media-components/profile', { suppressGlobalError: true }) },
+  componentState(id) { return request.get(`/media-components/${encodeURIComponent(id)}`, { suppressGlobalError: true }) },
+  ensureComponent(manifest, config = {}) { return request.post('/media-components/ensure', manifest, { ...config, timeout: config.timeout || 120000 }) },
   sessions(params = {}) { return request.get('/orchestration-sessions', { params, suppressGlobalError: true, timeout: 10000 }) },
   create(body) { return request.post('/orchestration-sessions', body) },
   // Detail reads are rendered in the workspace. Suppress the global toast so
