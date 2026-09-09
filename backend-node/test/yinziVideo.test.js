@@ -1201,13 +1201,18 @@ describe('YinziAPI asynchronous lifecycle', () => {
     }
   });
 
-  it('fails before any upload when known local reference videos exceed the provider duration budget', async () => {
+  it('automatically adapts known local reference videos before provider submission', async () => {
     const originalFetch = global.fetch;
     const storage = fs.mkdtempSync(path.join(os.tmpdir(), 'yinzi-over-duration-'));
     let calls = 0;
     makeReferenceVideo(path.join(storage, 'previous.mp4'), 'libx264', 24, 8);
     makeReferenceVideo(path.join(storage, 'director.mp4'), 'libx264', 24, 8);
-    global.fetch = async () => { calls += 1; throw new Error('provider must not be called'); };
+    global.fetch = async () => {
+      calls += 1;
+      return new Response(JSON.stringify({ id: calls === 1 ? 'file-video-1' : calls === 2 ? 'file-video-2' : 'task-adapted' }), {
+        status: 200, headers: { 'Content-Type': 'application/json' },
+      });
+    };
     try {
       const result = await callYinziVideoApi(null, {
         base_url: 'https://api.yinziapi.top/v1', api_key: 'not-a-real-key', endpoint: '/videos',
@@ -1215,8 +1220,11 @@ describe('YinziAPI asynchronous lifecycle', () => {
         model: 'mg-seedance2.0 -480p mini', prompt: 'test', duration: 5, aspect_ratio: '16:9',
         reference_video_urls: ['previous.mp4', 'director.mp4'], storage_local_path: storage, video_gen_id: 9,
       });
-      assert.equal(calls, 0);
-      assert.match(result.error, /total .* seconds.*15-second provider limit/i);
+      assert.ok(calls >= 1);
+      assert.equal(result.task_id, 'task-adapted');
+      assert.equal(result.contract_validation.reference_video_adaptations.length, 1);
+      assert.ok(result.contract_validation.reference_video_adaptations.every((item) => item.excerpt_duration_seconds < item.source_duration_seconds));
+      assert.ok(result.contract_validation.reference_video_adaptations.every((item) => item.excerpt_duration_seconds <= 13.8));
     } finally {
       global.fetch = originalFetch;
       fs.rmSync(storage, { recursive: true, force: true });
