@@ -3335,6 +3335,15 @@ function localImageDataUrl(filePath) {
 async function resolveYinziReferenceSource(config, raw, type, capability, opts, log, index) {
   const value = String(raw || '').trim();
   if (!value) return null;
+  // A reconciled upload can outlive a client timeout. Reuse its provider ID
+  // explicitly instead of uploading the same bytes again or treating it as a URL.
+  if (value.startsWith('file_id:')) {
+    const fileId = value.slice('file_id:'.length);
+    if (!fileId || fileId.length > 240 || /[\s/\\?#]/.test(fileId)) {
+      throw new Error('已有上传文件的 file_id 无效，请使用当前站点已对账的文件 ID');
+    }
+    return { file_id: fileId };
+  }
   if (value.startsWith('data:')) {
     if (type !== 'image' || !value.toLowerCase().startsWith('data:image/')) {
       throw new Error('YinziAPI 仅允许图片参考使用 data URL；视频和音频请上传文件或使用公网 URL');

@@ -537,6 +537,37 @@ describe('YinziAPI asynchronous lifecycle', () => {
     } finally { global.fetch = originalFetch; db.close(); }
   });
 
+  it('reuses reconciled file references without uploading again and rejects malformed IDs before POST', async () => {
+    const originalFetch = global.fetch;
+    const calls = [];
+    global.fetch = async (url, init) => {
+      calls.push({ url, body: JSON.parse(init.body) });
+      assert.equal(url, 'https://video.test/v1/videos');
+      return new Response(JSON.stringify({ id: 'task-existing-file', status: 'queued' }), { status: 200 });
+    };
+    const config = { base_url: 'https://video.test/v1', api_key: 'test-key', endpoint: '/videos' };
+    const input = { model: 'Seedance 2.5-720', prompt: 'same source performance', duration: 30,
+      aspect_ratio: '1:1', contract_validation_mode: 'advisory', video_gen_id: 35,
+      reference_urls: ['https://media.test/identity.png'],
+      reference_video_urls: ['file_id:file-existing-upload'], reference_audio_urls: ['file_id:audio-existing-upload'] };
+    try {
+      const result = await callYinziVideoApi(null, config, log, input);
+      assert.equal(result.submission_status, 'accepted');
+      assert.equal(calls.length, 1);
+      assert.deepEqual(calls[0].body.references, [
+        { type: 'image', role: 'reference', url: 'https://media.test/identity.png' },
+        { type: 'video', role: 'reference', file_id: 'file-existing-upload' },
+        { type: 'audio', role: 'reference', file_id: 'audio-existing-upload' },
+      ]);
+      for (const invalid of ['file_id:', 'file_id:bad/file', 'file_id:bad id']) {
+        const failure = await callYinziVideoApi(null, config, log, { ...input, reference_video_urls: [invalid] });
+        assert.equal(failure.submission_status, 'not_sent');
+        assert.match(failure.error, /file_id/);
+      }
+      assert.equal(calls.length, 1);
+    } finally { global.fetch = originalFetch; }
+  });
+
   it('rejects unsupported AIZZZ first/last semantics before submitting', async () => {
     const originalFetch = global.fetch;
     let calls = 0;
