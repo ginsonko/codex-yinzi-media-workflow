@@ -6,7 +6,7 @@
         <span role="status">{{ preferencesSaving ? '正在保存…' : preferencesError || (unattendedMode ? '已允许 · 设置已保存' : '未开启') }}</span>
       </section>
       <WorkActivity v-if="activeSession" :session="activeSession" :nodes="activeBundle?.nodes || []"><el-button plain size="small" @click="openAttention">打开当前任务</el-button></WorkActivity>
-      <section v-else-if="activeBatch" class="panel manual-current" aria-label="当前后台任务"><h2>{{ activeBatch.title }}</h2><p>{{ activeBatch.settings?._origin === 'manual' ? '手动创作' : '批量生成' }} · {{ activeBatch.status === 'needs_review' ? '需要处理，请打开任务查看原因与恢复操作。' : '后台持续处理，可随时离开再回来。' }}</p><p>{{ activeBatch.completed || 0 }} / {{ activeBatch.total }} 已完成 · {{ activeBatch.running || 0 }} 项处理中</p><small>后台状态更新：{{ new Date(activeBatch.updated_at).toLocaleString() }}</small><el-button type="primary" plain @click="router.push(activeBatch.settings?._origin === 'manual' ? '/free-create' : `/batch?batch=${activeBatch.id}`)">查看进度和下载</el-button></section>
+      <section v-else-if="activeBatch" class="panel manual-current" aria-label="当前后台任务"><h2>{{ activeBatch.title }}</h2><p>{{ activeBatch.settings?._origin === 'manual' ? '手动创作' : '批量生成' }} · {{ dashboardBatchMessage(activeBatch) }}</p><p>{{ activeBatch.completed || 0 }} / {{ activeBatch.total }} 已完成 · {{ activeBatch.running || 0 }} 项处理中</p><small>后台状态更新：{{ new Date(activeBatch.updated_at).toLocaleString() }}</small><el-button type="primary" plain @click="router.push(activeBatch.settings?._origin === 'manual' ? '/free-create' : `/batch?batch=${activeBatch.id}`)">查看进度和下载</el-button></section>
       <section v-if="!sessions.length && !batches.length" class="welcome-band">
         <div class="welcome-copy"><span class="kicker">今天从一句话开始</span><h2>把想法交给 Codex，<em>进度和成果会自己回来。</em></h2><p>可以直接说要做什么，也可以附上一张图片或一个文件夹。Codex 会先说明计划、素材和费用，按你的授权继续执行。</p><div class="welcome-actions"><el-button type="primary" size="large" @click="router.push('/free-create')"><el-icon><VideoPlay /></el-icon>手动创作</el-button><el-button size="large" plain @click="router.push('/batch')"><el-icon><CopyDocument /></el-icon>批量生成</el-button><el-button class="desktop-shortcut-button" text size="small" :loading="shortcutSaving" title="在 Windows 桌面添加工作流快捷方式" @click="addDesktopShortcut"><el-icon><Monitor /></el-icon>添加到桌面</el-button></div><span v-if="shortcutHint" class="shortcut-hint" role="status">{{ shortcutHint }}</span></div>
         <div class="welcome-visual"><div class="visual-grid"><span v-for="n in 9" :key="n"></span></div><div class="visual-orbit orbit-a"></div><div class="visual-orbit orbit-b"></div><div class="visual-core"><el-icon><MagicStick /></el-icon><strong>CODEX</strong><small>LIVE</small></div></div>
@@ -57,6 +57,7 @@ import mediaBatchAPI from '@/api/mediaBatch'
 import { normalizeArtifacts } from '@/utils/orchestrationExperience'
 import { artifactMediaUrl } from '@/utils/mediaUrl'
 import { describeWorkActivity } from '@/utils/workActivity'
+import { dashboardBatchMessage, dashboardBundle, dashboardDetailTargets, selectDashboardBatch, selectDashboardSession } from '@/utils/dashboardWork'
 
 const router = useRouter()
 const unattendedMode = ref(false)
@@ -92,16 +93,12 @@ const sampleKey = 'yinzi-dashboard-progress-samples-v1'
 try { samples.value = JSON.parse(localStorage.getItem(sampleKey) || '[]').filter((item) => item && Number.isFinite(Number(item.progress))).filter((item) => new Date(item.at).getTime() >= Date.now() - 30 * 60000).slice(-240) } catch (_) {}
 const snapshotKey = 'yinzi-dashboard-last-success-v2'
 try { const cached = JSON.parse(localStorage.getItem(snapshotKey) || '{}'); sessions.value = cached.sessions || []; bundles.value = cached.bundles || []; batches.value = cached.batches || []; batchBundles.value = cached.batchBundles || []; lastSuccessfulAt.value = cached.saved_at || '' } catch (_) {}
-const activeSession = computed(() => {
-  const current = sessions.value.find(item => ['draft','running','planned','waiting_confirmation','paused'].includes(item.status))
-  if (activeBatch.value && (!current || Date.parse(activeBatch.value.created_at) > Date.parse(current.created_at))) return null
-  return current || sessions.value.find(item => item.source_context?.analysis_report) || null
-})
-const activeBatch = computed(() => batches.value.find(item => ['queued','running','paused','needs_review'].includes(item.status)) || null)
+const activeSession = computed(() => selectDashboardSession(sessions.value, batches.value))
+const activeBatch = computed(() => selectDashboardBatch(batches.value))
 const attentionSession = computed(() => activeSession.value)
 const batchArtifacts = computed(() => batchBundles.value.flatMap((batch) => (batch.items || []).filter((item) => item.media_url).map((item) => ({ id: `batch-${item.id}`, type: item.kind, title: item.request?.prompt || batch.title, media_url: item.media_url, created_at: item.completed_at || item.updated_at }))))
 const latestArtifacts = computed(() => normalizeArtifacts([...bundles.value.flatMap((bundle) => bundle.artifacts || []), ...batchArtifacts.value].sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0)).map((item) => ({ ...item, url: artifactMediaUrl(item) }))))
-const activeBundle = computed(() => bundles.value.find((bundle) => bundle.session?.id === activeSession.value?.id) || bundles.value[0] || null)
+const activeBundle = computed(() => dashboardBundle(activeSession.value, bundles.value))
 const progressPercent = computed(() => { const nodes = activeBundle.value?.nodes || []; if (!nodes.length) return null; const done = nodes.filter((node) => ['succeeded', 'skipped', 'partial', 'failed', 'cancelled'].includes(node.status)).length; return Math.round(done / nodes.length * 100) })
 const progressLabel = computed(() => describeWorkActivity(activeBundle.value?.session || activeSession.value || {}, activeBundle.value?.nodes || []).message)
 const stages = computed(() => { const nodes = activeBundle.value?.nodes || []; return [['准备', ['intake','research','plan']], ['创作', ['create','edit']], ['检查', ['qa']], ['交付', ['deliver']]].map(([label, phases]) => { const items = nodes.filter(node => phases.includes(node.phase)); return { label, state: items.length && items.every(node => ['succeeded','skipped','partial','failed','cancelled'].includes(node.status)) ? 'done' : items.some(node => node.status === 'running') ? 'current' : '' } }) })
@@ -126,7 +123,7 @@ async function loadDashboard() {
     const [sessionResult,batchResult] = await Promise.allSettled([orchestrationAPI.sessions({limit:20}),mediaBatchAPI.list({limit:30})])
     if (sessionResult.status === 'fulfilled') {
       sessions.value = sessionResult.value?.items || []
-      const loaded = await Promise.all(sessions.value.slice(0,6).map(async item => {
+      const loaded = await Promise.all(dashboardDetailTargets(sessions.value, batchResult.status === 'fulfilled' ? batchResult.value?.items || [] : batches.value).map(async item => {
         const old = bundles.value.find(bundle => bundle.session?.id === item.id)
         if (old && old._event_id === item.last_event_id && old.session?.version === item.version) return old
         try { return {...await orchestrationAPI.get(item.id,{event_limit:10}),_event_id:item.last_event_id} } catch { errors.push('部分任务详情暂时无法刷新');return old }

@@ -61,7 +61,7 @@ export function normalizeRetryability(receipt) {
 
 function hasConfigurationAction(receipt) {
   const actions = Array.isArray(receipt?.next_actions) ? receipt.next_actions : []
-  return actions.some((action) => /^(replace_with_|repair_|configure_|reconnect_)/i.test(String(action || '')))
+  return actions.some((action) => /^(replace_with_(?:video|image|text)_enabled_key|repair_.*(?:router|route|config)|configure_|reconnect_(?:provider|account))/i.test(String(action || '')))
 }
 
 /** Convert structured failure evidence into actionable, truthful UI guidance. */
@@ -69,19 +69,20 @@ export function providerFailureGuidance(node, receipt) {
   if (!['failed', 'partial'].includes(node?.status) || !receipt) return null
   const retryable = normalizeRetryability(receipt)
   const category = String(receipt.normalized_category || '').trim().toLowerCase()
-  const configurationMissing = category === 'provider_route_contract_missing'
+  const videoRouteMissing = category === 'provider_route_contract_missing'
+  const configurationMissing = videoRouteMissing
     || category === 'configuration_required'
     || hasConfigurationAction(receipt)
 
   if (configurationMissing) {
     return {
       kind: 'configuration_required',
-      title: '当前视频 Key 没有可用路由',
-      summary: '原地重试不会修复路由合同，也可能再次产生费用风险。请先修复或更换配置。',
+      title: videoRouteMissing ? '当前视频配置没有可用路由' : '当前步骤需要补全配置',
+      summary: '已保存这次失败和原任务。先补全当前步骤所需的配置，再沿原任务继续。',
       steps: [
-        '进入“模型与 Key”，换用模型目录中能返回视频模型的 Key',
-        '或让 YinziAPI 修复该 Key 的智能视频路由合同',
-        '修复后新建一次明确授权的验收任务；不会自动重放当前任务',
+        '打开“模型与 Key”，检查对应类型的 URL、分组 Key 和模型',
+        videoRouteMissing ? '可让 Codex 根据原始错误修复或更换已配置路由；目录未列出模型不等于不能使用' : '也可以把原任务交给 Codex，继续处理缺少的配置',
+        '保留当前任务、已完成的素材和回执，修复后从原步骤继续',
       ],
       action: 'open_ai_config',
       direct_retry_allowed: false,
@@ -91,9 +92,9 @@ export function providerFailureGuidance(node, receipt) {
   if (retryable === true) {
     return {
       kind: 'retryable',
-      title: '这次失败可以直接重试',
-      summary: '当前回执标记为可重试；重试仍会按原节点配置执行，并可能产生新的费用。',
-      steps: ['确认模型、参考素材和预算仍然符合预期', '点击“直接重试”重新执行当前节点'],
+      title: '可以准备重试当前步骤',
+      summary: '当前回执标记为可重试。准备重试会恢复节点的待执行状态，由 Codex 或对应执行器接手；实际提交后才会开始处理。',
+      steps: ['点击“准备重试”保留原任务并重新打开这个步骤', '让 Codex 继续原任务；如果实际需要重新生成，将沿用已有授权和预算'],
       action: null,
       direct_retry_allowed: true,
     }

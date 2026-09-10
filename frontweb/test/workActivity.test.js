@@ -61,3 +61,15 @@ test('the newest real backend update wins and pause still overrides it', () => {
   assert.equal(describeWorkActivity(session, nodes, now).label, '正在下载结果')
   assert.equal(describeWorkActivity({ ...session, status: 'paused' }, nodes, now).label, '后续步骤已暂停')
 })
+
+test('backend freshness follows the displayed job rather than the old Codex report', () => {
+  const updated_at = new Date(now - 1000).toISOString()
+  const view = describeWorkActivity(session, [{ status: 'running', updated_at, progress: { state: 'provider_processing' } }], now)
+  assert.equal(view.timestamp, updated_at)
+  assert.equal(view.stale, false)
+  assert.equal(view.timestampLabel, '后台任务状态更新')
+  const old = describeWorkActivity(session, [{ status: 'running', updated_at: new Date(now - 300000).toISOString(), progress: { state: 'provider_processing' } }], now)
+  assert.equal(old.stale, true)
+  assert.match(old.notice, /不表示需要重新提交/)
+  assert.equal(old.label, '模型处理中')
+})

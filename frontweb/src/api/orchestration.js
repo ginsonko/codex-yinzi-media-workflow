@@ -37,7 +37,7 @@ export const orchestrationAPI = {
   blenderResume(id, jobId, body = {}) { return request.post(`/orchestration-sessions/${id}/blender/jobs/${jobId}/resume`, body, { timeout: 30000 }) },
   blenderCancel(id, jobId, body = {}) { return request.post(`/orchestration-sessions/${id}/blender/jobs/${jobId}/cancel`, body) },
   updateNode(id, nodeId, body) { return request.patch(`/orchestration-sessions/${id}/nodes/${nodeId}`, body) },
-  retryNode(id, nodeId, body = {}) { return request.post(`/orchestration-sessions/${id}/nodes/${nodeId}/retry`, body) },
+  retryNode(id, nodeId, body = {}) { return request.post(`/orchestration-sessions/${id}/nodes/${nodeId}/retry`, body, { suppressGlobalError: true }) },
   nodeAction(id, nodeId, action, body = {}) { return request.post(`/orchestration-sessions/${id}/nodes/${nodeId}/actions/${action}`, body) },
   pause(id, body = {}) { return request.post(`/orchestration-sessions/${id}/pause`, body) },
   resume(id, body = {}) { return request.post(`/orchestration-sessions/${id}/resume`, body) },

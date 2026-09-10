@@ -21,7 +21,16 @@ export function describeWorkActivity(session = {}, nodes = [], now = Date.now())
 
   if (finished) return { ...base, label: session.source_context?.intent === 'analyze' ? '分析已结束' : '任务已结束' }
   if (session.status === 'paused') return { ...base, label: '后续步骤已暂停', message: '任务已暂停，已提交的模型请求仍保留原有查询和下载记录。', next: '恢复任务后继续后续步骤' }
-  if (backend) return { ...base, label: backend.progress?.state === 'downloading' ? '正在下载结果' : backend.progress?.state === 'provider_processing' ? '模型处理中' : '后台任务待回执', message: backend.progress?.message || '后台正在处理已提交任务', next: '等待原任务结果，完成后检查素材', notice: unknown.length ? `另有 ${unknown.length} 笔提交结果待核对，原记录保留，只查询原请求；它们不影响当前任务继续处理。` : null }
+  if (backend) {
+    const backendTimestamp = backend.updated_at || null
+    const backendAge = now - Date.parse(backendTimestamp || '')
+    const backendStale = !Number.isFinite(backendAge) || backendAge > 90000
+    return { ...base, timestamp: backendTimestamp, timestampLabel: '后台任务状态更新', stale: backendStale,
+      label: backend.progress?.state === 'downloading' ? '正在下载结果' : backend.progress?.state === 'provider_processing' ? '模型处理中' : '后台任务待回执',
+      message: backend.progress?.message || '后台正在处理已提交任务', next: '等待原任务结果，完成后检查素材',
+      notice: [backendStale ? '这里保留后台最后报告的状态，新的结果尚未返回；这不表示需要重新提交。' : null,
+        unknown.length ? `另有 ${unknown.length} 笔提交结果待核对，原记录保留，只查询原请求；它们不影响当前任务继续处理。` : null].filter(Boolean).join(' ') || null }
+  }
   if (unknown.length) return { ...base, label: '提交结果待核对', message: unknown[0].progress?.message || unknown[0].error?.message || '上游是否受理尚不明确，原请求已保留。', next: '核对原请求记录，避免重复提交' }
   if (base.needsUser) return { ...base, label: '等待补充信息' }
   if (activity.state === 'waiting') return { ...base, label: '等待中' }

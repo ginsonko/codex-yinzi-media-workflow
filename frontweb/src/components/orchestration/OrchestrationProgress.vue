@@ -40,8 +40,9 @@ const currentText = computed(() => {
   if (progress.value.current?.status === 'failed') return '有一个步骤需要处理'
   if (progress.value.current?.status === 'partial') return '有一个步骤只完成了一部分'
   if (progress.value.current?.status === 'running') return '正在执行当前步骤'
+  if (progress.value.current?.status === 'ready') return '步骤已就绪，等待 Codex 或执行器接手'
   if (props.session.status === 'waiting_confirmation') return '计划已准备好，等待你确认'
-  return 'Codex 正在准备下一步'
+  return '等待下一步执行回报'
 })
 const stages = computed(() => {
   const names = [['prepare', '准备'], ['create', '创作'], ['review', '检查'], ['deliver', '交付']]

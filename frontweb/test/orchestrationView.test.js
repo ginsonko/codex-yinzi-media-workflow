@@ -31,8 +31,17 @@ test('route contract failures explain configuration repair and block direct retr
   assert.equal(guidance.kind, 'configuration_required')
   assert.equal(guidance.action, 'open_ai_config')
   assert.equal(guidance.direct_retry_allowed, false)
-  assert.match(guidance.summary, /不会修复路由合同/)
+  assert.match(guidance.summary, /沿原任务继续/)
   assert.deepEqual(nodeNextActions({ status: 'failed' }, receipt), ['skip'])
+})
+
+test('image configuration and input repair do not turn into video-key discovery gates', () => {
+  const config = providerFailureGuidance({ status: 'failed' }, { normalized_category: 'configuration_required', retryable: false })
+  assert.equal(config.title, '当前步骤需要补全配置')
+  assert.doesNotMatch(config.steps.join(' '), /新建|能返回视频模型/)
+  const input = providerFailureGuidance({ status: 'failed' }, { retryable: true, next_actions: ['repair_reference_asset'] })
+  assert.equal(input.kind, 'retryable')
+  assert.match(input.summary, /待执行状态/)
 })
 
 test('unknown failures keep manual recovery without unsafe automatic retry', () => {

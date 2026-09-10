@@ -88,7 +88,7 @@
             </header>
 
             <div v-if="bundle.nodes?.length" class="metric-grid">
-              <article><small>动态节点 · 已结束</small><strong>{{ countSummary.done }} / {{ countSummary.all }}</strong><el-progress :percentage="countSummary.percent" :show-text="false" :stroke-width="6" /></article>
+              <article><small>步骤处理进度</small><strong>{{ countSummary.done }} / {{ countSummary.all }}</strong><el-progress :percentage="countSummary.percent" :show-text="false" :stroke-width="6" /></article>
               <article><small>关联项目</small><strong>{{ bundle.session.linked_drama_id || '未关联' }}</strong><span>{{ bundle.session.linked_run_id ? `任务 ${shortId(bundle.session.linked_run_id)}` : '可由 Codex 后续绑定' }}</span></article>
               <article><small>费用真值</small><strong>{{ formatCost(bundle.session.usage) }}</strong><span>{{ formatBudget(bundle.session.budget) }}</span></article>
               <article><small>恢复点</small><strong>{{ bundle.session.checkpoint?.saved_at ? '已保存' : '尚未保存' }}</strong><span>{{ bundle.session.checkpoint?.summary || '节点与事件仍持续落库' }}</span></article>
@@ -168,7 +168,7 @@
                       <el-button v-if="['pending', 'waiting_confirmation'].includes(node.status)" size="small" type="primary" plain :disabled="runtimeWriteBlocked" @click="takeOverNode(node)">人工接管</el-button>
                       <el-button v-if="node.status === 'running'" size="small" type="success" plain :disabled="runtimeWriteBlocked" @click="setNode(node, 'succeeded')">标记完成</el-button>
                       <el-button v-if="node.status === 'running'" size="small" type="danger" plain :disabled="runtimeWriteBlocked" @click="openFail(node)">记录失败</el-button>
-                      <el-button v-if="canDirectlyRetryNode(node, latestReceipt(bundle, node.id))" size="small" type="primary" :disabled="runtimeWriteBlocked" @click="retryNode(node)">直接重试</el-button>
+                      <el-button v-if="canDirectlyRetryNode(node, latestReceipt(bundle, node.id))" size="small" type="primary" :disabled="runtimeWriteBlocked" :loading="retryPending.has(node.id)" @click="retryNode(node)">准备重试</el-button>
                       <el-button v-if="['pending', 'ready', 'waiting_confirmation', 'failed', 'partial'].includes(node.status)" size="small" text :disabled="runtimeWriteBlocked" @click="setNode(node, 'skipped')">跳过</el-button>
                       <el-button v-if="['succeeded', 'skipped'].includes(node.status)" size="small" text :disabled="runtimeWriteBlocked" @click="reopenNode(node)">重开</el-button>
                       <el-button size="small" text :disabled="runtimeWriteBlocked" @click="openNodeEditor(node)">编辑节点</el-button>
@@ -308,6 +308,7 @@ const router = useRouter()
 const sessions = ref([])
 const sessionScope = ref('recent')
 const archivePending = ref(false)
+const retryPending = reactive(new Set())
 const bundle = ref(null)
 const loading = ref(false)
 const detailLoading = ref(false)
@@ -604,7 +605,21 @@ async function saveFailure() {
   })
   bundle.value = result.bundle; showFailure.value = false; await loadSessions(false)
 }
-async function retryNode(node) { if (!assertRuntimeReady()) return; const result = await orchestrationAPI.retryNode(selectedId.value, node.id, { actor: 'user' }); bundle.value = result.bundle; await loadSessions(false) }
+async function retryNode(node) {
+  if (retryPending.has(node.id) || !assertRuntimeReady()) return
+  const sessionId = selectedId.value
+  retryPending.add(node.id)
+  try {
+    const result = await orchestrationAPI.retryNode(sessionId, node.id, { actor: 'user' })
+    if (selectedId.value === sessionId) bundle.value = result.bundle
+    ElMessage.success('步骤已恢复为待执行；由 Codex 或对应执行器接手后继续。')
+    await loadSessions(false)
+  } catch (error) {
+    ElMessage.error(error.message || '暂时无法准备重试，请查看原步骤状态后继续。')
+  } finally {
+    retryPending.delete(node.id)
+  }
+}
 function blankPlanNode(index = 0) { return { node_key: `step-${Date.now()}-${index + 1}`, module_id: 'manual.override', phase: 'create', executor: 'manual', depends_text: '', note: '' } }
 function openPlanEditor() {
   planForm.summary = bundle.value.session.plan?.summary || ''
