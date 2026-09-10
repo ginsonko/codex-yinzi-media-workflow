@@ -7,14 +7,15 @@ const {execute}=require('../src/services/localMediaExecutor');
 const {sourceFingerprints}=require('../src/services/localMediaValidation');
 async function main(){
   const root=path.resolve(process.argv[2]);fs.mkdirSync(root,{recursive:true});
-  const manager=createComponentManager({root:path.join(root,'components')});
+  const manager=createComponentManager({root:process.argv[4]?path.resolve(process.argv[4]):path.join(root,'components')});
   const ff=await manager.ensureComponent('media.ffmpeg'),sh=await manager.ensureComponent('media.sharp');
   const video=path.join(root,'source.mp4'),audio=path.join(root,'source.wav'),image=path.join(root,'source.png');
   if(!fs.existsSync(video))await run(ff.executables.ffmpeg,['-nostdin','-y','-v','error','-f','lavfi','-i','testsrc2=size=160x96:rate=12:duration=1','-f','lavfi','-i','sine=frequency=440:sample_rate=48000:duration=1','-c:v','libx264','-pix_fmt','yuv420p','-c:a','aac','-shortest',video]);
   if(!fs.existsSync(audio))await run(ff.executables.ffmpeg,['-nostdin','-y','-v','error','-i',video,'-vn','-c:a','pcm_s16le',audio]);
   if(!fs.existsSync(image))await run(ff.executables.ffmpeg,['-nostdin','-y','-v','error','-i',video,'-frames:v','1',image]);
   const selection=process.argv[3],results=[],start=Date.now(),fingerprints=sourceFingerprints();
-  for(const op of operations.filter(o=>!selection||o.id.includes(selection))){
+  // These synthetic fixtures exercise basic media filters. OCR/PDF/AI need their own content-bearing scenarios.
+  for(const op of operations.filter(o=>['media.ffmpeg','media.sharp'].includes(o.component_id)&&(!selection||o.id.includes(selection)))){
     const dir=path.join(root,'outputs',op.id);let result;
     try{const receipt=await execute({module_id:op.id,input_path:op.kind==='image'?image:op.kind==='audio'?audio:video},{manager,outputDir:dir});
       result={id:op.id,status:'passed',bytes:receipt.bytes,output_sha256:receipt.output_sha256,receipt:path.join(dir,'receipt.json')};

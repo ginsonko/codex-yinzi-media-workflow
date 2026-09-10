@@ -149,7 +149,7 @@ function createMediaBatchService(db, log = console, injected = {}) {
         download_url: file && asset ? `/api/v1/assets/${asset.id}/download` : null,
         generation_status: media.generation_status || media.status, download_status: media.download_status || null,
         download_error: media.download_error || null, provider_updated_at: media.updated_at, download_attempts: media.download_attempts || 0,
-        can_retry_download: item.kind === 'video' && media.generation_status === 'completed' && !file && media.download_status !== 'downloading',
+        can_retry_download: item.kind === 'video' && media.generation_status === 'completed' && !file && !['downloading', 'waiting_provider'].includes(media.download_status),
       };
     });
     return result;
@@ -248,6 +248,7 @@ function createMediaBatchService(db, log = console, injected = {}) {
     const submissionStatus = String(media.submission_status || '').toLowerCase();
     const finished = status === 'completed' || (generationStatus === 'completed' && Boolean(media.local_path));
     if (item.kind === 'video' && generationStatus === 'completed' && !finished) {
+      if (media.download_status === 'waiting_provider') db.prepare("UPDATE media_batch_items SET status='processing',error_code=NULL,error_message=NULL,retryable=0,completed_at=NULL,updated_at=? WHERE id=?").run(now(), item.id);
       if (media.download_status === 'failed') db.prepare("UPDATE media_batch_items SET status='needs_review',error_code='DOWNLOAD_FAILED',error_message=?,retryable=0,updated_at=? WHERE id=?").run(media.download_error || '生成已完成，下载失败；可以重试原文件', now(), item.id);
       return;
     }

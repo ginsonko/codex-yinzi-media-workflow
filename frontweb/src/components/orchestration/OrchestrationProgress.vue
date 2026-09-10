@@ -8,7 +8,7 @@
     <el-progress v-if="progress.percent !== null" :percentage="progress.percent" :stroke-width="10" :show-text="false" status="success" />
     <div class="progress-copy" aria-live="polite">
       <strong>{{ currentText }}</strong>
-      <span>{{ progress.total ? `已完成 ${progress.done} / ${progress.total} 个步骤` : 'Codex 还在整理制作步骤' }}</span>
+      <span>{{ detailText }}</span>
     </div>
     <div class="progress-stages">
       <span v-for="stage in stages" :key="stage.key" :class="stage.tone"><i></i>{{ stage.label }}</span>
@@ -20,23 +20,33 @@
 import { computed } from 'vue'
 import { sessionProgress } from '@/utils/orchestrationExperience'
 
-const props = defineProps({ session: { type: Object, default: () => ({}) }, nodes: { type: Array, default: () => [] } })
+const props = defineProps({ session: { type: Object, default: () => ({}) }, nodes: { type: Array, default: () => [] }, delivery: { type: Object, default: () => ({}) } })
 const progress = computed(() => sessionProgress(props.session, props.nodes))
+const delivered = computed(() => ['delivered','validated','completed','succeeded'].includes(String(props.delivery.status || '').toLowerCase()))
+const detailText = computed(() => {
+  const status = String(props.session.status || '').toLowerCase()
+  if (progress.value.total) return `已结束 ${progress.value.done} / ${progress.value.total} 个步骤`
+  if (['succeeded', 'partial', 'failed', 'cancelled'].includes(status)) return '执行记录已保存，成果内容核对状态可在下方查看'
+  return '等待执行步骤或本地工具作业的进展'
+})
 const currentText = computed(() => {
-  if (['succeeded','partial'].includes(String(props.session.status || '').toLowerCase())) return props.session.status === 'partial' ? '任务已结束，部分节点保留失败回执' : '制作已完成，成果已整理到交付区'
+  const status = String(props.session.status || '').toLowerCase()
+  if (status === 'succeeded') return delivered.value ? '制作已完成，成果已整理到交付区' : '制作已完成，可在成果预览中查看结果'
+  if (status === 'partial') return '任务已结束，部分处理未能完成'
+  if (status === 'failed') return '制作未完成，可查看失败步骤并恢复'
+  if (status === 'cancelled') return '制作已取消，已有成果和记录仍保留'
+  if (status === 'paused') return '制作已暂停，可以从恢复点继续'
   if (progress.value.current?.progress?.message) return progress.value.current.progress.message
   if (progress.value.current?.status === 'failed') return '有一个步骤需要处理'
   if (progress.value.current?.status === 'partial') return '有一个步骤只完成了一部分'
   if (progress.value.current?.status === 'running') return '正在执行当前步骤'
-  if (props.session.status === 'succeeded') return '制作已完成，成果已整理到交付区'
-  if (props.session.status === 'paused') return '制作已暂停，可以从恢复点继续'
   if (props.session.status === 'waiting_confirmation') return '计划已准备好，等待你确认'
   return 'Codex 正在准备下一步'
 })
 const stages = computed(() => {
   const names = [['prepare', '准备'], ['create', '创作'], ['review', '检查'], ['deliver', '交付']]
   const status = String(props.session.status || '')
-  const current = status === 'succeeded' ? 4 : status === 'running' ? 2 : status === 'partial' ? 3 : status === 'waiting_confirmation' ? 1 : 0
+  const current = status === 'succeeded' ? (delivered.value ? 4 : 3) : status === 'running' ? 2 : status === 'partial' ? 3 : status === 'waiting_confirmation' ? 1 : 0
   return names.map(([key, label], index) => ({ key, label, tone: index < current ? 'done' : index === current ? 'current' : '' }))
 })
 </script>

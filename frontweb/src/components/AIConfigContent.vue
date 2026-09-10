@@ -1345,7 +1345,7 @@ input_reference = (图片文件，可选)</pre>
           <section class="yinzi-service-card"><h4>图片服务</h4>
             <el-form-item label="图片 Base URL" required><el-input v-model="oneKeyYinziForm.image_base_url" placeholder="https://图片站点/v1" clearable /></el-form-item>
             <el-form-item label="图片 Key" required><el-input v-model="oneKeyYinziForm.image_api_key" type="password" show-password clearable autocomplete="new-password" placeholder="图片服务专用 Key" /></el-form-item>
-            <el-form-item label="图片模型" required><el-input v-model="oneKeyYinziForm.image_model" placeholder="例如 gpt-image-2" clearable /></el-form-item>
+            <el-form-item label="图片模型" required><el-input v-model="oneKeyYinziForm.image_model" placeholder="例如 gpt-image-2.5，可填写分组可用模型" clearable /></el-form-item>
           </section>
           <section class="yinzi-service-card"><h4>视频服务</h4>
             <el-form-item label="视频 Base URL" required><el-input v-model="oneKeyYinziForm.video_base_url" placeholder="https://视频站点/v1" clearable /></el-form-item>
@@ -1857,7 +1857,7 @@ const providerConfigs = {
     { id: 'agnes', name: 'Agnes AI', models: ['agnes-2.0-flash'] }
   ],
   image: [
-    { id: 'yinzi', name: 'YinziAPI', models: ['gpt-image-2'] },
+    { id: 'yinzi', name: 'YinziAPI', models: ['gpt-image-2.5', 'gpt-image-2.5-flare', 'gpt-image-2.5-sunburst', 'gpt-image-2'] },
     { id: 'volcengine', name: '火山引擎', models: ['doubao-seedream-4-5-251128', 'doubao-seedream-4-0-250828'] },
     { id: 'kling', name: '可灵 Kling', models: ['kling-image', 'kling-omni-image'] },
     { id: 'nano_banana', name: 'NanoBanana', models: ['nano-banana-2', 'nano-banana-pro', 'nano-banana'] },
@@ -1869,7 +1869,7 @@ const providerConfigs = {
     { id: 'agnes', name: 'Agnes AI', models: ['agnes-image-2.1-flash', 'agnes-image-2.0-flash'] }
   ],
   storyboard_image: [
-    { id: 'yinzi', name: 'YinziAPI', models: ['gpt-image-2'] },
+    { id: 'yinzi', name: 'YinziAPI', models: ['gpt-image-2.5', 'gpt-image-2.5-flare', 'gpt-image-2.5-sunburst', 'gpt-image-2'] },
     { id: 'dashscope', name: '通义万象', models: ['wan2.6-image', 'qwen-image-edit-plus-2026-01-09', 'qwen-image-edit-plus', 'qwen-image-edit-max'] },
     { id: 'volcengine', name: '火山引擎', models: ['doubao-seedream-4-5-251128', 'doubao-seedream-4-0-250828'] },
     { id: 'kling', name: '可灵 Kling', models: ['kling-image', 'kling-omni-image'] },

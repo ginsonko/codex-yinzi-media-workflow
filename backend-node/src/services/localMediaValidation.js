@@ -1,5 +1,5 @@
 const fs=require('node:fs'),path=require('node:path'),crypto=require('node:crypto');
-const files=['localMediaOperations.js','localMediaParameterSchemas.json','localMediaExecutor.js','localMediaWorker.js','componentRuntime.js'];
+const files=['localMediaOperations.js','localMediaParameterSchemas.json','localMediaExecutor.js','localMediaWorker.js','componentRuntime.js','videoReversePrompt.js','videoTimelineEdit.js','localOcrOperation.js','localUpscaleOperation.js','localSearchablePdfOperation.js'];
 function sourceFingerprints(){return Object.fromEntries(files.map(file=>[file,crypto.createHash('sha256').update(fs.readFileSync(path.join(__dirname,file),'utf8').replace(/\r\n/g,'\n')).digest('hex') ]));}
 let cached;
 function verifiedOperation(id){

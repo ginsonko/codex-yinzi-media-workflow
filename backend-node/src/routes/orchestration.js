@@ -71,7 +71,7 @@ module.exports = function orchestrationRoutes(db, log = console, cfg = {}, injec
       return response.success(res, { schema_version: 1, machine: componentManager.machineProfile(), components: localMedia.manager.runtimeComponents() });
     },
     componentState(req, res) {
-      try { return response.success(res, { ...(localMedia.manager.readState(req.params.componentId) || { component_id: req.params.componentId, status: 'missing' }), progress:localMedia.manager.readProgress(req.params.componentId) }); }
+      try { const current=localMedia.manager.readState(req.params.componentId); const summary=localMedia.manager.runtimeComponents().find(item=>item.component_id===req.params.componentId); return response.success(res, { ...current, ...summary }); }
       catch (error) { return sendError(res, log, 'component state', error); }
     },
     ensureComponent(req, res) {
@@ -146,6 +146,10 @@ module.exports = function orchestrationRoutes(db, log = console, cfg = {}, injec
     updateSession(req, res) {
       try { response.success(res, service.updateSession(req.params.id, req.body || {})); }
       catch (error) { sendError(res, log, 'orchestration session update', error); }
+    },
+    archiveSession(req, res) {
+      try { response.success(res, service.archiveSession(req.params.id, req.body || {})); }
+      catch (error) { sendError(res, log, 'orchestration session archive', error); }
     },
     submitPlan(req, res) {
       try { response.success(res, service.submitPlan(req.params.id, req.body || {})); }

@@ -1,4 +1,5 @@
 const acceptanceSafety = require('./acceptanceSafety');
+const { videoDownloadError } = require('./videoDownloadError');
 
 /** 轮询/同步返回的 video_url 须为 http(s)，避免中转 FAILURE 时 result_url 为错误文案 */
 function resolveRemoteVideoUrl(videoUrl, fallbackError) {
@@ -41,9 +42,10 @@ function sanitizeSubmissionReceipt(input = {}, status) {
     version: 1,
     status,
     phase: receipt.phase ? String(receipt.phase).slice(0, 80) : status,
-    http_status: Number.isInteger(Number(receipt.http_status)) ? Number(receipt.http_status) : null,
+    http_status: receipt.http_status != null && Number.isInteger(Number(receipt.http_status)) ? Number(receipt.http_status) : null,
     error_code: receipt.error_code ? String(receipt.error_code).slice(0, 120) : null,
     request_id: receipt.request_id ? String(receipt.request_id).slice(0, 160) : null,
+    response_request_id: receipt.response_request_id ? String(receipt.response_request_id).slice(0, 160) : null,
     provider_status: receipt.provider_status ? String(receipt.provider_status).slice(0, 80) : null,
     message: receipt.message ? String(receipt.message).slice(0, 500) : null,
     model: receipt.model ? String(receipt.model).slice(0, 240) : null,
@@ -72,8 +74,18 @@ function persistVideoSubmissionState(db, videoGenId, status, input = {}) {
   if (!VIDEO_SUBMISSION_STATUSES.has(normalized)) {
     throw new Error(`Unknown video submission status: ${status}`);
   }
-  const receipt = sanitizeSubmissionReceipt(input.receipt, normalized);
-  const httpStatus = Number.isInteger(Number(input.http_status)) ? Number(input.http_status) : receipt.http_status;
+  const incoming = { ...(input.receipt || {}) };
+  const newDispatch = normalized === 'not_sent' || ['post_started', 'provider_dispatch_started'].includes(incoming.phase);
+  if (!newDispatch) {
+    const previous = parseObject(db.prepare('SELECT submission_receipt_json FROM video_generations WHERE id = ?').get(Number(videoGenId))?.submission_receipt_json);
+    if (previous && (!incoming.model || !previous.model || incoming.model === previous.model)) {
+      incoming.reference_summary ??= previous.reference_summary;
+      incoming.endpoint ??= previous.endpoint;
+      incoming.response_request_id ??= previous.response_request_id;
+    }
+  }
+  const receipt = sanitizeSubmissionReceipt(incoming, normalized);
+  const httpStatus = input.http_status != null && Number.isInteger(Number(input.http_status)) ? Number(input.http_status) : receipt.http_status;
   const now = new Date().toISOString();
   db.prepare(
     `UPDATE video_generations SET submission_status = ?, submission_http_status = ?,
@@ -402,9 +414,10 @@ async function downloadVideoToLocal(storagePath, videoUrl, videoGenId, log, proj
     });
     if (!res.ok) {
       log.warn('Download video failed', { status: res.status, videoGenId });
-      throw new Error(`下载地址返回 HTTP ${res.status}`);
+      throw await videoDownloadError(res);
     }
     const contentType = String(res.headers?.get?.('content-type') || '').toLowerCase();
+    if (contentType.includes('application/json')) throw await videoDownloadError(res);
     if (contentType.includes('text/html') || contentType.includes('application/json') || contentType.includes('text/plain')) {
       throw new Error(`下载地址返回了非视频内容（${contentType || 'unknown'}）`);
     }
@@ -815,7 +828,7 @@ function acquireDownloadLease(db, videoGenId, owner, leaseMs = DOWNLOAD_LEASE_MS
        download_lease_expires_at = ?, download_started_at = COALESCE(download_started_at, ?),
        download_attempts = COALESCE(download_attempts, 0) + 1, updated_at = ?
      WHERE id = ? AND generation_status = 'completed'
-       AND download_status IN ('pending', 'failed', 'downloading')
+       AND download_status IN ('pending', 'failed', 'downloading', 'waiting_provider')
        AND (download_lease_owner IS NULL OR download_lease_owner = ''
          OR download_lease_expires_at IS NULL OR download_lease_expires_at <= ?
          OR download_lease_owner = ?)`
@@ -826,16 +839,18 @@ function acquireDownloadLease(db, videoGenId, owner, leaseMs = DOWNLOAD_LEASE_MS
 function markDownloadFailure(db, log, videoGenId, row, error) {
   const now = new Date().toISOString();
   const message = String(error?.message || error || '视频下载失败').slice(0, 500);
+  const waitingProvider = error?.code === 'VIDEO_ARTIFACT_NOT_READY';
   db.prepare(
     `UPDATE video_generations SET
-       status = 'processing', download_status = 'failed', download_error = ?, error_msg = NULL,
+       status = 'processing', download_status = ?, download_error = ?, error_msg = NULL,
        download_lease_owner = NULL, download_lease_expires_at = NULL, updated_at = ?
      WHERE id = ? AND generation_status = 'completed'`
-  ).run(message, now, Number(videoGenId));
+  ).run(waitingProvider ? 'waiting_provider' : 'failed', message, now, Number(videoGenId));
   if (row.task_id) {
-    taskService.updateTaskStatus(db, row.task_id, 'processing', 92, `视频已生成，取回失败，正在自动重试：${message}`);
+    taskService.updateTaskStatus(db, row.task_id, 'processing', 92, waitingProvider
+      ? message : `上游报告生成完成，取回失败，正在自动重试：${message}`);
   }
-  log.warn('Provider video completed but local delivery failed', {
+  log.warn(waitingProvider ? 'Provider video artifact is still finalizing' : 'Provider video completed but local delivery failed', {
     videoGenId,
     provider_task_id: row.provider_task_id || null,
     error: message,
@@ -951,6 +966,8 @@ async function resumeDownloadForVideoGeneration(db, log, videoGenId, injected = 
     if (sourceUrl) {
       try { localPath = await attempt(); } catch (error) { firstError = error; }
     }
+    // An explicit not-ready response needs time, not a second immediate GET.
+    if (firstError?.code === 'VIDEO_ARTIFACT_NOT_READY') throw firstError;
     if (!localPath && row.provider_task_id) {
       const refreshed = injected.refresh_source
         ? await injected.refresh_source({ db, log, videoGenId: numericId, row, config })
@@ -976,7 +993,7 @@ async function resumeDownloadForVideoGeneration(db, log, videoGenId, injected = 
     markDownloadFailure(db, log, numericId, row, error);
     const updated = db.prepare('SELECT download_attempts FROM video_generations WHERE id = ?').get(numericId);
     if (!injected.disable_retry) scheduleDownloadRetry(db, log, numericId, Number(updated?.download_attempts || 1));
-    return { state: 'download_failed', error: error.message };
+    return { state: error?.code === 'VIDEO_ARTIFACT_NOT_READY' ? 'waiting_provider' : 'download_failed', error: error.message };
   } finally {
     activeVideoDownloads.delete(numericId);
   }
@@ -1233,7 +1250,7 @@ function resumeProcessingVideoGenerations(db, log) {
   }
   const downloads = db.prepare(
     `SELECT id FROM video_generations
-     WHERE generation_status = 'completed' AND download_status IN ('pending', 'failed')
+     WHERE generation_status = 'completed' AND download_status IN ('pending', 'failed', 'waiting_provider')
        AND deleted_at IS NULL`
   ).all();
   if (downloads.length) log.info('Resuming completed video downloads', { count: downloads.length });
@@ -1381,12 +1398,25 @@ async function processVideoGeneration(db, log, videoGenId) {
       video_gen_id: videoGenId,
       video_config_id: row.video_config_id,
       provider_config_snapshot: parseObject(row.provider_config_snapshot_json),
-      on_submission_state: (submission) => persistVideoSubmissionState(
-        db,
-        videoGenId,
-        submission.status,
-        { http_status: submission.http_status, receipt: submission.receipt }
-      ),
+      on_submission_state: (submission) => {
+        persistVideoSubmissionState(db, videoGenId, submission.status, {
+          http_status: submission.http_status, receipt: submission.receipt,
+        });
+        const phase = submission.receipt?.phase;
+        const message = phase === 'post_started'
+          ? '视频请求正在提交，等待服务返回任务编号'
+          : phase === 'task_id_received'
+            ? '服务已返回任务编号，正在查询生成进度'
+            : phase === 'direct_video_received'
+              ? '服务已返回视频，正在准备下载'
+              : null;
+        if (row.task_id && message) {
+          const task = taskService.getTask(db, row.task_id);
+          if (task && ['pending', 'processing'].includes(task.status)) {
+            taskService.updateTaskStatus(db, row.task_id, 'processing', task.progress, message);
+          }
+        }
+      },
     };
     const recoveredCall = await callVideoApiWithSmartRecovery(
       db,

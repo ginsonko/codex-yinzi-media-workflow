@@ -128,7 +128,9 @@ Use MCP `generate_image_once` for a newly authorized image request. It requires:
 - stable `idempotency_key` and existing authorization via `confirmed_paid_action:true` or saved unattended mode;
 - locked `image_config_id`, `provider`, `model`, and `group_name`;
 - the final prompt and optional reference images;
-- `max_unit_price_usd` from the user's approved exposure.
+- `max_unit_price_cny` for the approved catalog-price exposure. `max_unit_price_usd` is a legacy numeric compatibility field; it does not perform a currency conversion.
+
+This ceiling is compared with the live catalog quote. Keep it distinct from a user-provided internal cost assumption and from a settled provider charge. If the user explicitly distinguishes those costs and provides a total budget without a separate catalog ceiling, allocate per-request catalog exposure within the remaining authorized total. Preserve any explicit catalog ceiling; do not increase it without authorization. A mismatch caused only by putting an internal cost assumption into the catalog-ceiling field does not require repeating an already sufficient budget approval.
 
 The tool first proves that the public local configuration matches the locked service type, provider, and model, is active, and has a saved credential. It then reads the local live price table before reservation. When the configuration contains a verifiable group binding, that exact group price is used. When it does not, the tool uses the highest current catalog price for the provider/model and labels the estimate `unverified_config_group_worst_case`; the caller cannot pick a cheap group name to understate exposure. Missing or ambiguous price, a higher current price, missing confirmation, configuration mismatch, or a request-hash conflict stops before `/api/v1/images`. A successful create response records both the local image-generation ID and asynchronous task ID. The returned cost is a live-catalog estimate until an actual provider billing receipt proves settlement.
 
@@ -149,6 +151,8 @@ The selected model remains authoritative. There is no mandatory Key discovery st
 
 Public pricing supplies an estimate, without asserting Key permissions. Exact model matches or evidenced aliases can supply prices. If a user specified a ceiling, the tool checks the available price and uses the highest matching group exposure when no group is configured. Unknown price is reported as unknown, never zero; a specified ceiling must remain verifiable. In unattended mode without a specified ceiling, an absent price or capability entry does not block the selected video request.
 
+Yinzi public pricing applies to the locked Yinzi endpoint, not every custom provider that implements the same protocol. For a site without an applicable price entry, a user's explicit quote can be supplied as `cost_quote_cny: { video_config_id, model, unit_price, billing_unit: "per_second" | "per_request" | "fixed_duration", source: "user_reported" }`. It must match the exact saved configuration and model. The quote estimates the requested duration under the existing `max_cost_cny` ceiling; it is preserved as user-reported rather than verified billing. Available matching catalog prices retain precedence. Do not invent a quote to pass a budget check. Quote metadata never becomes part of the provider prompt or request body.
+
 A single `reserved:true` permits exactly one local `POST /api/v1/videos`. The response records the local generation ID, local asynchronous task ID, provider task ID when available, request hash, configuration ID, capability snapshot, price source/version, and estimated CNY exposure. A local generation record is not proof that the provider accepted it. Transport or response ambiguity remains `uncertain`; call `reconcile_video`, never `generate_video_once` as a resend mechanism.
 
 `reconcile_video` reads the same generation/task or recovers the generation by the persisted request hash. It reports:
@@ -162,7 +166,26 @@ A single `reserved:true` permits exactly one local `POST /api/v1/videos`. The re
 
 Pass `retry_download:true` only for `download_failed`. It calls the existing local download-recovery route and never creates another video. A catalog estimate is not a charge, refund, or balance receipt.
 
-## CLI
+## Local Processing
+
+Use `GET /api/v1/orchestration-modules` (or `modules --query <term>`) to select an implemented operation. `GET /api/v1/media-components/profile` reports component preparation state. Submit the local job directly once its input and parameters are clear; the executor automatically prepares missing components and continues. A separate install request is unnecessary.
+
+`POST /api/v1/local-media/jobs`:
+
+```json
+{
+  "session_id": "<existing-session-id>",
+  "node_key": "<matching-plan-node>",
+  "request_key": "<stable-key-for-this-input-and-operation>",
+  "module_id": "local.image.realesrgan",
+  "input_path": "<absolute-local-image-path>",
+  "parameters": {"scale": 2, "model": "general"}
+}
+```
+
+Read `GET /api/v1/local-media/jobs/:jobId` for real installation, execution and result progress. `GET /api/v1/local-media/jobs?session_id=:sessionId` lists the task's jobs. Results contain a downloadable `url`, output path, source/output hashes and operation-specific checks. CLI equivalents: `local-run --input request.json`, `local-job <job-id>`, `local-resume <job-id>`. `POST /api/v1/local-media/jobs/:jobId/resume` recovers a failed local job. Reuse the same request key to recover its receipt; a changed input or parameters require a new key. A completed result with `quality_status: review_required` is ready for inspection, not a failed installation.
+
+## CLI Commands
 
 Run from the skill directory (Codex should resolve the bundled script relative to `SKILL.md`):
 
@@ -179,3 +202,6 @@ node scripts/orchestration-cli.mjs retry <session-id> <node-key> --input .\retry
 Set `YINZI_WORKFLOW_URL` when the local service uses another URL or when you want to pin a specific instance. You may override discovery candidates with `YINZI_WORKFLOW_CANDIDATE_URLS` or `YINZI_WORKFLOW_CANDIDATE_PORTS`. The CLI rejects likely credential fields or raw `sk-...` values in write payloads.
 
 On `409 VERSION_CONFLICT` or `PLAN_REVISION_CONFLICT`, do not force the write. Read the latest bundle, reconcile the user's current intent, and submit a new revision.
+# Recoverable Task Lists
+
+`POST /api/v1/orchestration-sessions/{id}/archive` accepts `{"archived":true,"actor":"user"}` to archive and `false` to restore. The default session list excludes archived tasks; `GET /api/v1/orchestration-sessions?archived=true` lists them and `archived=all` includes both groups. Repeating the same desired state returns `reused:true`. Original detail URLs, artifacts, job IDs, execution state and provider reconciliation remain available. Archiving is list management, separate from pause/cancel/resume or agent execution.

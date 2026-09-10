@@ -1,16 +1,15 @@
 {
   "local.image.resize": {
     "type": "object",
+    "description": "只填写宽或高时保持原比例；同时填写时完整适配边界，不裁切。均未填写时使用96x64边界。",
     "properties": {
       "width": {
-        "type": "number",
-        "default": 96,
+        "type": "integer",
         "minimum": 1,
         "maximum": 8192
       },
       "height": {
-        "type": "number",
-        "default": 64,
+        "type": "integer",
         "minimum": 1,
         "maximum": 8192
       }
@@ -1179,6 +1178,18 @@
   "local.audio.volume-ramp": {
     "type": "object",
     "properties": {}
+  },
+  "local.image.searchable-pdf": {
+    "type": "object",
+    "properties": {}
+  },
+  "local.image.realesrgan": {
+    "type": "object",
+    "properties": {
+      "scale": { "type": "integer", "enum": [2, 3, 4], "minimum": 2, "maximum": 4 },
+      "model": { "type": "string", "enum": ["general", "anime"] },
+      "tile": { "type": "integer", "minimum": 32, "maximum": 512 }
+    }
   },
   "local.audio.aresample-48k": {
     "type": "object",

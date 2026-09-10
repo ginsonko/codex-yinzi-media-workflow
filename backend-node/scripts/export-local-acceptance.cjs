@@ -1,6 +1,7 @@
 const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict');
 const {sourceFingerprints}=require('../src/services/localMediaValidation');
-const {operations}=require('../src/services/localMediaOperations');
+const {operations:allOperations}=require('../src/services/localMediaOperations');
+const operations=allOperations.filter(op=>['media.ffmpeg','media.sharp'].includes(op.component_id));
 const root=path.resolve(process.argv[2]),summary=JSON.parse(fs.readFileSync(path.join(root,'acceptance.json')));
 const normalized=sourceFingerprints();
 for(const [file,digest] of Object.entries(normalized)){

@@ -4,10 +4,24 @@ const operations = [];
 const {verifiedOperation}=require('./localMediaValidation');
 const parameterSchemas=require('./localMediaParameterSchemas.json');
 function number(p, key, fallback, min, max) { const n = p[key] == null ? fallback : Number(p[key]); if (!Number.isFinite(n) || n < min || n > max) throw new Error(`参数 ${key} 应在 ${min} 到 ${max} 之间`); return n; }
-function image(id,title,apply,defaults={}) { operations.push({id:'local.image.'+id,title,kind:'image',component_id:'media.sharp',apply,defaults,source:'https://sharp.pixelplumbing.com/api-operation/'}); }
+function image(id,title,apply,defaults={}) { const op={id:'local.image.'+id,title,kind:'image',component_id:'media.sharp',apply,defaults,source:'https://sharp.pixelplumbing.com/api-operation/'}; operations.push(op); return op; }
 function filter(kind,id,title,build,defaults={}) { operations.push({id:`local.${kind}.${id}`,title,kind,component_id:'media.ffmpeg',build,defaults,source:'https://ffmpeg.org/ffmpeg-filters.html#'+id}); }
 const n=number;
-image('resize','调整图片尺寸',(s,p)=>s.resize({width:n(p,'width',96,1,8192),height:n(p,'height',64,1,8192),fit:'inside'}));
+function resizeBounds(p) {
+  if (p.width == null && p.height == null) return {width:96,height:64};
+  return {
+    width:p.width == null ? undefined : n(p,'width',undefined,1,8192),
+    height:p.height == null ? undefined : n(p,'height',undefined,1,8192),
+  };
+}
+image('resize','调整图片尺寸',(s,p)=>s.resize({...resizeBounds(p),fit:'inside'})).validateResult = ({before,after},p) => {
+  const bounds=resizeBounds(p);
+  const scale=Math.min(bounds.width == null ? Infinity : bounds.width/before.width, bounds.height == null ? Infinity : bounds.height/before.height);
+  const expected={width:Math.max(1,Math.round(before.width*scale)),height:Math.max(1,Math.round(before.height*scale))};
+  if (after.width !== expected.width || after.height !== expected.height) {
+    throw Object.assign(Error(`图片尺寸不符合请求：预期 ${expected.width}x${expected.height}，实际 ${after.width}x${after.height}`),{code:'OUTPUT_DIMENSIONS_MISMATCH'});
+  }
+};
 image('crop','按坐标裁剪图片',(s,p)=>s.extract({left:n(p,'left',8,0,8192),top:n(p,'top',8,0,8192),width:n(p,'width',64,1,8192),height:n(p,'height',48,1,8192)}));
 image('extend','为图片补边',(s,p)=>s.extend({top:n(p,'pixels',8,0,2048),bottom:n(p,'pixels',8,0,2048),left:n(p,'pixels',8,0,2048),right:n(p,'pixels',8,0,2048),background:'#ffffff'}));
 image('rotate','旋转图片',(s,p)=>s.rotate(n(p,'angle',90,-360,360)));
@@ -211,8 +225,13 @@ audio('asetrate','修改采样率与播放节奏',()=> 'asetrate=44100');
 audio('anull','音频无损解码导出',()=> 'anull');
 audio('asubboost','增强超低频',()=> 'asubboost=dry=0.8:wet=0.2');
 audio('crossfeed','耳机跨声道混合',()=> 'aformat=channel_layouts=stereo,crossfeed=strength=0.3');
+operations.push(require('./localOcrOperation'));
+operations.push(require('./localUpscaleOperation'));
+operations.push(require('./localSearchablePdfOperation'));
+operations.push(...require('./videoReversePrompt').operations);
+operations.push(require('./videoTimelineEdit'));
 function getOperation(id) { return operations.find(o=>o.id===id); }
-function contracts() { return operations.map(o=>({module_id:o.id,title:o.title,description:o.title,description_zh:o.title,version:1,version_track:'V5',phase:'edit',executor:'local',availability:'bridge',component_id:o.component_id,auto_install:true,
-  validation_status:verifiedOperation(o.id)?'verified_windows_fixture':'execution_receipt_required',source_refs:[o.source],inputs:['input_path','parameters'],outputs:['derived_media','execution_receipt'],parameters:o.defaults,parameter_schema:parameterSchemas[o.id],
+function contracts() { return operations.map(o=>({module_id:o.id,title:o.title,description:o.description||o.title,description_zh:o.description_zh||o.title,version:1,version_track:'V5',phase:o.phase||'edit',executor:'local',availability:'bridge',component_id:o.component_id,auto_install:Boolean(o.component_id),
+  additional_components:o.additional_components || [],validation_status:verifiedOperation(o.id)?'verified_windows_fixture':'execution_receipt_required',source_refs:[o.source],inputs:['input_path','parameters'],outputs:['derived_media','execution_receipt'],parameters:o.defaults,parameter_schema:o.parameter_schema||parameterSchemas[o.id],
   side_effects:{network:true,filesystem_write:true,database_write:true,external_write:false,paid:false},recovery:'复用同一请求键和原素材；缺组件自动准备；失败只恢复此作业，不重建成功素材'})); }
 module.exports={operations,getOperation,contracts};

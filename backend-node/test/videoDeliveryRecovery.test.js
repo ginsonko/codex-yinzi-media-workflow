@@ -90,6 +90,30 @@ function insertGeneration(db, patch = {}) {
 }
 
 describe('video delivery recovery', () => {
+  it('preserves reference evidence through terminal updates but resets it for a new dispatch', () => {
+    const db=createDb();
+    try {
+      const id=insertGeneration(db);
+      const persist=(status,receipt)=>videoService._persistVideoSubmissionState(db,id,status,{http_status:null,receipt});
+      persist('ambiguous',{phase:'post_started',model:'test-video-model',endpoint:'/videos',reference_summary:{image:2,video:1}});
+      const failed=persist('ambiguous',{phase:'transport_error',model:'test-video-model',message:'socket closed',response_request_id:'gateway-original'});
+      assert.equal(failed.http_status,null);assert.equal(failed.receipt.http_status,null);
+      assert.deepEqual(failed.receipt.reference_summary,{image:2,video:1});
+      const complete=persist('accepted',{phase:'provider_completed',model:'test-video-model',request_id:'found-original'});
+      assert.deepEqual(complete.receipt.reference_summary,{image:2,video:1});
+      assert.equal(complete.receipt.endpoint,'/videos');
+      assert.equal(complete.receipt.response_request_id,'gateway-original');
+      assert.equal(complete.receipt.message,null);
+      const stored=JSON.parse(db.prepare('SELECT submission_receipt_json FROM video_generations WHERE id=?').get(id).submission_receipt_json);
+      assert.deepEqual(stored.reference_summary,{image:2,video:1});
+      assert.equal(persist('ambiguous',{phase:'transport_error',model:'different-model'}).receipt.reference_summary,null);
+      persist('ambiguous',{phase:'post_started',model:'test-video-model',reference_summary:{image:2,video:1}});
+      const restarted=persist('ambiguous',{phase:'provider_dispatch_started',model:'test-video-model'});
+      assert.equal(restarted.receipt.reference_summary,null);assert.equal(restarted.receipt.request_id,null);
+      assert.equal(restarted.receipt.response_request_id,null);
+    } finally { db.close(); }
+  });
+
   it('settles the original generation cost when the provider completes, before local delivery', () => {
     const db = createDb();
     db.exec(`

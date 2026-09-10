@@ -1,4 +1,5 @@
-import { artifactMediaUrl } from './mediaUrl'
+import { artifactMediaUrl } from './mediaUrl.js'
+import { selectExecutionActivity } from './workActivity.js'
 
 const MEDIA_TYPES = Object.freeze({ image: '图片', video: '视频', audio: '音频', model: '3D模型', glb: '3D模型', scene: '3D场景' })
 
@@ -27,14 +28,21 @@ export function normalizeArtifacts(items) {
   return Array.isArray(items) ? items.map(normalizeArtifact) : []
 }
 
+export function artifactReviewLabel(item = {}) {
+  const verdict = item.validation?.content_review?.verdict
+  if (verdict === 'needs_changes' || item.status === 'rejected') return '需要修改'
+  if (verdict === 'accepted') return '内容已核对'
+  return ({ review_required: '待核对内容', validated: '文件检查通过', failed: '失败' })[item.status] || '可查看'
+}
+
 export function artifactPlayable(artifact) {
   return Boolean(artifact?.url) && ['image', 'video', 'audio', 'model', 'glb', 'scene'].includes(String(artifact.type).toLowerCase())
 }
 
 export function progressFromNodes(nodes = []) {
-  const list = Array.isArray(nodes) ? nodes : []
+  const list = Array.isArray(nodes) ? nodes.filter(node => node?.active !== false) : []
   const done = list.filter((node) => ['succeeded', 'skipped'].includes(node?.status)).length
-  const running = list.find((node) => node?.status === 'running')
+  const running = selectExecutionActivity(list).current
   const failed = list.find((node) => ['failed', 'partial'].includes(node?.status))
   return {
     total: list.length,

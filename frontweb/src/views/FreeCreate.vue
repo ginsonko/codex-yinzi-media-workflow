@@ -367,6 +367,7 @@ async function loadHistory() {
   } catch (error) { historyError.value = error.message || '暂时无法读取进度，后台任务仍保留' }
 }
 function taskState(item) {
+  if (item.download_status === 'waiting_provider') return '服务端成片尚未就绪，正在恢复取回'
   if (item.status === 'completed') return item.download_url ? '已完成，原文件可下载' : '生成记录已完成，本地文件待恢复'
   if (item.can_retry_download) return '生成完成，等待恢复下载'
   if (item.generation_status === 'completed') return '生成完成，正在保存原文件'

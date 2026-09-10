@@ -315,10 +315,19 @@ function getNodeRow(db, sessionId, nodeIdOrKey) {
   return db.prepare('SELECT * FROM orchestration_nodes WHERE session_id=? AND (id=? OR node_key=?)').get(sessionId, nodeIdOrKey, nodeIdOrKey);
 }
 
-function computeSessionStatus(db, sessionId) {
-  const nodes = db.prepare('SELECT status FROM orchestration_nodes WHERE session_id=? AND active=1').all(sessionId);
-  if (!nodes.length) return null;
-  const statuses = nodes.map((item) => item.status);
+function sessionExecutionItems(db, sessionId) {
+  const nodes = db.prepare('SELECT id,node_key,status,version FROM orchestration_nodes WHERE session_id=? AND active=1 ORDER BY id').all(sessionId);
+  // Direct local tools do not require a plan; linked jobs already have a node.
+  const hasLocalJobs = db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='local_media_jobs'").get();
+  const jobs = hasLocalJobs ? db.prepare(`SELECT id,status,updated_at,json_extract(job_json,'$.attempt') AS attempt
+    FROM local_media_jobs WHERE session_id=? AND json_extract(job_json,'$.node_id') IS NULL ORDER BY id`).all(sessionId) : [];
+  return [...nodes.map(node => ({ ...node, type: 'node' })),
+    ...jobs.map(job => ({ ...job, type: 'local_job', version: `${job.attempt}:${job.status}:${job.updated_at}` }))];
+}
+
+function computeSessionStatus(db, sessionId, items = sessionExecutionItems(db, sessionId)) {
+  if (!items.length) return null;
+  const statuses = items.map((item) => item.status);
   if (statuses.every((status) => ['succeeded', 'skipped'].includes(status))) return 'succeeded';
   if (statuses.every((status) => TERMINAL_NODE_STATUSES.has(status))) {
     const hasFailure = statuses.some((status) => ['failed', 'cancelled'].includes(status));
@@ -374,6 +383,10 @@ function createOrchestrationService(db) {
     const status = String(query.status || '').trim();
     const linkedRunId = String(query.linked_run_id || '').trim();
     const clauses = ['deleted_at IS NULL']; const args = [];
+    if (query.archived !== 'all') {
+      clauses.push("COALESCE(json_extract(source_context_json, '$.archived'), 0)=?");
+      args.push(query.archived === true || query.archived === 'true' ? 1 : 0);
+    }
     if (status) { clauses.push('status=?'); args.push(status); }
     if (linkedRunId) { clauses.push('linked_run_id=?'); args.push(linkedRunId); }
     args.push(limit);
@@ -388,6 +401,9 @@ function createOrchestrationService(db) {
   function listEvents(sessionId, query = {}) {
     const limit = Math.min(Math.max(Number(query.limit) || 100, 1), 500);
     const after = Math.max(Number(query.after) || 0, 0);
+    if (query.latest === true) {
+      return db.prepare('SELECT * FROM orchestration_events WHERE session_id=? ORDER BY id DESC LIMIT ?').all(sessionId, limit).reverse().map(publicEvent);
+    }
     return db.prepare('SELECT * FROM orchestration_events WHERE session_id=? AND id>? ORDER BY id ASC LIMIT ?').all(sessionId, after, limit).map(publicEvent);
   }
   function listReceipts(sessionId) {
@@ -503,7 +519,7 @@ function createOrchestrationService(db) {
     const session = getSession(id);
     if (!session) return null;
     const nodes = listNodes(id, { active: query.include_inactive === true || query.include_inactive === 'true' ? 'false' : 'true' });
-    const events = listEvents(id, { limit: query.event_limit || 200, after: query.after || 0 });
+    const events = listEvents(id, { limit: query.event_limit || 200, after: query.after, latest: query.after == null });
     const receipts = listReceipts(id);
     const counts = nodes.reduce((acc, node) => { acc[node.status] = (acc[node.status] || 0) + 1; return acc; }, {});
     return { schema_version: 2, open_world: true, creative_preferences: creativePreferences.get(db), planning_guidance: creativePreferences.profile(session.source_context?.quality_profile || creativePreferences.get(db).quality_profile), session, nodes, events, receipts, counts, artifacts: listArtifacts(id, query), feedback: listFeedback(id), delivery: latestDelivery(id), blender_jobs: listBlenderJobs(id) };
@@ -576,7 +592,9 @@ function createOrchestrationService(db) {
       .run(
         input.title == null ? row.title : sanitizeString(input.title, new Set()),
         input.user_goal == null ? row.user_goal : sanitizeString(input.user_goal, new Set()), mode, status,
-        input.source_context == null ? row.source_context_json : normalizedJson(input.source_context, {}),
+        input.source_context == null ? row.source_context_json : normalizedJson({ ...input.source_context,
+          archived: parse(row.source_context_json, {}).archived === true,
+          archived_at: parse(row.source_context_json, {}).archived_at || null }, {}),
         input.linked_drama_id === undefined ? row.linked_drama_id : (input.linked_drama_id || null),
         input.linked_run_id === undefined ? row.linked_run_id : (input.linked_run_id || null),
         input.budget == null ? row.budget_json : normalizedJson(input.budget, {}),
@@ -586,6 +604,21 @@ function createOrchestrationService(db) {
       );
     appendEvent(db, id, 'session.updated', { status, mode, note: input.note || null }, { actor: input.actor || 'codex' });
     return getBundle(id);
+  }
+
+  function archiveSession(id, input = {}) {
+    if (typeof input.archived !== 'boolean') throw makeError('ARCHIVE_STATE_REQUIRED', '请指定归档或恢复');
+    return db.transaction(() => {
+      const row = getSessionRow(db, id);
+      if (!row) throw makeError('ORCHESTRATION_NOT_FOUND', '编排任务不存在');
+      const context = parse(row.source_context_json, {});
+      if (Boolean(context.archived) === input.archived) return { reused: true, bundle: getBundle(id) };
+      const stamp = nowIso();
+      db.prepare('UPDATE orchestration_sessions SET source_context_json=?,updated_at=?,version=version+1 WHERE id=?')
+        .run(json({ ...context, archived: input.archived, archived_at: input.archived ? stamp : null }, {}), stamp, id);
+      appendEvent(db, id, input.archived ? 'session.archived' : 'session.unarchived', { archived: input.archived, execution_status: row.status }, { actor: input.actor || 'user' });
+      return { reused: false, bundle: getBundle(id) };
+    })();
   }
 
   function submitPlan(id, input = {}) {
@@ -768,7 +801,8 @@ function createOrchestrationService(db) {
       if (TERMINAL_NODE_STATUSES.has(status) && (input.receipt || ['failed', 'partial'].includes(status))) {
         receipt = createReceipt(db, node, input.receipt || { status, message: error.message || '', original_code: error.code || null, retryable: error.retryable ?? 'unknown', next_actions: error.next_actions || [] }, status);
       }
-      appendEvent(db, sessionId, `node.${status}`, { node_key: node.node_key, module_id: node.module_id, attempt: node.attempt, progress: node.progress, error, receipt_id: receipt?.id || null, redactions: [...redactions] }, { node_id: node.id, actor: input.actor || 'codex' });
+      const eventType = row.status === status ? 'node.updated' : `node.${status}`;
+      appendEvent(db, sessionId, eventType, { node_key: node.node_key, module_id: node.module_id, status, attempt: node.attempt, progress: node.progress, error, receipt_id: receipt?.id || null, redactions: [...redactions] }, { node_id: node.id, actor: input.actor || 'codex' });
       if (SATISFIED_NODE_STATUSES.has(status)) refreshReadyNodes(db, sessionId);
       const computed = computeSessionStatus(db, sessionId);
       if (computed) db.prepare('UPDATE orchestration_sessions SET status=?,updated_at=?,completed_at=?,version=version+1 WHERE id=?').run(computed, stamp, stamp, sessionId);
@@ -920,13 +954,26 @@ function createOrchestrationService(db) {
     if (prior) return { reused: true, feedback: publicFeedback(prior), bundle: getBundle(sessionId) };
     const id = crypto.randomUUID();
     const scope = sanitize(input.scope && typeof input.scope === 'object' ? input.scope : { type: input.scope || 'session', node_id: input.node_id || null, artifact_id: input.artifact_id || null });
+    let reviewedArtifact;
+    if (scope.type === 'artifact' && scope.verdict != null) {
+      if (!['accepted', 'needs_changes'].includes(scope.verdict)) throw makeError('ARTIFACT_REVIEW_INVALID', '成果核对结果无效');
+      reviewedArtifact = db.prepare('SELECT * FROM orchestration_artifacts WHERE session_id=? AND artifact_id=?').get(sessionId, String(scope.artifact_id || ''));
+      if (!reviewedArtifact) throw makeError('ARTIFACT_REVIEW_NOT_FOUND', '当前任务找不到需要核对的成果');
+    }
+    db.transaction(() => {
     db.prepare('INSERT INTO orchestration_feedback (id,session_id,idempotency_key,message,scope_json,actor,status,created_at) VALUES (?,?,?,?,?,?,?,?)')
       .run(id, sessionId, key, sanitizeString(message, new Set()), json(scope, {}), normalizeActor(input.actor || 'user'), 'open', nowIso());
+    if (reviewedArtifact) {
+      const validation = parse(reviewedArtifact.validation_json, {});
+      validation.content_review = { verdict: scope.verdict, feedback_id: id, actor: normalizeActor(input.actor || 'user'), message: sanitizeString(message, new Set()), reviewed_at: nowIso() };
+      db.prepare('UPDATE orchestration_artifacts SET status=?,validation_json=? WHERE id=?').run(scope.verdict === 'accepted' ? 'validated' : 'rejected', json(validation, {}), reviewedArtifact.id);
+    }
     appendEvent(db, sessionId, 'user.feedback', { feedback_id: id, message, scope }, { actor: input.actor || 'user' });
     if (input.pause === true && ['running', 'planned', 'waiting_confirmation'].includes(session.status)) {
       db.prepare("UPDATE orchestration_sessions SET status='paused',updated_at=?,version=version+1 WHERE id=?").run(nowIso(), sessionId);
       appendEvent(db, sessionId, 'session.paused_for_feedback', { feedback_id: id }, { actor: input.actor || 'user' });
     }
+    })();
     return { reused: false, feedback: publicFeedback(db.prepare('SELECT * FROM orchestration_feedback WHERE id=?').get(id)), bundle: getBundle(sessionId) };
   }
 
@@ -948,14 +995,35 @@ function createOrchestrationService(db) {
     return { reused: false, delivery: latestDelivery(sessionId), bundle: getBundle(sessionId) };
   }
 
+  function syncLocalJobStatus(sessionId) {
+    const row = getSessionRow(db, sessionId);
+    if (!row || row.status === 'paused') return;
+    const items = sessionExecutionItems(db, sessionId);
+    if (!items.some(item => item.type === 'local_job')) return;
+    const terminal = computeSessionStatus(db, sessionId, items);
+    const status = terminal || 'running';
+    if (status === row.status) return;
+    const stamp = nowIso();
+    db.prepare('UPDATE orchestration_sessions SET status=?,updated_at=?,completed_at=?,version=version+1 WHERE id=?')
+      .run(status, stamp, terminal ? stamp : null, sessionId);
+  }
+
   function completeSession(sessionId, input = {}) {
     return db.transaction(() => {
       const row = getSessionRow(db, sessionId);
       if (!row) throw makeError('ORCHESTRATION_NOT_FOUND', '编排任务不存在');
-      const status = computeSessionStatus(db, sessionId);
-      if (!status) throw makeError('COMPLETION_UNFINISHED_NODES', '请先回报每个活动节点的真实结果，再完成任务', { unfinished: listNodes(sessionId).filter(node => !TERMINAL_NODE_STATUSES.has(node.status)).map(node => node.node_key) });
+      const items = sessionExecutionItems(db, sessionId);
+      if (!items.length) throw makeError('COMPLETION_NO_EXECUTED_WORK', '任务尚无执行记录，请先执行所需工具或回报计划节点的结果');
+      const status = computeSessionStatus(db, sessionId, items);
+      if (!status) {
+        const unfinished = items.filter(item => !TERMINAL_NODE_STATUSES.has(item.status));
+        throw makeError('COMPLETION_UNFINISHED_NODES', '仍有节点或本地作业未结束，请等待或回报真实结果后再完成任务', {
+          unfinished: unfinished.filter(item => item.type === 'node').map(item => item.node_key),
+          unfinished_local_jobs: unfinished.filter(item => item.type === 'local_job').map(item => ({ id: item.id, status: item.status })),
+        });
+      }
       if (input.expected_version != null && Number(input.expected_version) !== row.version) throw makeError('VERSION_CONFLICT', '任务已更新，请刷新后重试');
-      const completionToken = `${row.plan_revision}:${listNodes(sessionId).map(node => `${node.id}:${node.version}`).join('|')}`;
+      const completionToken = `${row.plan_revision}:${items.map(item => `${item.type}:${item.id}:${item.version}`).join('|')}`;
       const prior = db.prepare("SELECT id FROM orchestration_events WHERE session_id=? AND event_type='session.completed' AND json_extract(payload_json, '$.completion_token')=? LIMIT 1").get(sessionId,completionToken);
       if (prior && row.completed_at && row.status === status) return { reused:true, bundle:getBundle(sessionId) };
       db.prepare('UPDATE orchestration_sessions SET status=?,completed_at=COALESCE(completed_at,?),updated_at=?,version=version+1 WHERE id=?').run(status,nowIso(),nowIso(),sessionId);
@@ -996,7 +1064,7 @@ function createOrchestrationService(db) {
   }
 
   return {
-    beginWork, reportActivity, createSession, updateSession, listSessions, getBundle, submitPlan, confirmPlan, startSession, completeSession,
+    beginWork, reportActivity, createSession, updateSession, archiveSession, listSessions, getBundle, submitPlan, confirmPlan, startSession, completeSession, syncLocalJobStatus,
     updateNode, retryNode, actOnNode, pauseSession, resumeSession, saveCheckpoint, exportSession,
     reserveExternalRequest, listArtifacts, searchArtifacts, listFeedback, latestDelivery, recordArtifact, recordFeedback, deliverSession,
     onboarding, recordEvent,

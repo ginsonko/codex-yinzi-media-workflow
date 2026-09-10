@@ -27,6 +27,7 @@ export const orchestrationAPI = {
   // generic error popup that makes the whole console look blocked.
   get(id, params = {}) { return request.get(`/orchestration-sessions/${id}`, { params, suppressGlobalError: true, timeout: 10000 }) },
   update(id, body) { return request.patch(`/orchestration-sessions/${id}`, body) },
+  archive(id, archived) { return request.post(`/orchestration-sessions/${encodeURIComponent(id)}/archive`, { archived, actor: 'user' }, { suppressGlobalError: true }) },
   submitPlan(id, body) { return request.put(`/orchestration-sessions/${id}/plan`, body) },
   confirm(id, body = {}) { return request.post(`/orchestration-sessions/${id}/confirm`, body) },
   start(id, body = {}) { return request.post(`/orchestration-sessions/${id}/start`, body) },

@@ -8,6 +8,7 @@ import { promisify } from 'node:util'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 import readline from 'node:readline'
+import { reverseTools } from './reverse-tools.mjs'
 import { readRegistry, localOrigin, verifyUi, openBrowser } from '../scripts/runtime-state.mjs'
 
 const execFileAsync = promisify(execFile)
@@ -425,8 +426,17 @@ function priceExposureCny(price, duration) {
   if (unitPrice == null || unitPrice < 0) return null
   const unit = String(price?.billing_unit || '').trim().toLowerCase()
   if (unit === 'per_request' || unit === 'fixed_duration') return unitPrice
-  if (unit === 'per_second') return unitPrice * Number(duration)
+  // Remove binary multiplication noise (0.8 * 6) before comparing CNY estimates.
+  if (unit === 'per_second') return Number((unitPrice * Number(duration)).toPrecision(15))
   return null
+}
+
+function userVideoQuote(args, video) {
+  const quote = args.cost_quote_cny
+  if (quote == null) return null
+  if (quote.source !== 'user_reported' || quote.video_config_id !== video.video_config_id || exactModelName(quote.model) !== exactModelName(video.model)) throw new Error('用户报价必须绑定当前配置和精确模型，并标明 user_reported 来源')
+  if (typeof quote.unit_price !== 'number' || !Number.isFinite(quote.unit_price) || quote.unit_price < 0 || !['per_second', 'per_request', 'fixed_duration'].includes(quote.billing_unit)) throw new Error('用户报价需要非负 CNY 单价和明确的计费单位')
+  return { effective_price: quote.unit_price, currency: 'CNY', billing_unit: quote.billing_unit, source: 'user_reported', catalog_model: video.model }
 }
 
 function mergeOutputRefs(existing = [], additions = []) {
@@ -487,21 +497,30 @@ async function loadGuardedVideoContract(args, video, authorization) {
   }
 
   // Public prices inform the estimate; they do not establish or deny Key access.
-  const catalog = video.provider === 'yinzi' ? await api('GET', '/api/v1/ai-configs/yinzi/catalog', undefined, Number(args.catalog_timeout_ms) || 30000).catch(error => {
+  const suppliedQuote = userVideoQuote(args, video)
+  let yinziPricing = video.provider === 'yinzi'
+  if (publicConfig.base_url) {
+    try { yinziPricing = yinziPricing && ['api.yinziapi.top', 'yinziapi.top'].includes(new URL(publicConfig.base_url).hostname) } catch { yinziPricing = false }
+  }
+  const catalog = yinziPricing ? await api('GET', `/api/v1/ai-configs/yinzi/catalog?config_id=${encodeURIComponent(video.video_config_id)}`, undefined, Number(args.catalog_timeout_ms) || 30000).catch(error => {
     diagnostics.push({ source: 'pricing', message: error.message }); return {}
   }) : {}
   const hasCeiling = args.max_cost_cny != null
   if (hasCeiling && (typeof args.max_cost_cny !== 'number' || !Number.isFinite(args.max_cost_cny) || args.max_cost_cny < 0)) throw new Error('max_cost_cny 必须是非负有限数字')
   if (!hasCeiling && !authorization.unattended) throw new Error('请提供已授权的 max_cost_cny，或在用户授权自主花费后开启挂机模式')
   const offeredModels = (Array.isArray(catalog?.video) ? catalog.video : []).filter((item) => sameProvenVideoOffer(video.model, capability, item))
-  if (!offeredModels.length && hasCeiling) throw new Error('当前实时目录中没有与锁定模型同名或具有同一精确能力合同的价格项，无法核对指定预算，未提交')
+  if (!offeredModels.length && hasCeiling && !suppliedQuote) throw new Error('当前实时目录中没有与锁定模型同名或具有同一精确能力合同的价格项；可提供绑定当前配置和模型的用户 CNY 报价以核对预算，未提交')
   const requestedGroup = String(args.group_name || '').trim()
   const prices = offeredModels.flatMap((item) => (Array.isArray(item.prices) ? item.prices : []).map((price) => ({ ...price, catalog_model: item.model })))
     .filter((price) => String(price.currency || '').toUpperCase() === 'CNY' && priceExposureCny(price, video.duration) != null)
   const settings = parseSettings(publicConfig?.settings)
   const configuredGroup = String(settings.group_name || settings.group || publicConfig?.group_name || '').trim()
   if (configuredGroup && requestedGroup && configuredGroup !== requestedGroup) throw new Error('请求分组与锁定配置中可验证的分组不一致，已在付费提交前停止')
-  const matching = configuredGroup ? prices.filter((price) => String(price.group || '') === configuredGroup) : prices
+  let matching = configuredGroup ? prices.filter((price) => String(price.group || '') === configuredGroup) : prices
+  if (!matching.length && suppliedQuote) {
+    matching = [{ ...suppliedQuote, group: configuredGroup || requestedGroup || null }]
+    diagnostics.push({ source: 'pricing', message: '使用当前请求携带的用户报价进行预算估算，尚未独立验证站点实时价格或实际账单' })
+  }
   if (!matching.length && hasCeiling) throw new Error(configuredGroup ? '锁定配置分组没有可验证的当前 CNY 视频价格，无法核对指定预算' : '当前锁定视频模型没有可验证的 CNY 价格，无法核对指定预算')
   const selectedPrice = matching.length ? matching.reduce((highest, price) => priceExposureCny(price, video.duration) > priceExposureCny(highest, video.duration) ? price : highest) : {}
   const estimatedCostCny = priceExposureCny(selectedPrice, video.duration)
@@ -509,6 +528,7 @@ async function loadGuardedVideoContract(args, video, authorization) {
   return {
     publicConfig, capability, capabilityState: state || { source: 'unknown', contract_status: 'unknown' }, diagnostics, catalog, selectedPrice, estimatedCostCny,
     configuredGroup: configuredGroup || null, requestedGroup: requestedGroup || null,
+    pricingSource: selectedPrice.source === 'user_reported' ? 'user_reported' : catalog.source,
     catalogModels: [...new Set(matching.map((item) => item.catalog_model))],
   }
 }
@@ -547,7 +567,7 @@ async function generateVideo(args) {
     schema: 'yinzi.codex-video-request/v1', orchestration_request_hash: requestHash,
   }
   const pricingSnapshot = sanitize({
-    source: contract.catalog.source, pricing_version: contract.catalog.pricing_version, catalog_models: contract.catalogModels,
+    source: contract.pricingSource, pricing_version: contract.catalog.pricing_version, catalog_models: contract.catalogModels,
     price: contract.selectedPrice, estimated_cost_cny: contract.estimatedCostCny,
   })
   const capabilitySnapshot = sanitize({ source: contract.capabilityState.source, contract_status: contract.capabilityState.contract_status, capability: contract.capability })
@@ -595,7 +615,7 @@ async function generateVideo(args) {
     return {
       submitted: true, request_hash: requestHash, generation_id: generationId, task_id: taskId, provider_task_id: providerTaskId,
       provider_submission_status: providerSubmissionStatus, estimated_cost_cny: contract.estimatedCostCny,
-      pricing_source: contract.catalog.source, pricing_version: contract.catalog.pricing_version,
+      pricing_source: contract.pricingSource, pricing_version: contract.catalog.pricing_version,
       pricing_model: contract.selectedPrice.catalog_model, pricing_group: contract.selectedPrice.group,
       node: updated.node,
     }
@@ -685,7 +705,7 @@ async function reconcileVideo(args) {
 
   let generationStatus = String(generation?.generation_status || generation?.status || task?.status || '').toLowerCase()
   let downloadStatus = String(generation?.download_status || '').toLowerCase()
-  if (generationStatus === 'completed' && downloadStatus === 'failed' && args.retry_download === true && generationId) {
+  if (generationStatus === 'completed' && ['failed', 'waiting_provider'].includes(downloadStatus) && args.retry_download === true && generationId) {
     await api('POST', `/api/v1/videos/${encodeURIComponent(generationId)}/retry-download`, {}, Number(args.timeout_ms) || 120000)
     generation = await api('GET', `/api/v1/videos/${encodeURIComponent(generationId)}`)
     task = taskId ? await api('GET', `/api/v1/tasks/${encodeURIComponent(taskId)}`) : task
@@ -694,6 +714,16 @@ async function reconcileVideo(args) {
   }
   const providerSubmission = String(generation?.submission_status || '').toLowerCase()
   if (generationStatus === 'completed') {
+    if (downloadStatus === 'waiting_provider') {
+      const message = generation?.download_error || '服务端成片尚未就绪，原任务已保留，正在恢复取回'
+      const updated = await api('PATCH', `/api/v1/orchestration-sessions/${encodeURIComponent(args.session_id)}/nodes/${encodeURIComponent(args.node_key)}`, {
+        actor: 'codex', request_hash: node.request_hash, output_refs: outputRefs,
+        progress: { state: 'provider_finalizing', submission_state: 'accepted', message, generation_id: generationId, correlation_id: taskId, provider_task_id: generation?.provider_task_id || null },
+        error: null,
+        decision: { ...(node.decision || {}), provider_result: sanitize({ generation, task }), cost_outcome: 'provider_artifact_pending_billing_unverified' },
+      })
+      return { outcome: 'provider_finalizing', generation, task, node: updated.node }
+    }
     if (downloadStatus === 'failed') {
       const message = generation?.download_error || generation?.error_msg || '上游视频已完成，但本地下载失败'
       const updated = await api('PATCH', `/api/v1/orchestration-sessions/${encodeURIComponent(args.session_id)}/nodes/${encodeURIComponent(args.node_key)}`, {
@@ -902,19 +932,32 @@ async function reconcileImage(args) {
     })
     return { outcome: 'succeeded', generation, task, node: completed.node }
   }
-  if (status === 'failed') {
+  const submission = String(generation?.submission_status || generation?.provider_submission_status || '').toLowerCase()
+  const generationStatus = String(generation?.generation_status || '').toLowerCase()
+  if (status === 'failed' || task?.status === 'failed' || generationStatus === 'ambiguous' || submission === 'ambiguous') {
     const message = generation?.error_msg || task?.error || task?.message || '图片生成失败'
+    // Legacy image records contain only a local error string. It cannot prove a provider terminal result.
+    const transportUnknown = /timeout|timed?\s*out|socket hang up|ECONNRESET|ETIMEDOUT|ECONNABORTED|EPIPE|\b50[234]\b|超时|网络请求失败|服务重启后任务中断/i.test(message)
+    const definitelyRejected = ['rejected', 'not_sent'].includes(submission) && !generation?.provider_task_id
+    const providerFailed = generationStatus === 'failed' && Boolean(generation?.provider_task_id)
+    const unresolved = !definitelyRejected && !providerFailed && (transportUnknown || generationStatus === 'ambiguous' || submission === 'ambiguous' || status !== 'failed')
+    const submissionState = definitelyRejected ? 'rejected' : providerFailed ? 'settled' : 'uncertain'
+    const progressMessage = submissionState === 'uncertain'
+      ? `${message}；本地未取得结果，上游结果及扣费待核实。保留原请求，不自动重发。`
+      : message
     const failed = await api('POST', `/api/v1/orchestration-sessions/${encodeURIComponent(args.session_id)}/nodes/${encodeURIComponent(args.node_key)}/actions/fail`, {
-      actor: 'codex', message, original_code: 'IMAGE_GENERATION_FAILED', retryable: 'unknown', correlation_id: taskId || null,
-      progress: { state: 'failed', submission_state: 'settled', message, correlation_id: taskId || null },
-      decision: { ...(node.decision || {}), provider_result: sanitize({ generation, task }), cost_outcome: 'billing_unknown_pending_provider_receipt' },
+      actor: 'codex', message, original_code: unresolved ? 'IMAGE_PROVIDER_RESULT_UNCERTAIN' : 'IMAGE_GENERATION_FAILED', retryable: 'unknown', correlation_id: taskId || null,
+      next_actions: submissionState === 'uncertain' ? ['reconcile_image', 'inspect_provider_task'] : ['inspect', 'edit_plan'],
+      progress: { ...(node.progress || {}), state: submissionState === 'uncertain' ? 'provider_unknown' : 'failed', submission_state: submissionState, message: progressMessage, correlation_id: taskId || null, generation_id: generation?.id || generationId || null },
+      decision: { ...(node.decision || {}), provider_result: sanitize({ generation, task }), cost_outcome: definitelyRejected ? 'billing_not_expected_provider_receipt_unavailable' : 'billing_unknown_pending_provider_receipt' },
     })
-    return { outcome: 'failed', generation, task, node: failed.node }
+    return { outcome: unresolved ? 'unresolved' : 'failed', reconciliation_required: submissionState === 'uncertain', message: progressMessage, generation, task, node: failed.node }
   }
   return { outcome: 'pending', generation, task, node }
 }
 
 const tools = [
+  ...reverseTools,
   { name: 'get_workflow_preferences', description: '读取实时质量档位与持久化挂机模式。', inputSchema: { type: 'object', properties: {} } },
   { name: 'set_workflow_preferences', description: '更新本机工作流偏好。用户勾选挂机、明确说自己挂机或授权自主花费时，可设置 unattended_mode=true；可随时关闭。保留用户任务范围与预算。', inputSchema: { type: 'object', properties: { unattended_mode: { type: 'boolean' }, quality_profile: { enum: ['quality', 'balanced', 'speed'] } } } },
   { name: 'workflow_health', description: '检查本机银子视频工作流服务是否可用。', inputSchema: { type: 'object', properties: {} } },
@@ -927,7 +970,7 @@ const tools = [
   { name: 'local_media_get_job', description: '读取本地作业组件下载、安装、执行、验收进度与成果。', inputSchema: { type:'object',required:['job_id'],properties:{job_id:{type:'string'}} } },
   { name: 'local_media_resume', description: '恢复失败的原本地作业，复用下载缓存和成功安装的组件。', inputSchema: { type:'object',required:['job_id'],properties:{job_id:{type:'string'}} } },
   { name: 'local_media_components', description: '读取设备摘要和登记组件状态，不触发供应商鉴权。', inputSchema: { type:'object',properties:{} } },
-  { name: 'list_sessions', description: '检索已存在的可恢复编排任务，避免重复创建。', inputSchema: { type: 'object', properties: { status: { type: 'string' }, linked_run_id: { type: 'string' }, limit: { type: 'integer' } } } },
+  { name: 'list_sessions', description: '检索已存在的可恢复编排任务，避免重复创建。默认隐藏已归档任务；archived=true 查询归档，all 查询全部。', inputSchema: { type: 'object', properties: { status: { type: 'string' }, linked_run_id: { type: 'string' }, limit: { type: 'integer' }, archived: { type: 'string', enum: ['true', 'false', 'all'], description: 'true 仅归档，false 仅未归档（默认），all 全部；直接任务 ID 始终可恢复。' } } } },
   { name: 'get_session', description: '读取一个编排任务的会话、节点、事件和回执真值。', inputSchema: { type: 'object', required: ['session_id'], properties: { session_id: { type: 'string' }, include_inactive: { type: 'boolean' }, event_limit: { type: 'integer' } } } },
   { name: 'begin_media_task', description: '立即登记或恢复当前媒体任务并打开对应页面；分析阶段即可展示，不发起付费生成。', inputSchema: { type:'object', required:['user_goal','idempotency_key'], properties:{ user_goal:{type:'string'}, idempotency_key:{type:'string'}, title:{type:'string'}, intent:{enum:['analyze','create']}, source_context:{type:'object'}, open_browser:{type:'boolean',default:true} } } },
   { name: 'report_activity', description: '记录当前真实动作、下一步、是否需要用户和分析报告。分析完成可收口；不会执行媒体生成。', inputSchema: { type:'object', required:['session_id','event_idempotency_key','message'], properties:{ session_id:{type:'string'}, event_idempotency_key:{type:'string'}, stage:{type:'string'}, state:{enum:['working','waiting','completed']}, message:{type:'string'}, next_action:{type:'string'}, needs_user:{type:'boolean'}, analysis_report:{type:['object','string']} } } },
@@ -948,6 +991,12 @@ const tools = [
   { name: 'reconcile_video', description: '查询同一视频 generation/task，区分上游生成与本地下载，并在需要时只恢复下载、绝不重提视频。', inputSchema: { type: 'object', required: ['session_id', 'node_key'], properties: { session_id: { type: 'string' }, node_key: { type: 'string' }, generation_id: { type: ['string', 'integer'] }, task_id: { type: 'string' }, retry_download: { type: 'boolean' }, timeout_ms: { type: 'integer' } } } },
   { name: 'export_audit', description: '导出完整编排任务审计包。', inputSchema: { type: 'object', required: ['session_id'], properties: { session_id: { type: 'string' } } } },
 ]
+
+tools.find(tool => tool.name === 'generate_video_once').inputSchema.properties.cost_quote_cny = {
+  type: 'object', description: '仅使用用户明确提供的CNY报价；目录缺失时按锁定配置和模型估算，不代表实时账单。',
+  required: ['video_config_id', 'model', 'unit_price', 'billing_unit', 'source'],
+  properties: { video_config_id: { type: 'integer' }, model: { type: 'string' }, unit_price: { type: 'number', minimum: 0 }, billing_unit: { enum: ['per_second', 'per_request', 'fixed_duration'] }, source: { const: 'user_reported' } },
+}
 
 async function callTool(name, args = {}) {
   if (name === 'get_workflow_preferences') return api('GET', '/api/v1/creative-preferences')
@@ -1012,6 +1061,16 @@ async function callTool(name, args = {}) {
     case 'list_modules': {
       const query = new URLSearchParams(Object.entries(args).filter(([, value]) => value != null).map(([key, value]) => [key, String(value)]))
       return api('GET', `/api/v1/orchestration-modules${query.size ? `?${query}` : ''}`)
+    }
+    case 'video_reverse_prepare': {
+      rejectSecrets(args);
+      const { session_id, request_key, input_path, node_key, ...parameters } = args;
+      return api('POST', '/api/v1/local-media/jobs', { session_id, request_key, input_path, node_key, module_id: 'local.video.reverse-prepare', parameters });
+    }
+    case 'video_reverse_compile': {
+      rejectSecrets(args);
+      const { session_id, request_key, manifest_path, node_key, ...parameters } = args;
+      return api('POST', '/api/v1/local-media/jobs', { session_id, request_key, input_path: manifest_path, node_key, module_id: 'local.video.reverse-compile', parameters });
     }
     case 'local_media_run': rejectSecrets(args); return api('POST', '/api/v1/local-media/jobs', args);
     case 'local_media_get_job': return api('GET', `/api/v1/local-media/jobs/${encodeURIComponent(args.job_id)}`);

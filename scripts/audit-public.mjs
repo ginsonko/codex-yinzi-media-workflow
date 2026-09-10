@@ -3,7 +3,8 @@ import path from 'node:path'
 import {execFileSync} from 'node:child_process'
 import {fileURLToPath} from 'node:url'
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
-const files = execFileSync('git', ['ls-files','-z'], {cwd:root, encoding:'utf8'}).split('\0').filter(Boolean)
+const fileArgs = process.argv.includes('--include-untracked') ? ['--cached', '--others', '--exclude-standard'] : []
+const files = [...new Set(execFileSync('git', ['ls-files', ...fileArgs, '-z'], {cwd:root, encoding:'utf8'}).split('\0').filter(Boolean))]
 const findings = []
 const fakeTokens = new Set(['sk-abcdefghijklmnop','sk-abcdefgh12345678','sk-secretvalue','sk-test-placeholder','sk-test-secret-value','sk-abcdefghijklmno','sk-thisisatestcredential123456789','sk-thisisatestcredential'])
 let textCount = 0, bytes = 0

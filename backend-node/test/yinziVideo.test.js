@@ -431,6 +431,7 @@ describe('YinziAPI asynchronous lifecycle', () => {
   it('never retries an ambiguous POST failure', async () => {
     const originalFetch = global.fetch;
     let calls = 0;
+    const states = [];
     global.fetch = async () => {
       calls += 1;
       throw new Error('socket closed');
@@ -440,14 +441,100 @@ describe('YinziAPI asynchronous lifecycle', () => {
         base_url: 'https://api.yinziapi.top/v1', api_key: 'not-a-real-key', endpoint: '/videos',
       }, log, {
         model: 'mg-seedance2.0 -480p mini', prompt: 'test', duration: 5, aspect_ratio: '16:9', video_gen_id: 1,
+        reference_urls: ['https://media.test/identity.png','https://media.test/placement.png'],
+        reference_video_urls: ['https://media.test/source.mp4'],
+        on_submission_state: state => states.push(state),
       });
       assert.equal(calls, 1);
       assert.equal(result.ambiguous_submission, true);
       assert.equal(result.submission_status, 'ambiguous');
+      assert.equal(result.submission_http_status, null);
+      assert.deepEqual(result.submission_receipt.reference_summary, {image:2,video:1});
+      assert.deepEqual(states.map(s=>s.receipt.phase), ['post_started','transport_error']);
+      assert.ok(states.every(s=>s.receipt.reference_summary.image===2 && s.receipt.reference_summary.video===1));
       assert.match(result.error, /不会自动重试/);
     } finally {
       global.fetch = originalFetch;
     }
+  });
+
+  it('preserves submission context when a real HTTP response body disconnects', async () => {
+    const {createServer} = require('node:http');
+    let posts = 0;
+    const server = createServer((req,res)=>{
+      posts += 1;
+      req.resume();
+      req.on('end',()=>{
+        res.writeHead(200, {'Content-Type':'application/json','Content-Length':'200','X-Request-ID':'gateway-trace-body-disconnect'});
+        res.write('{"id":');
+        setTimeout(()=>res.destroy(),40);
+      });
+    });
+    await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
+    try {
+      const result=await callYinziVideoApi(null,{base_url:`http://127.0.0.1:${server.address().port}/v1`,endpoint:'/videos'},log,{
+        model:'mg-seedance2.0 -480p mini',prompt:'local response interruption',duration:5,
+        reference_urls:['https://media.test/identity.png'],reference_video_urls:['https://media.test/source.mp4'],
+      });
+      assert.equal(posts,1);assert.equal(result.submission_status,'ambiguous');
+      assert.equal(result.submission_http_status,200);
+      assert.equal(result.submission_receipt.phase,'response_body_error');
+      assert.equal(result.submission_receipt.response_request_id,'gateway-trace-body-disconnect');
+      assert.equal(result.submission_receipt.request_id,null);
+      assert.deepEqual(result.submission_receipt.reference_summary,{image:1,video:1});
+      assert.equal(result.task_id,undefined);
+    } finally {
+      server.closeAllConnections();
+      await new Promise(resolve=>server.close(resolve));
+    }
+  });
+
+  it('shows submission progress after references are ready without treating a gateway trace as acceptance', async () => {
+    const videoService = require('../src/services/videoService');
+    const taskService = require('../src/services/taskService');
+    const db = new Database(':memory:');
+    const originalLog = console.log;
+    const originalWarn = console.warn;
+    console.log = () => {};
+    console.warn = () => {};
+    try { runMigrationsAndEnsure(db); }
+    finally { console.log = originalLog; console.warn = originalWarn; }
+    const config = aiConfigService.createConfig(db, log, {
+      service_type: 'video', provider: 'yinzi', api_protocol: 'yinzi', name: 'submission progress fixture',
+      base_url: 'https://video.test/v1', api_key: 'test-key', model: ['Seedance 2.5-720'],
+      default_model: 'Seedance 2.5-720', endpoint: '/videos', is_default: true,
+    });
+    const task = taskService.createTask(db, log, 'video_generation', '');
+    const id = Number(db.prepare(`INSERT INTO video_generations
+      (provider,model,prompt,duration,aspect_ratio,status,generation_status,submission_status,video_config_id,task_id,reference_image_urls)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?)`).run(
+      'yinzi', 'Seedance 2.5-720', 'bounded progress fixture', 30, '9:16',
+      'processing', 'processing', 'not_sent', config.id, task.id, JSON.stringify(['https://media.test/product.png'])
+    ).lastInsertRowid);
+    const originalFetch = global.fetch;
+    let posts = 0;
+    global.fetch = async (_url, init) => {
+      assert.equal(init.method, 'POST');
+      posts += 1;
+      const live = taskService.getTask(db, task.id);
+      assert.match(live.message, /等待服务返回任务编号/);
+      assert.doesNotMatch(live.message, /正在准备/);
+      assert.equal(live.progress, 5);
+      return new Response(JSON.stringify({error:{message:'temporarily unavailable'}}), {
+        status: 504, headers: {'X-Request-ID':'gateway-progress-504'},
+      });
+    };
+    try {
+      await videoService.processVideoGeneration(db, log, id);
+      await videoService.processVideoGeneration(db, log, id);
+      assert.equal(posts, 1);
+      const result = videoService.getById(db, id);
+      assert.equal(result.submission_status, 'ambiguous');
+      assert.equal(result.provider_task_id, null);
+      assert.equal(result.submission_receipt.response_request_id, 'gateway-progress-504');
+      assert.equal(result.submission_receipt.request_id, null);
+      assert.equal(taskService.getTask(db, task.id).status, 'failed');
+    } finally { global.fetch = originalFetch; db.close(); }
   });
 
   it('rejects unsupported AIZZZ first/last semantics before submitting', async () => {
@@ -678,6 +765,7 @@ describe('YinziAPI asynchronous lifecycle', () => {
       assert.equal(result.task_id, 'task-multimedia');
       assert.equal(result.submission_status, 'accepted');
       assert.equal(submittedBody.references.length, 8);
+      assert.deepEqual(result.submission_receipt.reference_summary, {image:4,video:3,audio:1});
       assert.deepEqual(submittedBody.references.map((ref) => ref.type), [
         'image', 'image', 'image', 'image', 'video', 'video', 'video', 'audio',
       ]);

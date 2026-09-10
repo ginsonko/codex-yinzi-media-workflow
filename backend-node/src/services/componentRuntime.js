@@ -21,6 +21,7 @@ function registry() { return [
   { component_id:'media.ffmpeg',version:dependencyLock.ffmpeg.version,kind:'zip',platforms:['win32-x64'],urls:[dependencyLock.ffmpeg.url,dependencyLock.ffmpeg.fallback_url],sha256:dependencyLock.ffmpeg.sha256,license:dependencyLock.ffmpeg.license,source:dependencyLock.ffmpeg.source,disk_bytes:800*1024**2,executables:{ffmpeg:'ffmpeg-9.0.1-essentials_build/bin/ffmpeg.exe',ffprobe:'ffmpeg-9.0.1-essentials_build/bin/ffprobe.exe'} },
   { component_id:'media.sharp',version:'0.35.3',kind:'npm',platforms:['win32-x64'],sha256:crypto.createHash('sha256').update(fs.readFileSync(path.join(ROOT,'components/sharp/package-lock.json'))).digest('hex'),license:'Apache-2.0; libvips LGPL-2.1-or-later',source:'https://github.com/lovell/sharp',disk_bytes:300*1024**2 }
 ,...require('../../components/registry.json').map(definition=>{
+  if(definition.kind==='zip'){safeId(definition.component_id);return definition;}
   safeId(definition.component_id);safeId(definition.template);
   const template=path.join(ROOT,'components',definition.template),hash=crypto.createHash('sha256');
   hash.update(JSON.stringify(definition));for(const file of ['package.json','package-lock.json','healthcheck.cjs'])hash.update(fs.readFileSync(path.join(template,file)));
@@ -30,18 +31,25 @@ function trustedUrl(url) { const u=new URL(url); if(u.protocol!=='https:'||u.use
 function run(executable,args,options={}) { return new Promise((resolve,reject)=>{
   const child=spawn(executable,args,{cwd:options.cwd,windowsHide:true,shell:false,stdio:['ignore','pipe','pipe']}); let stdout='',stderr='';
   const timer=setTimeout(()=>child.kill(),options.timeout||30000);
-  child.stdout.on('data',b=>{stdout=(stdout+b).slice(-1024*1024);options.onOutput?.(String(b));}); child.stderr.on('data',b=>{stderr=(stderr+b).slice(-1024*1024);});
-  child.on('error',e=>{clearTimeout(timer);reject(e);});child.on('close',code=>{clearTimeout(timer);code===0?resolve({stdout,stderr}):reject(fail('COMPONENT_PROCESS_FAILED',`本地进程未完成 (${code}): ${stderr.slice(-1500)}`));});
+  child.stdout.on('data',b=>{stdout=(stdout+b).slice(-1024*1024);options.onOutput?.(String(b));}); child.stderr.on('data',b=>{stderr=(stderr+b).slice(-1024*1024);options.onErrorOutput?.(String(b));});
+  child.on('error',e=>{clearTimeout(timer);reject(e);});child.on('close',code=>{clearTimeout(timer);(options.exitCodes||[0]).includes(code)?resolve({stdout,stderr,code}):reject(fail('COMPONENT_PROCESS_FAILED',`本地进程未完成 (${code}): ${stderr.slice(-1500)}`));});
 }); }
 async function download(url,target,digest,onProgress=()=>{},fetcher=fetch) {
   if(fs.existsSync(target)&&await sha256(target)===digest){onProgress({stage:'cache_reused',bytes:fs.statSync(target).size});return;}
   let offset=fs.existsSync(target)?fs.statSync(target).size:0,response,next=trustedUrl(url);
   const controller=new AbortController();let idle;const reset=()=>{clearTimeout(idle);idle=setTimeout(()=>controller.abort(),45000);};reset();
   try {
-    for(let hop=0;hop<6;hop++) { response=await fetcher(next,{redirect:'manual',headers:offset?{Range:`bytes=${offset}-`}:{},signal:controller.signal}); if(![301,302,303,307,308].includes(response.status))break;const location=response.headers.get('location');await response.body?.cancel();next=trustedUrl(new URL(location,next).href); }
+    for(let hop=0;hop<6;hop++) { response=await fetcher(next,{redirect:'manual',headers:{'Accept-Encoding':'identity',...(offset?{Range:`bytes=${offset}-`}:{})},signal:controller.signal}); if(![301,302,303,307,308].includes(response.status))break;const location=response.headers.get('location');await response.body?.cancel();next=trustedUrl(new URL(location,next).href); }
+    const encoded=value=>Boolean(value.headers.get('content-encoding') && value.headers.get('content-encoding').toLowerCase()!=='identity');
+    if(response.status===206&&encoded(response)){
+      await response.body?.cancel();
+      response=await fetcher(next,{redirect:'manual',headers:{'Accept-Encoding':'identity'},signal:controller.signal});
+      if(response.status!==200){await response.body?.cancel();throw fail('INVALID_CONTENT_RANGE','压缩响应无法按本地字节断点续传，需要完整响应');}
+    }
     if(response.status===416&&offset){await response.body?.cancel();fs.unlinkSync(target);return download(url,target,digest,onProgress,fetcher);}
     if(![200,206].includes(response.status)||!response.body)throw fail('COMPONENT_DOWNLOAD_FAILED',`组件下载 HTTP ${response.status}`);
-    let total=Number(response.headers.get('content-length'))||null;
+    // Fetch decodes compressed bodies; Content-Length then describes different bytes.
+    let total=encoded(response)?null:Number(response.headers.get('content-length'))||null;
     if(response.status===206){const match=/^bytes (\d+)-(\d+)\/(\d+)$/.exec(response.headers.get('content-range')||'');if(!match||Number(match[1])!==offset){await response.body.cancel();throw fail('INVALID_CONTENT_RANGE','下载断点不匹配');}total=Number(match[3]);}else offset=0;
     if(total>MAX_BYTES){await response.body.cancel();throw fail('COMPONENT_TOO_LARGE','组件包超过大小限制');}
     let bytes=offset,last=0;const meter=new Transform({transform(chunk,encoding,cb){reset();bytes+=chunk.length;if(bytes>MAX_BYTES||(total&&bytes>total))return cb(fail('COMPONENT_TOO_LARGE','下载字节超出限制'));if(Date.now()-last>250){last=Date.now();onProgress({stage:'download',bytes,total_bytes:total,percent:total?Math.round(bytes/total*100):null});}cb(null,chunk);}});
@@ -76,12 +84,16 @@ function createComponentManager(options={}){
     if(options.probe)return options.probe(m,dir);
     if(m.template)return(await run(process.execPath,[path.join(dir,'healthcheck.cjs')],{cwd:dir,timeout:120000})).stdout.trim();
     if(m.kind==='npm'){const code="(async()=>{const s=require('sharp');const b=await s({create:{width:8,height:8,channels:3,background:'red'}}).png().toBuffer();if(!b.length)throw Error('empty');console.log(JSON.stringify({sharp:s.versions.sharp,bytes:b.length}))})().catch(e=>{console.error(e.message);process.exit(1)})";return(await run(process.execPath,['-e',code],{cwd:dir})).stdout.trim();}
-    return Promise.all(Object.values(m.executables).map(async file=>(await run(path.join(dir,file),['-version'])).stdout.split(/\r?\n/)[0]));
+    return Promise.all(Object.values(m.executables).map(async file=>{
+      const result=await run(path.join(dir,file),m.probe_args||['-version'],{cwd:dir,exitCodes:m.probe_exit_codes});
+      if(m.probe_output&&!((result.stdout||'')+(result.stderr||'')).includes(m.probe_output))throw fail('COMPONENT_HEALTH_FAILED','组件未返回预期的运行信息');
+      return (result.stdout||result.stderr).split(/\r?\n/)[0];
+    }));
   }
   async function install(id,listeners){
     const m=manifestFor(id);if(!m.platforms.includes(process.platform+'-'+process.arch))throw fail('COMPONENT_PLATFORM_UNVERIFIED','此组件尚未通过当前系统实机验收，原任务保留');
     const release=await lock(root,id),dir=path.join(root,id);
-    const report=event=>{const value={component_id:id,...event,updated_at:new Date().toISOString()};writeJson(path.join(dir,'progress.json'),value);for(const fn of listeners)fn(value);};
+    const report=event=>{const value={component_id:id,owner_pid:process.pid,...event,updated_at:new Date().toISOString()};writeJson(path.join(dir,'progress.json'),value);for(const fn of listeners)fn(value);};
     try{
       const current=readState(id);
       if(current?.sha256===m.sha256&&current.status==='ready'){try{
@@ -89,7 +101,11 @@ function createComponentManager(options={}){
         const signature=JSON.stringify([current.directory,...Object.keys(current.files||{}).map(f=>{const s=fs.statSync(path.join(current.directory,f));return[f,s.size,s.mtimeMs];})]);
         if(verified.get(id)!==signature){for(const[f,h]of Object.entries(current.files||{}))if(await sha256(path.join(current.directory,f))!==h)throw Error('changed');await probe(m,current.directory);verified.set(id,signature);}
         report({stage:'reused',percent:100});return{...current,reused:true};
-      }catch{verified.delete(id);report({stage:'repair',message:'组件文件失效，自动重新准备'});}}
+      }catch(error){
+        verified.delete(id);
+        writeJson(path.join(dir,'current.json'),{...current,status:'repair_required',validation_error:error.message,invalidated_at:new Date().toISOString()});
+        report({stage:'repair',message:'组件文件失效，自动重新准备'});
+      }}
       const stat=fs.statfsSync(root);if(stat.bavail*stat.bsize<m.disk_bytes)throw fail('INSUFFICIENT_DISK','组件安装空间不足，原任务已保留');
       const next=path.join(dir,'versions',m.sha256.slice(0,12)+'-'+crypto.randomUUID());fs.mkdirSync(next,{recursive:true});report({stage:'preparing',message:'正在准备组件，完成后自动继续'});
       if(m.kind==='zip'){
@@ -99,8 +115,8 @@ function createComponentManager(options={}){
       }else{
         const template=path.join(ROOT,'components',m.template||'sharp');for(const file of ['package.json','package-lock.json',...(m.template?['healthcheck.cjs']:[])])fs.copyFileSync(path.join(template,file),path.join(next,file));
         const cli=[process.env.npm_execpath,path.join(path.dirname(process.execPath),'node_modules/npm/bin/npm-cli.js'),path.resolve(path.dirname(process.execPath),'../lib/node_modules/npm/bin/npm-cli.js')].find(p=>p&&fs.existsSync(p));
-        if(!cli)throw fail('NPM_RUNTIME_MISSING','工作流 Node/npm 运行时不完整');report({stage:'install',message:'正在下载锁定版本的图像组件'});
-        await run(process.execPath,[cli,'ci','--ignore-scripts','--no-audit','--no-fund','--registry=https://registry.npmjs.org','--fetch-retries=2'],{cwd:next,timeout:15*60*1000});
+        if(!cli)throw fail('NPM_RUNTIME_MISSING','工作流 Node/npm 运行时不完整');report({stage:'install',message:'正在下载锁定版本的处理组件'});
+        await run(process.execPath,[cli,'ci','--ignore-scripts','--no-audit','--no-fund','--registry=https://registry.npmjs.org','--fetch-retries=2','--cache',path.join(root,'.npm-cache')],{cwd:next,timeout:15*60*1000});
       }
       for(const artifact of m.artifacts||[]){
         const output=path.resolve(next,artifact.path);if(!output.startsWith(next+path.sep)||artifact.path.includes(':'))throw fail('UNSAFE_COMPONENT_PATH','组件模型路径越界');
@@ -108,7 +124,7 @@ function createComponentManager(options={}){
         report({stage:'download',message:'正在准备 '+artifact.name});await download(artifact.url,file,artifact.sha256,event=>report({...event,message:'正在准备 '+artifact.name}),options.fetch);
         fs.mkdirSync(path.dirname(output),{recursive:true});fs.copyFileSync(file,output);
       }
-      report({stage:'healthcheck',message:'组件已安装，正在实际运行检查'});const health=await probe(m,next),files={};for(const file of m.kind==='npm'?installedFiles(next):Object.values(m.executables))files[file]=await sha256(path.join(next,file));
+      report({stage:'healthcheck',message:'组件已安装，正在实际运行检查'});const health=await probe(m,next),files={};for(const file of m.kind==='npm'||m.verify_all_files?installedFiles(next):Object.values(m.executables))files[file]=await sha256(path.join(next,file));
       const state={component_id:id,version:m.version,sha256:m.sha256,status:'ready',directory:next,files,installed_at:new Date().toISOString(),healthcheck_result:health,platform:process.platform,arch:process.arch,executables:m.executables?Object.fromEntries(Object.entries(m.executables).map(([k,v])=>[k,path.join(next,v)])):{},previous:current?.directory||null};
       // Activate only after health succeeds. Old files survive every failure.
       writeJson(path.join(dir,'current.json'),state);report({stage:'ready',percent:100});return state;
@@ -119,8 +135,29 @@ function createComponentManager(options={}){
     if(inFlight.has(id)){const item=inFlight.get(id);item.listeners.add(onProgress);return item.promise;}
     const listeners=new Set([onProgress]),promise=install(id,listeners).finally(()=>inFlight.delete(id));inFlight.set(id,{promise,listeners});return promise;
   }
-  function runtimeComponents(){return manifests.map(m=>({component_id:m.component_id,version:m.version,license:m.license,source:m.source,status:readState(m.component_id)?.status||'missing',auto_install:m.platforms.includes(process.platform+'-'+process.arch),progress:readProgress(m.component_id)}));}
-  return{ensureComponent,readState,readProgress,runtimeComponents,machineProfile,root};
+  function runtimeComponents(){return manifests.map(m=>{
+    const current=readState(m.component_id),progress=readProgress(m.component_id);
+    const installed=Boolean(current?.directory&&fs.existsSync(current.directory));
+    const available=installed&&current.status==='ready';
+    const supported=m.platforms.includes(process.platform+'-'+process.arch);
+    const owner=readJson(path.join(root,'.'+m.component_id+'.lock','owner.json'));
+    const running=inFlight.has(m.component_id)||Boolean(owner?.pid&&alive(owner.pid));
+    const unfinished=['preparing','repair','cache_reused','download','verify','install','healthcheck'].includes(progress?.stage);
+    let status=!supported?'unsupported':available?(current.sha256===m.sha256?'ready':'update_available'):installed?'repair_required':'missing';
+    if(supported){
+      if(running)status='preparing';
+      else if(available&&current.sha256===m.sha256)status='ready';
+      else if(installed&&!available)status='repair_required';
+      else if(progress?.stage==='failed')status='failed';
+      else if(unfinished)status='interrupted';
+      else if(current&&!installed)status='repair_required';
+    }
+    return {component_id:m.component_id,version:m.version,license:m.license,source:m.source,status,status_source:'component_runtime',
+      installed,available,installed_version:installed?current.version:null,auto_install:supported,
+      retryable:supported&&['failed','interrupted','repair_required'].includes(status),progress};
+  });}
+  async function withResource(id,action){safeId(id);const release=await lock(root,'resource.'+id);try{return await action();}finally{release();}}
+  return{ensureComponent,readState,readProgress,runtimeComponents,machineProfile,root,withResource};
 }
 let singleton;function instance(){return singleton||=createComponentManager();}
 module.exports={createComponentManager,machineProfile,sha256,download,extractZip,run,writeJson,readJson,registry,

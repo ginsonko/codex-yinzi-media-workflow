@@ -420,7 +420,7 @@ function parseTargetPixelsFromSizeString(sizeStr) {
 }
 
 /**
- * 将已落盘的生成图缩放到与 Step3 目标尺寸一致（contain + 黑底留边，不裁切主体），避免模型实际输出像素漂移导致分镜/视频参考不一致。
+ * 将分镜派生图缩放到 Step3 目标尺寸。普通生成图保留上游原始像素。
  * Windows：经路径打开含中文/非 ASCII 目录时 libvips 常失败，改由 Node 读入 Buffer 再交给 sharp。
  */
 async function normalizeLocalImageToTargetSize(absPath, sizeStr, log, meta) {
@@ -519,6 +519,34 @@ async function normalizeSavedImageToTargetPixels(absPath, sizeStr, log, ctx) {
     try {
       if (fs.existsSync(tmp)) fs.unlinkSync(tmp);
     } catch (_) {}
+  }
+}
+
+async function finalizeGeneratedImageSize(absPath, sizeStr, log, context = {}) {
+  const target = parseTargetPixelsFromSizeString(sizeStr);
+  if (!absPath || !fs.existsSync(absPath)) return null;
+  const storyboard = context.storyboard_id != null;
+  if (storyboard && target) {
+    await normalizeLocalImageToTargetSize(absPath, sizeStr, log, { ...context, fit: 'cover' });
+    if (!['quad_grid', 'nine_grid'].includes(context.frame_type)) {
+      await normalizeSavedImageToTargetPixels(absPath, sizeStr, log, { ...context, fit: 'cover' });
+    }
+  }
+  try {
+    const actual = await require('sharp')(fs.readFileSync(absPath)).metadata();
+    const matches = target ? actual.width === target.w && actual.height === target.h : null;
+    const receipt = {
+      policy: storyboard ? 'storyboard_cover' : 'preserve_provider_output',
+      requested: target ? { width: target.w, height: target.h } : null,
+      actual: { width: actual.width, height: actual.height },
+      matches_requested: matches,
+      layout_required: matches === false,
+    };
+    log.info('[图生] 已记录实际输出尺寸', { ...context, ...receipt });
+    return receipt;
+  } catch (error) {
+    log.warn('[图生] 实际尺寸读取失败，保留已有文件', { ...context, error: error.message });
+    return null;
   }
 }
 
@@ -1444,6 +1472,7 @@ async function processImageGeneration(db, log, imageGenId) {
     log.info('[图生] Step5 保存到本地 →', { id: imageGenId, elapsed: elapsed() });
     const tSave = Date.now();
     let localPath = null;
+    let outputSizing = null;
     try {
       const storagePath = path.isAbsolute(cfg.storage?.local_path)
         ? cfg.storage.local_path
@@ -1459,22 +1488,11 @@ async function processImageGeneration(db, log, imageGenId) {
         'ig',
         projectSubdir
       );
-      if (localPath && imageSize) {
+      if (localPath) {
         const absImg = path.join(storagePath, localPath);
-        await normalizeLocalImageToTargetSize(absImg, imageSize, log, { id: imageGenId, fit: row.storyboard_id ? 'cover' : 'contain' });
+        outputSizing = await finalizeGeneratedImageSize(absImg, imageSize, log, { id: imageGenId, storyboard_id: row.storyboard_id, frame_type: row.frame_type });
       }
       log.info('[图生] Step5 保存完成', { id: imageGenId, local_path: localPath, save_ms: Date.now() - tSave, elapsed: elapsed() });
-
-      // Step5.1：单帧/场景图等若 API 返回像素与 Step3 目标不一致，则 letterbox 到目标画布（Gemini 常见）
-      if (
-        localPath &&
-        imageSize &&
-        row.frame_type !== 'quad_grid' &&
-        row.frame_type !== 'nine_grid'
-      ) {
-        const absNorm = path.join(storagePath, localPath);
-        await normalizeSavedImageToTargetPixels(absNorm, imageSize, log, { id: imageGenId, size: imageSize, fit: row.storyboard_id ? 'cover' : 'contain' });
-      }
     } catch (saveErr) {
       log.warn('[图生] Step5 保存失败（不影响结果）', { id: imageGenId, err: saveErr.message, elapsed: elapsed() });
     }
@@ -1494,6 +1512,7 @@ async function processImageGeneration(db, log, imageGenId) {
         image_generation_id: imageGenId,
         image_url: persistedImageUrl,
         status: 'completed',
+        output_sizing: outputSizing,
       });
     }
     
@@ -1726,5 +1745,6 @@ module.exports = {
   upload,
   processImageGeneration,
   aspectRatioToSize,
+  finalizeGeneratedImageSize,
   syncStoryboardCharacters,
 };

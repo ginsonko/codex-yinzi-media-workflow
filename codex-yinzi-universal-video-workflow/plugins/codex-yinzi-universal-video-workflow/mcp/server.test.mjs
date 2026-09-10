@@ -97,6 +97,7 @@ before(async () => {
       return json(res, 200, { success: true, data: state.modelDiscovery })
     }
     if (req.method === 'GET' && url.pathname === '/api/v1/ai-configs/yinzi/catalog') {
+      state.catalogCalls = [...(state.catalogCalls || []), url.searchParams.get('config_id')]
       return json(res, 200, { success: true, data: state.yinziCatalog })
     }
     if (req.method === 'POST' && /\/external-request$/.test(url.pathname)) {
@@ -126,6 +127,10 @@ before(async () => {
     }
     if (req.method === 'GET' && url.pathname === '/api/v1/orchestration-sessions/s1') {
       return json(res, 200, { success: true, data: { nodes: [currentNode()] } })
+    }
+    if (req.method === 'GET' && url.pathname === '/api/v1/orchestration-sessions') {
+      state.sessionQueries = [...(state.sessionQueries || []), Object.fromEntries(url.searchParams)]
+      return json(res, 200, { success: true, data: { items: [] } })
     }
     if (req.method === 'GET' && url.pathname === '/api/v1/images/41') {
       return json(res, 200, { success: true, data: state.generation })
@@ -550,6 +555,77 @@ test('reconciliation preserves unresolved, pending, succeeded, and failed truth'
   } finally { client.close() }
 })
 
+test('image transport failures preserve the original request and can recover a late result without resubmission', async () => {
+  for (const message of ['图片生成超时（600 秒）', 'socket hang up', 'upstream HTTP 504', 'ECONNRESET', 'request timed out']) {
+    resetState()
+    const client = makeClient()
+    try {
+      await client.call('generate_image_once', imageArgs())
+      const originalHash = state.reservedHash
+      state.generation = { id: 41, status: 'failed', error_msg: message }
+      state.task = { id: 'task-41', status: 'failed', error: message }
+      const uncertain = await client.call('reconcile_image', { session_id: 's1', node_key: 'image' })
+      assert.equal(uncertain.data.outcome, 'unresolved')
+      assert.equal(uncertain.data.reconciliation_required, true)
+      const failure = state.actions.at(-1).body
+      assert.equal(failure.progress.submission_state, 'uncertain')
+      assert.equal(failure.original_code, 'IMAGE_PROVIDER_RESULT_UNCERTAIN')
+      assert.equal(failure.message, message)
+      assert.match(failure.progress.message, /保留原请求/)
+      assert.deepEqual(failure.next_actions, ['reconcile_image', 'inspect_provider_task'])
+      const duplicate = await client.call('generate_image_once', imageArgs())
+      assert.equal(duplicate.data.submitted, false)
+      assert.equal(state.reservedHash, originalHash)
+      assert.equal(state.imageSubmissions, 1)
+      state.generation = { id: 41, status: 'completed', local_path: 'media/images/41.png' }
+      const recovered = await client.call('reconcile_image', { session_id: 's1', node_key: 'image' })
+      assert.equal(recovered.data.outcome, 'succeeded')
+      assert.equal(state.actions.at(-1).action, 'complete')
+      assert.equal(state.imageSubmissions, 1)
+    } finally { client.close() }
+  }
+})
+
+test('archived sessions remain discoverable through MCP without changing default queries', async () => {
+  resetState()
+  const client = makeClient()
+  try {
+    const listed = await client.request('tools/list')
+    const schema = listed.result.tools.find(tool => tool.name === 'list_sessions').inputSchema
+    assert.deepEqual(schema.properties.archived.enum, ['true', 'false', 'all'])
+    for (const args of [{ limit: 5 }, { archived: 'true', limit: 5 }, { archived: 'all', status: 'running' }]) {
+      const result = await client.call('list_sessions', args)
+      assert.equal(result.isError, false)
+    }
+    assert.deepEqual(state.sessionQueries, [{ limit: '5' }, { archived: 'true', limit: '5' }, { archived: 'all', status: 'running' }])
+    assert.equal(state.imageSubmissions, 0)
+    assert.equal(state.videoSubmissions, 0)
+  } finally { client.close() }
+})
+
+test('image recovery distinguishes local interruption, unknown failure, and explicit provider evidence', async () => {
+  const cases = [
+    { generation: { status: 'processing' }, task: { status: 'failed', error: '服务重启后任务中断，请重新操作' }, outcome: 'unresolved', submission: 'uncertain' },
+    { generation: { status: 'failed', error_msg: 'new undocumented error' }, outcome: 'failed', submission: 'uncertain' },
+    { generation: { status: 'failed', submission_status: 'rejected', error_msg: 'request invalid' }, outcome: 'failed', submission: 'rejected' },
+    { generation: { status: 'failed', submission_status: 'not_sent', error_msg: 'missing configuration' }, outcome: 'failed', submission: 'rejected' },
+    { generation: { status: 'failed', generation_status: 'failed', provider_task_id: 'upstream-1', error_msg: 'provider terminal failure' }, outcome: 'failed', submission: 'settled' },
+    { generation: { status: 'failed', submission_status: 'ambiguous', error_msg: 'no receipt' }, outcome: 'unresolved', submission: 'uncertain' },
+  ]
+  for (const scenario of cases) {
+    resetState({ reservedHash: 'known', generation: { id: 41, ...scenario.generation }, task: { id: 'task-41', status: 'failed', ...scenario.task } })
+    state.patches.push({ output_refs: [{ type: 'image_generation', id: '41' }, { type: 'async_task', id: 'task-41' }] })
+    const client = makeClient()
+    try {
+      const result = await client.call('reconcile_image', { session_id: 's1', node_key: 'image' })
+      assert.equal(result.data.outcome, scenario.outcome)
+      assert.equal(state.actions.at(-1).body.progress.submission_state, scenario.submission)
+      assert.equal(state.imageSubmissions, 0)
+      assert.equal(state.reservedHash, 'known')
+    } finally { client.close() }
+  }
+})
+
 test('unconfirmed video generation and invalid locked configs stop before reservation and submission', async () => {
   const scenarios = [
     { args: { confirmed_paid_action: false }, expected: /confirmed_paid_action/ },
@@ -685,6 +761,44 @@ test('unattended mode enables one submission without per-call confirmation, and 
     assert.equal(next.isError, true)
     assert.match(next.data.message, /confirmed_paid_action/)
     assert.equal(state.videoSubmissions, 1)
+  } finally { client.close() }
+})
+
+test('custom video site uses a config-bound user quote without another site catalog', async () => {
+  resetState({ nodeKey: 'video' })
+  state.videoConfig.base_url = 'https://other-video.example/v1'
+  const client = makeClient()
+  const quote = { video_config_id: 12, model: 'seedance-2.5-720p', unit_price: 0.8, billing_unit: 'per_second', source: 'user_reported' }
+  try {
+    const args = videoArgs({ duration: 6, max_cost_cny: 4.8, cost_quote_cny: quote })
+    const result = await client.call('generate_video_once', args)
+    assert.equal(result.isError, false, JSON.stringify(result.data))
+    assert.ok(Math.abs(result.data.estimated_cost_cny - 4.8) < 0.000001)
+    assert.equal(result.data.pricing_source, 'user_reported')
+    assert.equal(state.catalogCalls, undefined)
+    assert.equal(state.lastVideoBody.duration, 6)
+    assert.equal(state.lastVideoBody.cost_quote_cny, undefined)
+    await client.call('generate_video_once', args)
+    assert.equal(state.videoSubmissions, 1)
+  } finally { client.close() }
+})
+
+test('video quote mismatches and excess cost fail before reservation; valid catalog stays authoritative', async () => {
+  const quote = { video_config_id: 12, model: 'seedance-2.5-720p', unit_price: 0.8, billing_unit: 'per_second', source: 'user_reported' }
+  for (const scenario of [{ quote: { ...quote, video_config_id: 3 } }, { quote: { ...quote, model: 'another-model' } }, { quote: { ...quote, unit_price: -1 } }, { quote, ceiling: 4.7 }]) {
+    resetState({ nodeKey: 'video' }); state.videoConfig.base_url = 'https://other-video.example/v1'
+    const client = makeClient()
+    try {
+      const result = await client.call('generate_video_once', videoArgs({ duration: 6, max_cost_cny: scenario.ceiling ?? 4.8, cost_quote_cny: scenario.quote }))
+      assert.equal(result.isError, true); assert.equal(state.videoSubmissions, 0); assert.equal(state.reservedHash, null)
+    } finally { client.close() }
+  }
+  resetState({ nodeKey: 'video' }); state.videoConfig.base_url = 'https://api.yinziapi.top/v1'
+  const client = makeClient()
+  try {
+    const result = await client.call('generate_video_once', videoArgs({ max_cost_cny: 3, cost_quote_cny: { ...quote, unit_price: 1, billing_unit: 'per_request' } }))
+    assert.equal(result.isError, true); assert.equal(state.videoSubmissions, 0)
+    assert.deepEqual(state.catalogCalls, ['12'])
   } finally { client.close() }
 })
 
@@ -842,6 +956,24 @@ test('video reconciliation preserves unresolved, pending, provider-completed dow
   try {
     const recovered = await client.call('reconcile_video', { session_id: 's1', node_key: 'video', retry_download: true })
     assert.equal(recovered.data.outcome, 'succeeded')
+    assert.equal(state.retryDownloads, 1)
+    assert.equal(state.videoSubmissions, 0)
+  } finally { client.close() }
+})
+
+test('video finalizing remains pending and can retrieve the original file without generation', async () => {
+  const generation = { id: 51, task_id: 'task-51', provider_task_id: 'provider-51', status: 'processing', generation_status: 'completed', download_status: 'waiting_provider', submission_status: 'accepted', download_error: '服务端成片尚未就绪' }
+  resetState({ nodeKey: 'video', reservedHash: 'known', videoGeneration: generation, videoAfterRetry: { ...generation, status: 'completed', download_status: 'completed', download_error: null, local_path: 'media/videos/51.mp4' }, videoTask: { id: 'task-51', status: 'processing' } })
+  state.patches.push({ output_refs: [{ type: 'video_generation', id: '51' }, { type: 'async_task', id: 'task-51' }] })
+  const client = makeClient()
+  try {
+    const waiting = await client.call('reconcile_video', { session_id: 's1', node_key: 'video' })
+    assert.equal(waiting.data.outcome, 'provider_finalizing')
+    assert.equal(state.patches.at(-1).error, null)
+    assert.equal(state.actions.length, 0)
+    assert.equal(state.retryDownloads || 0, 0)
+    const ready = await client.call('reconcile_video', { session_id: 's1', node_key: 'video', retry_download: true })
+    assert.equal(ready.data.outcome, 'succeeded')
     assert.equal(state.retryDownloads, 1)
     assert.equal(state.videoSubmissions, 0)
   } finally { client.close() }

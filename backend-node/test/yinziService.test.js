@@ -363,6 +363,20 @@ describe('fetchYinziCatalogForConfig', () => {
 });
 
 describe('prepareYinziSetupInput', () => {
+  it('prefers available image2.5, preserves explicit choices, and permits a manual model when discovery fails', async () => {
+    const fetchImpl = async url => url.endsWith('/models')
+      ? { ok: true, status: 200, json: async () => ({ data: ['gpt-image-2', 'gpt-image-2.5', 'gpt-image-2.5-flare', 'gpt-image-2.5-sunburst'].map(id => ({ id, supported_endpoint_types: ['image-generation', 'openai'] })) }) }
+      : { ok: false, status: 503 };
+    const input = { base_url: 'https://api.yinziapi.top/v1', api_key: 'test-only' };
+    const preferred = await prepareYinziSetupInput(input, fetchImpl);
+    assert.equal(preferred.image_model, 'gpt-image-2.5');
+    assert.ok(preferred.image_models.includes('gpt-image-2.5-flare'));
+    assert.ok(preferred.image_models.includes('gpt-image-2.5-sunburst'));
+    const explicit = await prepareYinziSetupInput({ ...input, image_model: 'gpt-image-2' }, fetchImpl);
+    assert.equal(explicit.image_model, 'gpt-image-2');
+    const unavailable = await prepareYinziSetupInput({ ...input, image_model: 'future-image-model' }, async () => ({ ok: false, status: 503 }));
+    assert.equal(unavailable.image_model, 'future-image-model');
+  });
   it('keeps a mixed smart-key catalog out of the video list and separates public-only models', async () => {
     const fetchImpl = async (url) => {
       if (url.endsWith('/models')) {

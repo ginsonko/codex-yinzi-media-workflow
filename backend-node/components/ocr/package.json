@@ -1,0 +1,11 @@
+{
+  "name": "yinzi-local-ocr-component",
+  "version": "1.0.0",
+  "private": true,
+  "dependencies": {
+    "@gutenye/ocr-node": "1.4.8"
+  },
+  "overrides": {
+    "onnxruntime-node": "1.17.3"
+  }
+}

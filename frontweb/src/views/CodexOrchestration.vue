@@ -40,6 +40,10 @@
       <section class="layout">
         <aside class="sessions-panel">
           <div class="panel-title"><div><small>任务索引</small><h2>Codex 编排任务</h2></div><span>{{ sessions.length }}</span></div>
+          <el-radio-group v-model="sessionScope" size="small" aria-label="任务列表范围" @change="loadSessions(false)">
+            <el-radio-button label="recent">近期任务</el-radio-button>
+            <el-radio-button label="archived">已归档</el-radio-button>
+          </el-radio-group>
           <div v-if="sessionsError" class="inline-error">{{ sessionsError }} <button @click="loadSessions">重试</button></div>
           <div v-if="loading" class="skeleton-stack"><span v-for="i in 4" :key="i"></span></div>
           <button
@@ -55,19 +59,18 @@
             <em>{{ statusLabel(item.status) }}</em>
           </button>
           <div v-if="!loading && !sessions.length" class="empty-list">
-            <strong>还没有编排任务</strong>
-            <p>在 Codex 中安装 Skill 后，它会在开始工作时自动创建。你也可以先建一个空任务观察接口。</p>
+            <strong>{{ sessionScope === 'archived' ? '暂无归档任务' : '暂无任务' }}</strong>
           </div>
         </aside>
 
         <section class="workspace">
           <template v-if="bundle?.session">
             <div v-if="refreshError" class="refresh-warning" role="status">{{ refreshError }}；仍显示 {{ formatTime(lastUpdated) }} 的状态，正在尝试重新连接。</div>
-            <WorkActivity v-if="bundle.session.source_context?.activity || bundle.session.source_context?.analysis_report" :session="bundle.session" />
+            <WorkActivity v-if="bundle.session.source_context?.activity || bundle.session.source_context?.analysis_report" :session="bundle.session" :nodes="bundle.nodes || []" />
             <LocalMediaProgress v-if="bundle.session.id" :session-id="bundle.session.id" />
             <header class="session-header">
               <div>
-                <div class="status-line"><span :class="['status-pill', statusTone(bundle.session.status)]">{{ statusLabel(bundle.session.status) }}</span><span v-if="showTechnical">计划版本 {{ bundle.session.plan_revision }}</span><span v-if="showTechnical">状态版本 {{ bundle.session.version }}</span></div>
+                <div class="status-line"><span :class="['status-pill', statusTone(bundle.session.status)]">{{ statusLabel(bundle.session.status) }}</span><span v-if="bundle.session.source_context?.archived">已归档</span><span v-if="showTechnical">计划版本 {{ bundle.session.plan_revision }}</span><span v-if="showTechnical">状态版本 {{ bundle.session.version }}</span></div>
                 <h2>{{ bundle.session.title }}</h2>
                 <p>{{ bundle.session.user_goal || 'Codex 尚未写入任务目标。' }}</p>
               </div>
@@ -78,6 +81,9 @@
                 <el-button v-if="bundle.session.status === 'paused'" type="primary" plain :disabled="runtimeWriteBlocked" @click="resumeSession">从检查点继续</el-button>
                 <el-button :disabled="runtimeWriteBlocked" @click="saveCheckpoint">保存检查点</el-button>
                 <el-button @click="downloadExport">导出审计包</el-button>
+                <el-tooltip :content="bundle.session.source_context?.archived ? '恢复到近期任务' : '归档到历史列表，已有作业继续处理'">
+                  <el-button :aria-label="bundle.session.source_context?.archived ? '恢复归档任务' : '归档任务'" :icon="bundle.session.source_context?.archived ? RefreshLeft : Box" :loading="archivePending" :disabled="runtimeWriteBlocked" @click="toggleArchive" />
+                </el-tooltip>
               </div>
             </header>
 
@@ -95,12 +101,12 @@
               <div :class="['activity-state', `tone-${activitySummary.tone}`]"><span class="activity-dot"></span><strong>{{ activitySummary.state }}</strong><span>{{ activitySummary.stateHint }}</span></div>
             </section>
 
-            <div v-if="bundle.nodes?.length" class="experience-grid">
-              <OrchestrationProgress :session="bundle.session" :nodes="bundle.nodes" />
+            <div v-if="bundle.nodes?.length || ['succeeded', 'partial', 'failed', 'cancelled'].includes(bundle.session.status)" class="experience-grid">
+              <OrchestrationProgress :session="bundle.session" :nodes="bundle.nodes" :delivery="delivery" />
               <OrchestrationDelivery :delivery="delivery" />
             </div>
 
-            <OrchestrationArtifactGallery v-if="artifacts.length || bundle.session.source_context?.intent !== 'analyze'" :items="artifacts" :loading="artifactsLoading" :error="artifactsError" />
+            <OrchestrationArtifactGallery v-if="artifacts.length || bundle.session.source_context?.intent !== 'analyze'" :items="artifacts" :loading="artifactsLoading" :error="artifactsError" :disabled="runtimeWriteBlocked" :submitting="feedbackSubmitting" @review="recordArtifactReview" />
 
             <section v-if="blenderJobs.length" class="blender-jobs-card">
               <div class="section-heading"><div><small>本地专业镜头</small><h3>Blender 参考作业</h3></div><span>{{ blenderJobs.length }} 个作业</span></div>
@@ -129,7 +135,7 @@
                 <div><small>当前方案</small><h3>Codex 动态执行计划</h3></div>
                 <div class="plan-heading-actions"><div class="legend"><span><i class="success"></i>完成</span><span><i class="active"></i>执行</span><span><i class="warning"></i>处理</span><span><i class="neutral"></i>等待</span></div><el-button size="small" text @click="showTechnical = !showTechnical">{{ showTechnical ? '隐藏高级信息' : '显示高级信息' }}</el-button><el-button size="small" plain :disabled="runtimeWriteBlocked" @click="openPlanEditor">人工编辑计划</el-button></div>
               </div>
-              <p class="plan-summary">{{ bundle.session.plan?.summary || '计划尚未生成。Codex 可以根据用户目标和素材自由添加、跳过或重排节点。' }}</p>
+              <p v-if="bundle.session.plan?.summary" class="plan-summary">{{ bundle.session.plan.summary }}</p>
               <div class="timeline">
                 <article v-for="(node, index) in bundle.nodes" :key="node.id" :class="['node-card', statusTone(node.status)]">
                   <div class="node-rail"><span>{{ index + 1 }}</span><i></i></div>
@@ -171,7 +177,7 @@
                   </div>
                 </article>
               </div>
-              <div v-if="!bundle.nodes.length" class="empty-plan">Codex 尚未写入节点。模块不会限制它能做什么；未知任务也可以作为人工节点记录。</div>
+              <div v-if="!bundle.nodes.length" class="empty-plan">{{ ['succeeded', 'partial', 'failed', 'cancelled'].includes(bundle.session.status) ? '任务已结束，未单独建立分步计划。' : '尚未建立分步计划。' }}</div>
             </section>
 
             <section class="audit-grid">
@@ -284,6 +290,7 @@ import LocalMediaProgress from '@/components/orchestration/LocalMediaProgress.vu
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
+import { Box, RefreshLeft } from '@element-plus/icons-vue'
 import { useLiveRefresh } from '@/composables/useLiveRefresh'
 import { useWorkbenchPage } from '@/composables/useWorkbenchPage'
 import orchestrationAPI from '@/api/orchestration'
@@ -299,6 +306,8 @@ import OrchestrationDelivery from '@/components/orchestration/OrchestrationDeliv
 const route = useRoute()
 const router = useRouter()
 const sessions = ref([])
+const sessionScope = ref('recent')
+const archivePending = ref(false)
 const bundle = ref(null)
 const loading = ref(false)
 const detailLoading = ref(false)
@@ -360,7 +369,12 @@ const activitySummary = computed(() => {
   const terminal = ['succeeded', 'partial', 'failed', 'cancelled'].includes(String(session.status || '').toLowerCase())
   if (terminal) {
     const hasDelivery = ['delivered', 'validated', 'completed', 'succeeded'].includes(String(bundle.value?.delivery?.status || delivery.value?.status || '').toLowerCase())
-    return { updatedAt, age, current: hasDelivery ? '交付已完成' : '任务已结束', detail: hasDelivery ? '成果已核验并保留全部事件与失败回执' : '所有节点已进入终态，历史记录仍可查看', next: hasDelivery ? '查看或下载成果' : '查看失败回执或建立下一步计划', waitReason: hasDelivery ? '当前没有活动节点' : '任务已停止自动推进', state: session.status === 'partial' ? '部分完成' : '已完成', stateHint: '终态停止高频刷新', tone: session.status === 'partial' ? 'warning' : 'success' }
+    const succeeded = session.status === 'succeeded'
+    const hasArtifacts = Boolean(bundle.value?.artifacts?.length)
+    const next = succeeded ? (hasDelivery || hasArtifacts ? '查看或下载成果' : '整理并登记交付成果')
+      : session.status === 'partial' ? '查看已有成果和未完成项'
+        : session.status === 'cancelled' ? '查看已保存的进度和成果' : '查看失败原因并恢复原任务'
+    return { updatedAt, age, current: succeeded && hasDelivery ? '交付已完成' : statusLabel(session.status), detail: succeeded && hasDelivery ? '成果已核验，历史记录已保留' : '所有节点已进入终态，历史记录仍可查看', next, waitReason: '当前没有活动节点', state: statusLabel(session.status), stateHint: '终态停止高频刷新', tone: succeeded ? 'success' : session.status === 'failed' ? 'danger' : 'warning' }
   }
   if (session.status === 'paused') return { updatedAt, age, current: '已保存检查点', detail: '暂停只阻止后续认领，已提交的上游任务仍会收口', next: '等待你继续', waitReason: '用户暂停', state: '已暂停', stateHint: '不会自动伪造进度', tone: 'warning' }
   if (failed) return { updatedAt, age, current: failed.progress?.message || '有节点需要处理', detail: failed.error?.message || '原始失败回执仍保留', next: failed.progress?.next_action || '先对账或查看失败回执', waitReason: failed.progress?.wait_reason || '需要根据回执决定重试、跳过或人工接管', state: '需要处理', stateHint: '不会自动重复付费提交', tone: 'danger' }
@@ -399,7 +413,7 @@ function eventLabel(value) { return ({
   'session.created': '建立编排任务', 'session.updated': '更新任务状态', 'session.started': '开始执行',
   'session.checkpoint_saved': '保存恢复检查点', 'session.resumed_from_checkpoint': '从检查点继续',
   'plan.proposed': 'Codex 提交新计划', 'plan.confirmed': '计划已确认', 'node.ready': '节点已就绪',
-  'node.running': '开始执行节点', 'node.succeeded': '节点完成', 'node.partial': '节点部分完成',
+  'node.running': '开始执行节点', 'node.updated': '节点进度已更新', 'node.succeeded': '节点完成', 'node.partial': '节点部分完成',
   'node.failed': '节点失败', 'node.skipped': '节点已跳过', 'node.retry_authorized': '授权节点重试', 'blender.job_created': '建立 Blender 作业', 'blender.rendering': 'Blender 正在渲染', 'blender.encoding': '编码 Blender 参考视频', 'blender.completed': 'Blender 作业完成', 'blender.recoverable': 'Blender 作业可恢复', 'blender.cancelled': '取消本地 Blender 作业',
 })[value] || value }
 function eventSummary(event) {
@@ -410,7 +424,9 @@ function eventSummary(event) {
 async function loadSessions(selectFirst = true) {
   if (selectFirst) loading.value = true; sessionsError.value = ''
   try {
-    const data = await orchestrationAPI.sessions({ limit: 100 })
+    const scope = sessionScope.value
+    const data = await orchestrationAPI.sessions({ limit: 100, archived: scope === 'archived' })
+    if (scope !== sessionScope.value) return
     sessions.value = data.items || []
     if (selectFirst && !selectedId.value && sessions.value[0]) await router.replace(`/codex-console/${sessions.value[0].id}`)
   } catch (error) { sessionsError.value = error.message || '无法读取编排任务' }
@@ -528,6 +544,19 @@ async function createSession() {
   } finally { saving.value = false }
 }
 async function pauseSession() { if (!assertRuntimeReady()) return; bundle.value = await orchestrationAPI.pause(selectedId.value, { expected_version: bundle.value.session.version, actor: 'user' }); await loadSessions(false) }
+async function toggleArchive() {
+  if (!assertRuntimeReady() || archivePending.value) return
+  const id = selectedId.value
+  const archived = !bundle.value.session.source_context?.archived
+  archivePending.value = true
+  try {
+    const result = await orchestrationAPI.archive(id, archived)
+    if (selectedId.value === id) bundle.value = result.bundle
+    await loadSessions(false)
+    ElMessage.success(archived ? '已归档，任务记录和素材保留' : '已恢复到近期任务')
+  } catch (error) { ElMessage.error(error.message || '任务归档状态保存失败') }
+  finally { archivePending.value = false }
+}
 async function resumeSession() { if (!assertRuntimeReady()) return; bundle.value = await orchestrationAPI.resume(selectedId.value, { expected_version: bundle.value.session.version, actor: 'user' }); await loadSessions(false) }
 async function confirmPlan() {
   if (!assertRuntimeReady()) return
@@ -613,10 +642,14 @@ async function recordFeedback(payload) {
     if (result?.bundle) bundle.value = result.bundle
     else if (result?.session) bundle.value = { ...(bundle.value || {}), session: result.session }
     feedbackSubmitted.value = true
-    ElMessage.success(payload.pause ? '修改意见已记录，后续步骤已暂停' : '修改意见已记录')
+    ElMessage.success(payload.scope?.verdict === 'accepted' ? '内容核对已记录' : payload.pause ? '修改意见已记录，后续步骤已暂停' : '修改意见已记录')
     await loadSessions(false); await loadExperience(false)
-  } catch (error) { ElMessage.warning(error.message || '修改意见暂时没有提交成功，原文仍保留在输入框') }
+    return true
+  } catch (error) { ElMessage.warning(error.message || '修改意见暂时没有提交成功，原文仍保留在输入框'); return false }
   finally { feedbackSubmitting.value = false }
+}
+async function recordArtifactReview(payload, done) {
+  done?.(await recordFeedback(payload))
 }
 function refsToText(items = []) { return items.map((item) => [item.type || '', item.id || item.path || item.title || '', item.role || ''].join(' | ')).join('\n') }
 function textToRefs(value) { return String(value || '').split(/\r?\n/).map((line) => line.trim()).filter(Boolean).map((line) => { const [type, target, role] = line.split('|').map((part) => part.trim()); const ref = { type: type || 'unknown', role: role || 'manual' }; if (/^[A-Za-z]:[\\/]/.test(target || '') || (target || '').includes('/')) ref.path = target; else ref.id = target || `manual-${Date.now()}`; return ref }) }

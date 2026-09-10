@@ -1,1 +1,50 @@
-[]
+[
+  {
+    "component_id": "vision.realesrgan",
+    "version": "20220424",
+    "kind": "zip",
+    "platforms": ["win32-x64"],
+    "license": "BSD-3-Clause",
+    "source": "https://github.com/xinntao/Real-ESRGAN-ncnn-vulkan",
+    "urls": ["https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.5.0/realesrgan-ncnn-vulkan-20220424-windows.zip"],
+    "sha256": "abc02804e17982a3be33675e4d471e91ea374e65b70167abc09e31acb412802d",
+    "disk_bytes": 209715200,
+    "executables": {"realesrgan": "realesrgan-ncnn-vulkan.exe"},
+    "probe_args": ["-h"],
+    "probe_exit_codes": [4294967295, -1],
+    "probe_output": "Usage: realesrgan-ncnn-vulkan",
+    "verify_all_files": true
+  },
+  {
+    "component_id": "vision.ocr",
+    "version": "1.4.8",
+    "template": "ocr",
+    "platforms": ["win32-x64"],
+    "license": "MIT; PaddleOCR Apache-2.0",
+    "source": "https://github.com/gutenye/ocr",
+    "disk_bytes": 838860800
+  },
+  {
+    "component_id": "document.pdf",
+    "version": "1.0.0",
+    "template": "pdf",
+    "platforms": ["win32-x64"],
+    "license": "PDFKit MIT; fontkit MIT; Noto CJK SIL-OFL-1.1",
+    "source": "https://github.com/foliojs/pdfkit",
+    "disk_bytes": 104857600,
+    "artifacts": [
+      {
+        "name": "Noto Sans CJK SC",
+        "path": "fonts/NotoSansCJKsc-Regular.otf",
+        "url": "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTF/SimplifiedChinese/NotoSansCJKsc-Regular.otf",
+        "sha256": "2c76254f6fc379fddfce0a7e84fb5385bb135d3e399294f6eeb6680d0365b74b"
+      },
+      {
+        "name": "Noto CJK font license",
+        "path": "fonts/OFL.txt",
+        "url": "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/LICENSE",
+        "sha256": "6a73f9541c2de74158c0e7cf6b0a58ef774f5a780bf191f2d7ec9cc53efe2bf2"
+      }
+    ]
+  }
+]

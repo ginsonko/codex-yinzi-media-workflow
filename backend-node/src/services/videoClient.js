@@ -3386,6 +3386,8 @@ async function callYinziVideoApi(db, config, log, opts) {
   const contractValidationMode = normalizeContractValidationMode(opts.contract_validation_mode);
   const contractWarnings = [];
   const referenceVideoAdaptations = [];
+  let submissionReferenceSummary = null;
+  let responseRequestId = null;
   opts.contract_warnings = contractWarnings;
   const withContractReceipt = (result) => ({
     ...result,
@@ -3403,7 +3405,7 @@ async function callYinziVideoApi(db, config, log, opts) {
     },
   });
   const publishSubmission = (status, result = {}, receipt = {}) => {
-    const httpStatus = Number.isInteger(Number(receipt.http_status)) ? Number(receipt.http_status) : null;
+    const httpStatus = receipt.http_status != null && Number.isInteger(Number(receipt.http_status)) ? Number(receipt.http_status) : null;
     const safeReceipt = {
       version: 1,
       status,
@@ -3411,11 +3413,12 @@ async function callYinziVideoApi(db, config, log, opts) {
       http_status: httpStatus,
       error_code: receipt.error_code ? String(receipt.error_code).slice(0, 120) : null,
       request_id: receipt.request_id ? String(receipt.request_id).slice(0, 160) : null,
+      response_request_id: responseRequestId,
       provider_status: receipt.provider_status ? String(receipt.provider_status).slice(0, 80) : null,
       message: receipt.message ? String(receipt.message).slice(0, 500) : null,
       model: String(opts.model || '').slice(0, 240),
       endpoint: endpoint.slice(0, 240),
-      reference_summary: receipt.reference_summary || null,
+      reference_summary: receipt.reference_summary || submissionReferenceSummary,
       reference_video_adaptations: referenceVideoAdaptations?.length ? referenceVideoAdaptations : null,
       observed_at: new Date().toISOString(),
     };
@@ -3637,14 +3640,15 @@ async function callYinziVideoApi(db, config, log, opts) {
     references,
     capability,
   });
+  submissionReferenceSummary = references.reduce((summary, item) => {
+    summary[item.type] = (summary[item.type] || 0) + 1;
+    return summary;
+  }, {});
   logVideoPostRequest(log, 'YinziAPI', url, body, opts.video_gen_id, {
     model: body.model,
     aspect_ratio: body.aspect_ratio,
     seconds: body.seconds,
-    reference_summary: references.reduce((summary, item) => {
-      summary[item.type] = (summary[item.type] || 0) + 1;
-      return summary;
-    }, {}),
+    reference_summary: submissionReferenceSummary,
     contract_validation_mode: contractValidationMode,
     contract_warnings: [...contractWarnings],
     retry_policy: 'never_retry_ambiguous_post',
@@ -3654,10 +3658,6 @@ async function callYinziVideoApi(db, config, log, opts) {
   try {
     publishSubmission('ambiguous', {}, {
       phase: 'post_started',
-      reference_summary: references.reduce((summary, item) => {
-        summary[item.type] = (summary[item.type] || 0) + 1;
-        return summary;
-      }, {}),
     });
     res = await fetch(url, {
       method: 'POST',
@@ -3675,7 +3675,18 @@ async function callYinziVideoApi(db, config, log, opts) {
     }, { phase: 'transport_error', message: error.message });
   }
 
-  const raw = await res.text();
+  // A gateway trace ID is evidence for support, not a provider task ID.
+  responseRequestId = ['x-request-id', 'request-id', 'x-correlation-id']
+    .map(name => res.headers?.get?.(name)?.trim()).find(Boolean)?.slice(0, 160) || null;
+  let raw;
+  try {
+    raw = await res.text();
+  } catch (error) {
+    return publishSubmission('ambiguous', {
+      error: `YinziAPI 视频提交响应读取中断（${error.message || '网络错误'}）。上游受理状态未知，不会自动重试。`,
+      ambiguous_submission: true,
+    }, { phase: 'response_body_error', http_status: res.status, message: error.message });
+  }
   log.info('[YinziAPI] Video POST response', {
     video_gen_id: opts.video_gen_id,
     status: res.status,

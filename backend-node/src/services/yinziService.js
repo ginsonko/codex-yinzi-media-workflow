@@ -145,7 +145,7 @@ function normalizeCatalogItem(item, pricingVersion = '') {
 function recommendedRank(kind, model) {
   const recommendations = {
     text: ['gpt-5.6-sol', 'gpt-5.4-mini', 'deepseek-v4-flash', 'gpt-5.6-terra', 'gpt-5.4'],
-    image: ['gpt-image-2', 'flux-2-pro', 'seedream-v5-lite'],
+    image: ['gpt-image-2.5', 'gpt-image-2.5-flare', 'gpt-image-2.5-sunburst', 'gpt-image-2', 'flux-2-pro', 'seedream-v5-lite'],
     video: [
       'seedance-2.5-720p',
       'seedance2.0 -720p-fast-15s',
@@ -744,7 +744,7 @@ async function prepareYinziSetupInput(input = {}, fetchImpl = fetch) {
 
   const [textDiscovery, imageDiscovery, videoDiscovery] = await Promise.all([
     discover(textKey, 'text', baseUrls.text, normalizeOpaqueModel(input.text_model) || 'gpt-5.6-sol'),
-    discover(imageKey, 'image', baseUrls.image, normalizeOpaqueModel(input.image_model) || 'gpt-image-2'),
+    discover(imageKey, 'image', baseUrls.image, normalizeOpaqueModel(input.image_model) || 'gpt-image-2.5'),
     discover(videoKey, 'video', baseUrls.video, normalizeOpaqueModel(input.video_model) || 'Seedance 2.5-720'),
   ]);
   // Capability contracts and public prices enrich the key-scoped /models
@@ -771,13 +771,13 @@ async function prepareYinziSetupInput(input = {}, fetchImpl = fetch) {
     : credentialVideoCatalog;
 
   const textModel = preferredModel(input.text_model, textEntries, 'gpt-5.6-sol', 'gpt-5.6-sol');
-  const imageModel = preferredModel(input.image_model, imageEntries, 'gpt-image-2', 'gpt-image-2');
+  const imageModel = preferredModel(input.image_model, imageEntries, 'gpt-image-2.5', 'gpt-image-2.5');
   const videoModel = chooseDefaultYinziVideoModel(routableVideoCatalog, input.video_model) || 'Seedance 2.5-720';
   const warnings = [];
   if (!routableVideoCatalog.length) warnings.push('目录未提供视频候选，已保留指定模型；实际生成结果以提交回执为准');
   warnings.push(...(Array.isArray(pricingCatalog.warnings) ? pricingCatalog.warnings : []));
   if (!textEntries.length) warnings.push('当前文本 Key 未返回文本模型，已保留 gpt-5.6-sol 默认值');
-  if (!imageEntries.length) warnings.push('当前生图 Key 未返回生图模型，已保留 gpt-image-2 默认值');
+  if (!imageEntries.length) warnings.push(`当前生图 Key 未返回生图模型，已保留 ${imageModel}；可直接使用指定模型`);
 
   return {
     ...input,

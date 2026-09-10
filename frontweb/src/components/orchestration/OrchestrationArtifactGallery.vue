@@ -13,17 +13,34 @@
           <GlbPreview v-else-if="['model','glb','scene'].includes(item.type)" :src="item.url || ''" />
           <div v-else class="artifact-placeholder"><strong>{{ brokenIds.has(item.id) ? '预览暂时不可用' : item.url ? item.title : item.status === 'failed' ? '生成失败' : '等待文件' }}</strong><span>{{ brokenIds.has(item.id) ? '请尝试打开文件，或检查本地素材是否仍存在' : item.url ? '文件已就绪' : item.error_message || '尚未提供文件' }}</span></div>
         </div>
-        <footer><div><strong :title="item.title">{{ item.title }}</strong><span>{{ mediaTypeLabel(item.type) }} · {{ item.status === 'validated' ? '已检查' : item.status === 'failed' ? '失败' : '可查看' }}</span></div><a v-if="item.download_url || item.url" :href="item.download_url || item.url" target="_blank" rel="noreferrer">打开</a></footer>
+        <footer><div><strong :title="item.title">{{ item.title }}</strong><span>{{ mediaTypeLabel(item.type) }} · {{ artifactReviewLabel(item) }}</span></div><a v-if="item.download_url || item.url" :href="item.download_url || item.url" target="_blank" rel="noreferrer">打开</a></footer>
+        <div v-if="item.artifact_id && item.url" class="artifact-review">
+          <el-tooltip content="通过内容核对"><el-button :icon="CircleCheck" circle size="small" :disabled="disabled || submitting" aria-label="通过内容核对" @click="submitReview(item, 'accepted')" /></el-tooltip>
+          <el-tooltip content="需要修改"><el-button :icon="EditPen" circle size="small" :disabled="disabled || submitting" aria-label="需要修改" @click="reviewItem = item; reviewNote = ''" /></el-tooltip>
+          <span v-if="item.validation?.content_review?.message" :title="item.validation.content_review.message">{{ item.validation.content_review.message }}</span>
+        </div>
       </article>
     </div>
+    <el-dialog :model-value="Boolean(reviewItem)" title="修改意见" width="min(440px, calc(100vw - 32px))" @close="reviewItem = null">
+      <el-input v-model="reviewNote" type="textarea" :rows="3" maxlength="1600" aria-label="修改意见" placeholder="需要调整的地方（可选）" />
+      <template #footer><el-button :loading="submitting" :disabled="disabled" :icon="EditPen" @click="submitReview(reviewItem, 'needs_changes')">记录修改</el-button></template>
+    </el-dialog>
   </section>
 </template>
 
 <script setup>
 import { computed, ref } from 'vue'
 import GlbPreview from './GlbPreview.vue'
-import { mediaTypeLabel, normalizeArtifacts } from '@/utils/orchestrationExperience'
-const props = defineProps({ items: { type: Array, default: () => [] }, loading: Boolean, error: { type: String, default: '' } })
+import { CircleCheck, EditPen } from '@element-plus/icons-vue'
+import { artifactReviewLabel, mediaTypeLabel, normalizeArtifacts } from '@/utils/orchestrationExperience'
+const props = defineProps({ items: { type: Array, default: () => [] }, loading: Boolean, error: { type: String, default: '' }, disabled: Boolean, submitting: Boolean })
+const emit = defineEmits(['review'])
+const reviewItem = ref(null)
+const reviewNote = ref('')
+function submitReview(item, verdict) {
+  if (!item?.artifact_id || props.disabled || props.submitting) return
+  emit('review', { message: verdict === 'accepted' ? '已核对内容，符合要求' : reviewNote.value.trim() || '此成果需要修改', scope: { type: 'artifact', artifact_id: item.artifact_id, verdict } }, saved => { if (saved) reviewItem.value = null })
+}
 const items = computed(() => normalizeArtifacts(props.items))
 const brokenIds = ref(new Set())
 function markBroken(id) {
@@ -39,5 +56,6 @@ function markBroken(id) {
 .experience-panel{border:0;border-bottom:1px solid var(--border-color);border-radius:0;background:transparent}
 .artifact-media img,.artifact-media video{object-fit:contain}
 .experience-heading small{letter-spacing:0}
+.artifact-review{display:flex;align-items:center;gap:6px;padding:0 11px 10px;min-height:32px}.artifact-review .el-button+.el-button{margin-left:0}.artifact-review span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px;color:var(--text-muted)}
 @media(max-width:450px){.artifact-grid{grid-template-columns:1fr}}
 </style>

@@ -128,6 +128,7 @@ function setupRouter(cfg, db, log, injected = {}) {
   r.get('/orchestration-sessions/:id/blender/jobs', orchestration.blenderJobs);
   r.get('/orchestration-sessions/:id/blender/jobs/:jobId', orchestration.blenderJob);
   r.patch('/orchestration-sessions/:id', orchestration.updateSession);
+  r.post('/orchestration-sessions/:id/archive', orchestration.archiveSession);
   r.put('/orchestration-sessions/:id/plan', orchestration.submitPlan);
   r.post('/orchestration-sessions/:id/confirm', orchestration.confirmPlan);
   r.post('/orchestration-sessions/:id/start', orchestration.startSession);

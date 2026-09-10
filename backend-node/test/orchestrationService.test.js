@@ -17,6 +17,60 @@ beforeEach(() => {
 afterEach(() => db.close());
 
 describe('Codex orchestration service', () => {
+  it('archives and restores a task without changing execution or losing original access', () => {
+    const id = service.createSession({ user_goal: 'Keep an existing paid request recoverable', source_context: { note: 'keep' } }).session.id;
+    service.startSession(id);
+    service.recordArtifact(id, { artifact_id: 'original', type: 'image', path: 'original.png', bytes: 10 });
+    const before = service.getBundle(id);
+    assert.throws(() => service.archiveSession(id, { archived: 'true' }), { code: 'ARCHIVE_STATE_REQUIRED' });
+    const result = service.archiveSession(id, { archived: true });
+    assert.equal(result.bundle.session.status, 'running');
+    assert.equal(result.bundle.session.source_context.note, 'keep');
+    assert.deepEqual(result.bundle.artifacts, before.artifacts);
+    assert.equal(service.listSessions().items.length, 0);
+    assert.equal(service.listSessions({ archived: 'true' }).items[0].id, id);
+    assert.equal(service.listSessions({ archived: 'all' }).items.length, 1);
+    assert.equal(service.getBundle(id).session.id, id);
+    service.updateSession(id, { source_context: { note: 'new activity' } });
+    assert.equal(service.getBundle(id).session.source_context.archived, true);
+    assert.equal(service.listSessions().items.length, 0);
+    assert.equal(service.archiveSession(id, { archived: true }).reused, true);
+    service.archiveSession(id, { archived: false });
+    assert.equal(service.listSessions().items[0].id, id);
+    assert.equal(service.listSessions({ archived: true }).items.length, 0);
+    assert.equal(service.getBundle(id).session.status, 'running');
+    assert.equal(service.listEvents(id).filter(event => /session\.(archived|unarchived)/.test(event.event_type)).length, 2);
+  });
+  it('returns recent activity in snapshots while preserving cursor pagination and history', () => {
+    const id = service.createSession({ user_goal: 'Long-running download' }).session.id;
+    for (let i = 0; i < 205; i++) service.recordEvent(id, {
+      event_type: 'local-media.download', event_idempotency_key: `download-${i}`, payload: { bytes: i },
+    });
+    service.recordEvent(id, { event_type: 'local-media.succeeded', event_idempotency_key: 'done', payload: {} });
+    const all = service.listEvents(id, { limit: 500 });
+    const recent = service.getBundle(id).events;
+    assert.equal(all.length, 207);
+    assert.equal(recent.length, 200);
+    assert.deepEqual(recent.map(e => e.id), all.slice(-200).map(e => e.id));
+    assert.equal(recent.at(-1).event_type, 'local-media.succeeded');
+    assert.deepEqual(service.getBundle(id, { after: 0, event_limit: 3 }).events, all.slice(0, 3));
+    assert.deepEqual(service.getBundle(id, { after: all[2].id, event_limit: 3 }).events, all.slice(3, 6));
+  });
+
+  it('does not report another start for progress updates on a running node', () => {
+    const id = service.createSession({ user_goal: 'Download progress' }).session.id;
+    service.submitPlan(id, { confirm: true, nodes: [{ node_key: 'image', module_id: 'local.image.resize' }] });
+    service.startSession(id);
+    const started = service.updateNode(id, 'image', { status: 'running' }).node;
+    service.updateNode(id, 'image', { progress: { state: 'download', percent: 10 } });
+    service.updateNode(id, 'image', { status: 'running', progress: { state: 'download', percent: 50 } });
+    const bundle = service.getBundle(id);
+    assert.equal(bundle.events.filter(e => e.event_type === 'node.running').length, 1);
+    assert.equal(bundle.events.filter(e => e.event_type === 'node.updated').length, 2);
+    assert.equal(bundle.nodes[0].started_at, started.started_at);
+    assert.equal(bundle.nodes[0].progress.percent, 50);
+  });
+
   it('exposes a low gate onboarding contract and idempotent redacted events', () => {
     const service = createOrchestrationService(db);
     const onboarding = service.onboarding();
@@ -308,6 +362,27 @@ describe('Codex orchestration service', () => {
     preferences.set(db, { unattended_mode: false });
     assert.equal(service.getBundle(created.session.id).creative_preferences.unattended_mode, false);
     assert.equal(service.submitPlan(created.session.id, { nodes }).session.status, 'waiting_confirmation');
+  });
+  it('persists content reviews without replacing artifacts or replaying old verdicts', () => {
+    const session = service.createSession({ user_goal: '核对真实效果' }).session;
+    service.recordArtifact(session.id, { artifact_id: 'photo', type: 'image', status: 'validated', path: 'original.png', bytes: 42, validation: { technical_status: 'passed', output_sha256: 'unchanged' } });
+    const reject = { message: '方向错误，需要修改', idempotency_key: 'review-reject', scope: { type: 'artifact', artifact_id: 'photo', verdict: 'needs_changes' }, actor: 'user' };
+    const rejected = service.recordFeedback(session.id, reject);
+    assert.equal(rejected.bundle.artifacts[0].status, 'rejected');
+    assert.equal(rejected.bundle.artifacts[0].validation.technical_status, 'passed');
+    service.recordFeedback(session.id, { message: '重新核对可用', idempotency_key: 'review-accept', scope: { type: 'artifact', artifact_id: 'photo', verdict: 'accepted' }, actor: 'user' });
+    const duplicate = service.recordFeedback(session.id, reject);
+    assert.equal(duplicate.reused, true);
+    assert.equal(duplicate.bundle.artifacts[0].validation.content_review.verdict, 'accepted');
+    assert.equal(duplicate.bundle.artifacts[0].validation.output_sha256, 'unchanged');
+    assert.equal(duplicate.bundle.artifacts[0].path, 'original.png');
+    assert.equal(duplicate.bundle.artifacts.length, 1);
+    assert.equal(duplicate.bundle.feedback.length, 2);
+    const other = service.createSession({ user_goal: '另一个任务' }).session;
+    assert.throws(() => service.recordFeedback(other.id, reject), { code: 'ARTIFACT_REVIEW_NOT_FOUND' });
+    assert.equal(service.listFeedback(other.id).length, 0);
+    assert.throws(() => service.recordFeedback(session.id, { ...reject, idempotency_key: 'bad-verdict', scope: { ...reject.scope, verdict: 'anything' } }), { code: 'ARTIFACT_REVIEW_INVALID' });
+    assert.equal(service.listFeedback(session.id).length, 2);
   });
   it('captures quality preference for each session and exposes actionable planning guidance', () => {
     const preferences=require('../src/services/creativePreferences');
