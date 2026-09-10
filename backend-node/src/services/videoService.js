@@ -1029,7 +1029,8 @@ async function pollProviderTaskAndFinalize(db, log, videoGenId, row, rowForAspec
     config,
     pollMaxAttempts,
     POLL_INTERVAL_MS,
-    row.prompt
+    row.prompt,
+    (observation) => require('./videoPollProgress').recordPollProgress(db, videoGenId, providerTaskId, observation)
   );
   const now = new Date().toISOString();
   const polledVideo = resolveRemoteVideoUrl(pollResult.video_url, pollResult.error);
@@ -1070,7 +1071,8 @@ async function pollProviderTaskAndFinalize(db, log, videoGenId, row, rowForAspec
         db,
         row.task_id,
         'processing',
-        Number.isFinite(Number(pollResult.progress)) ? Number(pollResult.progress) : 20,
+        pollResult.progress != null && Number.isFinite(Number(pollResult.progress))
+          ? Math.min(99, Number(pollResult.progress)) : taskService.getTask(db, row.task_id)?.progress ?? 20,
         '上游仍在排队或生成，稍后继续检查…'
       );
     }

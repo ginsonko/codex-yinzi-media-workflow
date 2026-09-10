@@ -5024,7 +5024,8 @@ async function pollVideoTask(
   config,
   maxAttempts = 300,
   intervalMs = 10000,
-  expectedPrompt = null
+  expectedPrompt = null,
+  onObservation = null
 ) {
   const provider = (config.provider || '').toLowerCase();
   const protocol = resolveVideoProtocol(config);
@@ -5155,6 +5156,14 @@ async function pollVideoTask(
         continue;
       }
 
+      const observation = require('./videoPollProgress').pollObservation(data, extractPollTaskStatus(data));
+      lastPendingStatus = observation.status || lastPendingStatus;
+      lastPendingProgress = observation.progress ?? lastPendingProgress;
+      if (typeof onObservation === 'function') {
+        try { await onObservation(observation); }
+        catch (error) { log.warn('Video progress observation failed', { video_gen_id: videoGenId, error: error.message }); }
+      }
+
       if (isKling) {
         if (data.code !== undefined && data.code !== 0) {
           const msg = data.message || `可灵错误码: ${data.code}`;
@@ -5248,7 +5257,7 @@ async function pollVideoTask(
       if (isYinzi) {
         const status = extractPollTaskStatus(data);
         lastPendingStatus = status;
-        lastPendingProgress = Number.isFinite(Number(data?.progress)) ? Number(data.progress) : lastPendingProgress;
+        lastPendingProgress = observation.progress ?? lastPendingProgress;
         if (isPollTaskFailed(status)) {
           const message = extractPollFailureMessage(data) || 'YinziAPI 视频任务失败';
           return { error: String(message).slice(0, 500) };
