@@ -17,7 +17,8 @@ async function main(){
   // These synthetic fixtures exercise basic media filters. OCR/PDF/AI need their own content-bearing scenarios.
   for(const op of operations.filter(o=>['media.ffmpeg','media.sharp'].includes(o.component_id)&&(!selection||o.id.includes(selection)))){
     const dir=path.join(root,'outputs',op.id);let result;
-    try{const receipt=await execute({module_id:op.id,input_path:op.kind==='image'?image:op.kind==='audio'?audio:video},{manager,outputDir:dir});
+    const parameters = op.id === 'local.image.composite-layers' ? {layers:[{source:0,x:16,y:8,width:64,height:40,opacity:0.6}]} : undefined;
+    try{const receipt=await execute({module_id:op.id,input_path:op.kind==='image'?image:op.kind==='audio'?audio:video,...(parameters?{parameters}:{})},{manager,outputDir:dir});
       result={id:op.id,status:'passed',bytes:receipt.bytes,output_sha256:receipt.output_sha256,receipt:path.join(dir,'receipt.json')};
     }catch(e){result={id:op.id,status:'failed',message:e.message};}
     results.push(result);writeJson(path.join(root,selection?'acceptance-selected.json':'acceptance.json'),{at:new Date().toISOString(),elapsed_ms:Date.now()-start,source_fingerprints:fingerprints,registered_components:[{id:ff.component_id,version:ff.version},{id:sh.component_id,version:sh.version}],total:results.length,passed:results.filter(r=>r.status==='passed').length,results});

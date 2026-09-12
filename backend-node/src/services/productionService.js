@@ -3945,8 +3945,11 @@ function createProductionService(db, cfg, log, injected = {}) {
     const checks = [];
     const localAssets = inspectLocalAssets(input);
     if (localAssets.checked) checks.push({
-      key: 'local_assets', label: '本地素材', ok: localAssets.ok,
-      detail: localAssets.ok ? `已检查 ${localAssets.checked} 个文件，可读取` : localAssets.checks.filter((item) => !item.ok).map((item) => item.reason).join('；'),
+      key: 'local_assets', label: '素材引用', ok: localAssets.ok,
+      detail: localAssets.ok
+        ? [localAssets.checked_local ? `已检查 ${localAssets.checked_local} 个本地文件，可读取` : '',
+          localAssets.deferred ? `${localAssets.deferred} 个非本地引用将在提交时由适配器及提供方确认` : ''].filter(Boolean).join('；')
+        : localAssets.checks.filter((item) => !item.ok).map((item) => item.reason).join('；'),
       blocking: true, items: localAssets.checks,
     });
     const textConfig = aiClient.getDefaultConfig(db, 'text');

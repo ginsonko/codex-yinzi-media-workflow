@@ -153,6 +153,11 @@ const routes = {
   'local-run': ['POST', '/api/v1/local-media/jobs'],
   'local-job': ['GET', `/api/v1/local-media/jobs/${encodeURIComponent(pos[0] || '')}`],
   'local-resume': ['POST', `/api/v1/local-media/jobs/${encodeURIComponent(pos[0] || '')}/resume`],
+  'tool-options': ['GET', `/api/v1/media-tool-options?${new URLSearchParams({q:option('--query')||'',category:option('--category')||'',limit:option('--limit')||'20',offset:option('--offset')||'0'})}`],
+  'tool-option': ['GET', `/api/v1/media-tool-options/${encodeURIComponent(pos[0] || '')}`],
+  experiences: ['GET', `/api/v1/media-experiences?${new URLSearchParams({q:option('--query')||'',module_id:option('--module')||'',session_id:option('--session')||'',limit:option('--limit')||'20',offset:option('--offset')||'0'})}`],
+  experience: ['GET', `/api/v1/media-experiences/${encodeURIComponent(pos[0] || '')}`],
+  'record-experience': ['POST', '/api/v1/media-experiences'],
   preferences: ['GET', '/api/v1/creative-preferences'],
   'set-preferences': ['PUT', '/api/v1/creative-preferences'],
   begin: ['POST', '/api/v1/orchestration-sessions/begin'],
@@ -177,7 +182,7 @@ const routes = {
 }
 
 if (command === 'help' || !routes[command]) {
-  process.stdout.write(`Usage: node scripts/orchestration-cli.mjs <command> [session-id] [node-key] [--input file]\nCommands: preferences set-preferences begin activity event health modules sessions get export create plan confirm start node retry pause resume checkpoint components local-run local-job local-resume\nLocal: local-run --input request.json; local-job JOB_ID; local-resume JOB_ID; modules --query SEARCH\n`)
+  process.stdout.write(`Usage: node scripts/orchestration-cli.mjs <command> [session-id] [node-key] [--input file]\nCommands: preferences set-preferences begin activity event health modules sessions get export create plan confirm start node retry pause resume checkpoint components local-run local-job local-resume experiences experience record-experience tool-options tool-option\nLocal: local-run --input request.json; local-job JOB_ID; local-resume JOB_ID; modules --query SEARCH\nOptions: tool-options [--query TEXT] [--category CATEGORY] [--limit 20]; tool-option ID\nExperiences: experiences [--query TEXT] [--module MODULE_ID] [--session SESSION_ID] [--limit 20] [--offset 0]; experience ID; record-experience --input note.json\n`)
   process.exit(command === 'help' ? 0 : 1)
 }
 

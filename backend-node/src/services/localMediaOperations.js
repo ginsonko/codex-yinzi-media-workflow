@@ -230,8 +230,11 @@ operations.push(require('./localUpscaleOperation'));
 operations.push(require('./localSearchablePdfOperation'));
 operations.push(...require('./videoReversePrompt').operations);
 operations.push(require('./videoTimelineEdit'));
+operations.push(require('./audioBeatAnalysis'));
+operations.push(require('./imageCompositeLayers'));
+operations.push(require('./videoComposeClips'));
 function getOperation(id) { return operations.find(o=>o.id===id); }
 function contracts() { return operations.map(o=>({module_id:o.id,title:o.title,description:o.description||o.title,description_zh:o.description_zh||o.title,version:1,version_track:'V5',phase:o.phase||'edit',executor:'local',availability:'bridge',component_id:o.component_id,auto_install:Boolean(o.component_id),
-  additional_components:o.additional_components || [],validation_status:verifiedOperation(o.id)?'verified_windows_fixture':'execution_receipt_required',source_refs:[o.source],inputs:['input_path','parameters'],outputs:['derived_media','execution_receipt'],parameters:o.defaults,parameter_schema:o.parameter_schema||parameterSchemas[o.id],
+  additional_components:o.additional_components || [],validation_status:verifiedOperation(o.id)?'verified_windows_fixture':'execution_receipt_required',source_refs:[o.source],inputs:o.inputs||['input_path','parameters'],outputs:['derived_media','execution_receipt'],parameters:o.defaults,parameter_schema:o.parameter_schema||parameterSchemas[o.id],
   side_effects:{network:true,filesystem_write:true,database_write:true,external_write:false,paid:false},recovery:'复用同一请求键和原素材；缺组件自动准备；失败只恢复此作业，不重建成功素材'})); }
 module.exports={operations,getOperation,contracts};

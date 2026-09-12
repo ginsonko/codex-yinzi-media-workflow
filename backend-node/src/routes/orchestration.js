@@ -4,14 +4,18 @@ const { createOrchestrationService } = require('../services/orchestrationService
 const { createOrchestrationBlenderService } = require('../services/orchestrationBlenderService');
 const componentManager = require('../services/mediaComponentManager');
 const { createLocalMediaJobs } = require('../services/localMediaJobs');
+const { createMediaExperiences } = require('../services/mediaExperiences');
+const { createMediaToolOptions } = require('../services/mediaToolOptions');
+const { getOperation } = require('../services/localMediaOperations');
+const { createHttpHandlers } = require('../services/mediaToolOptionsHttp');
 
 function sendError(res, log, label, error) {
   log.error?.(label, { error: error.message, code: error.code });
   const code = error.code || 'BAD_REQUEST';
-  if (['VERSION_CONFLICT', 'PLAN_REVISION_CONFLICT', 'NODE_RUNNING', 'NODE_ALREADY_SUCCEEDED', 'NODE_NOT_READY', 'PLAN_RUNNING_NODE_CONFLICT', 'REQUEST_HASH_CONFLICT'].includes(code)) {
+  if (['VERSION_CONFLICT', 'PLAN_REVISION_CONFLICT', 'NODE_RUNNING', 'NODE_ALREADY_SUCCEEDED', 'NODE_NOT_READY', 'PLAN_RUNNING_NODE_CONFLICT', 'REQUEST_HASH_CONFLICT', 'EXPERIENCE_REQUEST_CONFLICT'].includes(code)) {
     return response.error(res, 409, code, error.message, error.details);
   }
-  if (['ORCHESTRATION_NOT_FOUND', 'ORCHESTRATION_NODE_NOT_FOUND', 'BLENDER_JOB_NOT_FOUND'].includes(code)) {
+  if (['ORCHESTRATION_NOT_FOUND', 'ORCHESTRATION_NODE_NOT_FOUND', 'BLENDER_JOB_NOT_FOUND', 'EXPERIENCE_NOT_FOUND'].includes(code)) {
     return response.error(res, 404, code, error.message, error.details);
   }
   if (['BLENDER_PROCESS_STILL_ACTIVE', 'BLENDER_RECOVERY_INPUT_MISSING'].includes(code)) {
@@ -24,9 +28,17 @@ module.exports = function orchestrationRoutes(db, log = console, cfg = {}, injec
   const service = createOrchestrationService(db);
   const blender = createOrchestrationBlenderService(db, cfg, log, { ...injected, orchestration: service });
   const localMedia = createLocalMediaJobs(db, cfg, service, injected.localMedia || {});
+  let toolOptions;
+  const options = () => toolOptions ||= createMediaToolOptions({getOperation});
+  const toolOptionHttp = createHttpHandlers({service:{list:q=>options().list(q),get:id=>options().get(id)},response});
   return {
+    listMediaToolOptions: toolOptionHttp.list,
+    getMediaToolOption: toolOptionHttp.get,
     blenderService: blender,
     localMediaService: localMedia,
+    listMediaExperiences(req,res) { try { response.success(res,createMediaExperiences(db).list(req.query||{})); } catch(e) { sendError(res,log,'media experience search',e); } },
+    getMediaExperience(req,res) { try { const item=createMediaExperiences(db).get(req.params.experienceId); if(!item)return response.error(res,404,'EXPERIENCE_NOT_FOUND','经验记录不存在'); response.success(res,item); } catch(e) { sendError(res,log,'media experience read',e); } },
+    recordMediaExperience(req,res) { try { response.created(res,createMediaExperiences(db).recordNote(req.body||{})); } catch(e) { sendError(res,log,'media experience record',e); } },
     createLocalMediaJob(req,res) { try { response.created(res,localMedia.create(req.body||{})); } catch(e) { sendError(res,log,'local media submit',e); } },
     getLocalMediaJob(req,res) { try { const job=localMedia.get(req.params.jobId); if(!job)return response.error(res,404,'LOCAL_JOB_MISSING','本地任务不存在'); response.success(res,job); } catch(e) { sendError(res,log,'local media read',e); } },
     listLocalMediaJobs(req,res) { try { response.success(res,{items:localMedia.list(req.query.session_id)}); } catch(e) { sendError(res,log,'local media list',e); } },

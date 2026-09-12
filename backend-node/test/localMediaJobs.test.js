@@ -4,6 +4,30 @@ const {createOrchestrationService}=require('../src/services/orchestrationService
 const {createLocalMediaJobs}=require('../src/services/localMediaJobs');
 const {runMigrationsAndEnsure}=require('../src/db/migrate');
 function fixture(){const root=fs.mkdtempSync(path.join(os.tmpdir(),'yinzi-job-test-'));const db=new Database(':memory:');const log=console.log;console.log=()=>{};try{runMigrationsAndEnsure(db);}finally{console.log=log;}const service=createOrchestrationService(db);const id=service.createSession({user_goal:'本地媒体处理验收',idempotency_key:'local-test'}).session.id;const input=path.join(root,'input.png');fs.writeFileSync(input,'fixture');return{root,db,service,id,input};}
+
+test('restart recovers earlier failed-attempt experiences without replaying media',async()=>{
+ const {root,db,service,id,input}=fixture();let executions=0, reopened, recovered;
+ const jobs=createLocalMediaJobs(db,{storage:{local_path:root}},service,{retryDelayMs:0,log:{warn(){}},experiences:{recordJob(){throw Error('temporary experience failure');}},execute:async(req,options)=>{
+  executions++;if(executions===1)throw Object.assign(Error('transient download failure'),{code:'ECONNRESET'});
+  fs.mkdirSync(options.outputDir,{recursive:true});const output=path.join(options.outputDir,'result.png');fs.writeFileSync(output,'result');
+  return {output_path:output,output_sha256:'result',bytes:6,status:'succeeded'};
+ }});
+ try{
+  const job=jobs.create({session_id:id,request_key:'recover-history',module_id:'local.image.resize',input_path:input,parameters:{prompt:'private creative brief','X-API-Key':'fake-key-value'}});
+  await jobs.waitForIdle();assert.equal(jobs.get(job.id).status,'succeeded');assert.equal(executions,2);
+  const rows=db.prepare('SELECT * FROM local_media_attempt_receipts ORDER BY attempt').all();assert.equal(rows.length,2);
+  assert.equal(JSON.stringify(rows).includes('fake-key-value'),false);assert.equal(JSON.stringify(rows).includes('private creative brief'),false);
+  await jobs.close();const file=path.join(root,'restart.db');await db.backup(file);db.close();reopened=new Database(file);
+  const restoredService=createOrchestrationService(reopened);
+  recovered=createLocalMediaJobs(reopened,{storage:{local_path:root}},restoredService,{execute:async()=>{throw Error('media must not replay');}});
+  recovered.recover();
+  const experienceService=require('../src/services/mediaExperiences').createMediaExperiences(reopened);
+  for(let poll=0;poll<100&&experienceService.list({session_id:id}).total<2;poll++)await new Promise(resolve=>setTimeout(resolve,20));
+  const notes=experienceService.list({session_id:id});
+  assert.equal(notes.total,2);assert.ok(notes.items.some(note=>note.attempt===1&&note.technical_status==='failed'));assert.ok(notes.items.some(note=>note.attempt===2&&note.technical_status==='succeeded'));
+  recovered.recover();await new Promise(resolve=>setTimeout(resolve,60));assert.equal(reopened.prepare('SELECT COUNT(*) n FROM media_experiences').get().n,2);assert.equal(executions,2);
+ }finally{await jobs.close();if(db.open)db.close();if(recovered)await recovered.close();if(reopened?.open)reopened.close();fs.rmSync(root,{recursive:true,force:true});}
+});
 test('local jobs are idempotent, persist progress and register real outputs',async()=>{
  const {root,db,service,id,input}=fixture();let runs=0;
  const jobs=createLocalMediaJobs(db,{storage:{local_path:root}},service,{execute:async(req,options)=>{runs++;options.onProgress({stage:'download',bytes:20,total_bytes:40});options.onProgress({stage:'executing'});fs.mkdirSync(options.outputDir,{recursive:true});const output=path.join(options.outputDir,'result.png');fs.writeFileSync(output,'actual result');return{output_path:output,bytes:13,output_sha256:'abc',status:'succeeded'};}});
@@ -121,4 +145,26 @@ test('failed local jobs recover in place without another logical job',async()=>{
  const {root,db,service,id,input}=fixture();let attempts=0;
  const jobs=createLocalMediaJobs(db,{storage:{local_path:root}},service,{execute:async(req,options)=>{if(++attempts===1)throw Error('download interrupted');fs.mkdirSync(options.outputDir,{recursive:true});const output=path.join(options.outputDir,'result.png');fs.writeFileSync(output,'recovered');return{output_path:output,bytes:9,output_sha256:'abc',status:'succeeded'};}});
  const job=jobs.create({session_id:id,request_key:'resume',module_id:'local.image.resize',input_path:input});await new Promise(setImmediate);await jobs.waitForIdle();assert.equal(jobs.get(job.id).status,'failed');jobs.resume(job.id);await new Promise(setImmediate);await jobs.waitForIdle();assert.equal(jobs.get(job.id).status,'succeeded');assert.equal(jobs.get(job.id).attempt,2);assert.equal(jobs.list(id).length,1);await jobs.close();db.close();fs.rmSync(root,{recursive:true,force:true});
+});
+
+test('experience writes cannot turn a successful media job into failure',async()=>{
+ const {root,db,service,id,input}=fixture();let calls=0;
+ const jobs=createLocalMediaJobs(db,{storage:{local_path:root}},service,{log:{warn(){}},experiences:{recordJob(){calls++;throw Error('experience disk failed');}},execute:async(req,options)=>{
+  fs.mkdirSync(options.outputDir,{recursive:true});const output=path.join(options.outputDir,'result.png');fs.writeFileSync(output,'successful media');return{output_path:output,bytes:16,output_sha256:'abc',status:'succeeded'};
+ }});
+ try{
+  const job=jobs.create({session_id:id,request_key:'note-failure',module_id:'local.image.resize',input_path:input});await jobs.waitForIdle();
+  assert.equal(jobs.get(job.id).status,'succeeded');assert.equal(service.getBundle(id).session.status,'succeeded');assert.equal(calls,1);
+ }finally{await jobs.close();db.close();fs.rmSync(root,{recursive:true,force:true});}
+});
+
+test('the second input participates in request identity and changed sources cannot reuse old work',async()=>{
+ const {root,db,service,id,input}=fixture();const second=path.join(root,'second.txt');fs.writeFileSync(second,'second input');
+ const jobs=createLocalMediaJobs(db,{storage:{local_path:root}},service,{execute:async()=>{throw Error('fixture stopped');}});
+ try{
+  const body={session_id:id,request_key:'sources',module_id:'local.image.resize',input_path:input,sources:[{role:'main',path:input},{role:'reference',path:second}]};
+  const created=jobs.create(body);assert.equal(created.request.sources.length,2);assert.ok(created.request.sources[1].identity);
+  assert.equal(jobs.create(body).id,created.id);fs.writeFileSync(second,'modified input');
+  assert.throws(()=>jobs.create(body),{code:'REQUEST_HASH_CONFLICT'});await jobs.waitForIdle();
+ }finally{await jobs.close();db.close();fs.rmSync(root,{recursive:true,force:true});}
 });

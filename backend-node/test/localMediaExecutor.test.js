@@ -5,6 +5,13 @@ const {operations,contracts}=require('../src/services/localMediaOperations');
 const {execute}=require('../src/services/localMediaExecutor');
 const {getFfmpegPath,getFfprobePath,hasLocalFfmpeg}=require('../src/utils/ffmpegPath');
 const {run}=require('../src/services/componentRuntime');
+
+test('legacy auxiliary sources are captured before component preparation and checked afterwards',async t=>{
+ const root=fs.mkdtempSync(path.join(os.tmpdir(),'yinzi-legacy-input-'));t.after(()=>fs.rmSync(root,{recursive:true,force:true}));
+ const input=path.join(root,'video.mp4'),voice=path.join(root,'voice.wav');fs.writeFileSync(input,'source');fs.writeFileSync(voice,'original voice');
+ const manager={ensureComponent:async()=>{fs.writeFileSync(voice,'replacement during component setup');return{component_id:'media.ffmpeg',version:'test'};}};
+ await assert.rejects(execute({module_id:'local.video.edit-timeline',input_path:input,parameters:{narration_path:voice}},{manager,outputDir:path.join(root,'out')}),{code:'INPUT_CHANGED'});
+});
 test('every local contract has a concrete executor and unique operation',()=>{
  assert.ok(operations.length>=100);assert.equal(new Set(operations.map(o=>o.id)).size,operations.length);
  for(const o of operations)assert.equal(typeof(o.apply||o.build||o.processFile||o.executeNative),'function');assert.equal(contracts().length,operations.length);

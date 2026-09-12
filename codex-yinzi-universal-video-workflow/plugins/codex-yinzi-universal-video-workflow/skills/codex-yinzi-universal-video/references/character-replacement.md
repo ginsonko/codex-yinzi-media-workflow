@@ -4,6 +4,49 @@ Use this reference for changing a face, full character, outfit or character styl
 
 ## Select a route
 
+For an ordinary single-character replacement, start with the shortest suitable
+route: one clear character image, the actual source video, and a concise prompt
+using the selected endpoint's reference syntax. Seedance 2.5 is a viable first
+choice when its current contract accepts those references. Do not require
+storyboards, reverse-prompting, extra character sheets or a local model install
+before the first already-authorized attempt. Reuse saved configuration and the
+durable video job instead of spending time repeatedly checking authentication.
+
+For example, with a contract that supports these mentions:
+
+```text
+将 @视频1 中的主角替换成 @图片1 的角色。保留原视频的动作、镜头、背景、节奏和时长，其余内容尽量不变。
+```
+
+Use the actual duration field and supported limits; text alone does not set
+duration. Clip the local reference to a requested interval when that interval
+matters, keeping the original. Every supplied reference needs its actual role.
+
+Upgrade only where it helps the requested result: source-grounded shot
+descriptions and edited storyboards for complex motion or identity; segmented
+editing for difficult cuts; tracked local layers for scene preservation;
+batch image2/image2.5 frame edits and supported interpolation for a local
+alternative. Interpolation cannot repair wrong poses, identity or occlusion.
+High quality means selecting useful preparation, not automatically adding all
+of these steps. Tell the user the chosen route and the specific reason to upgrade.
+
+Observed on 2026-09-13: a user supplied a roughly 21-second live-action source,
+a character portrait and a generated replacement, and approved the replacement
+quality from a short-prompt Seedance 2.5 attempt. Local comparison at nine source
+times confirmed recognizable target appearance/clothing and retained study-room
+scenery; framing and turn timing still differed around six seconds. This supports
+a practical fast route for similar work, not a guarantee of frame-identical
+replacement. Earlier failed cartoon-source trials remain failures of those
+samples; they do not establish that this model lacks character-replacement ability.
+
+The same user is investigating special filenames. Keep this as a hypothesis
+until request/upload evidence establishes causality. A renamed request's success
+alone is insufficient because upstream sampling and availability also vary.
+Use safe transport filenames and correct content types without renaming originals.
+A supplied portrait named `.jpg` was actually PNG: infer known formats from bytes,
+preserve unknown-format compatibility, and do not diagnose model failure from
+the extension alone. No new paid trial is required just to validate upload encoding.
+
 | Target | Candidate route | Evidence needed |
 | --- | --- | --- |
 | Replace the full character while retaining performance and recognizable surroundings | Reference-driven video editing/generation, including the user's selected Seedance model when its actual adapter can send video and image references | Same-source sample preserves character identity, action timing, camera, scene and occlusions |
@@ -32,7 +75,7 @@ For multiple actors, map each source actor using visible position, clothing, ent
 
 ## Construct the request
 
-For an existing-video recreation or replacement, derive a **source-grounded shot description** before composing the generation prompt. Read the actual video/keyframes and record each relevant source interval, visible action and expression changes, camera motion, scene/lettering/transition behavior, required edit, preserved elements, and corresponding frame IDs. This is often called reverse-prompting: it describes observed footage, not recovery of the creator's original prompt or diffusion inversion. Codex can perform the analysis directly from available media; a separate captioning service is optional and must not add an unnecessary installation or authentication step.
+When the task needs detailed temporal guidance or a simple replacement has failed quality, derive a **source-grounded shot description** before composing the upgraded generation prompt. Read the actual video/keyframes and record each relevant source interval, visible action and expression changes, camera motion, scene/lettering/transition behavior, required edit, preserved elements, and corresponding frame IDs. This is often called reverse-prompting: it describes observed footage, not recovery of the creator's original prompt or diffusion inversion. Codex can perform the analysis directly from available media; a separate captioning service is optional and must not add an unnecessary installation or authentication step.
 
 Select frames by the requested edit: include meaningful pose transitions, mouths/eyes, occlusions, camera changes and no-character intro/outro context. Resolve ambiguous advice such as "24/48 frames" into an actual interval or selected count for this source; neither is a universal sampling constant. Keep observed facts separate from inferred motion between sparse frames. Describe repeated action cycles separately when their timing, camera or captions differ.
 

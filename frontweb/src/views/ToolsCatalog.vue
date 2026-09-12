@@ -1,6 +1,7 @@
 <template>
   <div class="workbench-view">
     <div class="catalog-page">
+      <div class="tool-actions"><el-button @click="experiencesOpen = true">制作经验</el-button><el-button @click="toolOptionsOpen = true">探索制作方案</el-button></div>
       <section class="catalog-hero"><div><span class="kicker">CODEX 可以自己选工具</span><h2>从目标出发，不用记工具名字</h2><p>你只需要说想完成什么。Codex 会先看任务和素材，再从这张目录里组合合适的能力；需要人工处理的模块会明确标出来。</p></div><div class="catalog-count"><strong>{{ filtered.length }}</strong><span>个可见模块</span></div></section>
       <section v-if="runtimeProfile" class="runtime-banner">
         <div><strong>本机运行环境：{{ runtimeProfile.machine?.platform }} / {{ runtimeProfile.machine?.arch }}</strong><p>CPU {{ runtimeProfile.machine?.cpu_count || '?' }} 核 · 内存 {{ runtimeProfile.machine?.memory_gib || '?' }} GiB</p><small v-if="profileUpdatedAt">最近同步 {{ profileUpdatedAt }}</small></div>
@@ -19,6 +20,8 @@
       <section class="catalog-grid"><article v-for="item in filtered" :key="item.module_id" class="module-card"><header><span :class="['phase', phaseTone(item.phase)]">{{ phaseLabel(item.phase) }}</span><span :class="['availability', availabilityTone(item.availability)]">{{ availabilityLabel(item.availability) }}</span></header><h3>{{ item.title || item.module_id }}</h3><p>{{ item.description_zh || item.description }}</p><p v-if="item.example" class="example">例如：{{ item.example }}</p><details><summary>技术合同</summary><code>{{ item.module_id }}</code><div class="io"><div><small>需要</small><span v-for="input in item.inputs || []" :key="input">{{ input }}</span></div><div><small>产出</small><span v-for="output in item.outputs || []" :key="output">{{ output }}</span></div></div></details><footer><span v-if="item.executor">执行者：{{ executorLabel(item.executor) }}</span><span v-if="item.component_id" class="component-dependency">组件：{{ componentLabel(item.component_id) }}</span><span v-if="item.validation_status === 'verified_windows_fixture'" class="verified">Windows 样本实测</span><span v-if="item.auto_install" class="auto-install">缺少时自动准备</span><span v-if="item.side_effects?.paid" class="paid">可能产生费用</span><span v-else>本地或无费用</span><span v-if="item.registered" class="custom-tool">社区工具</span><el-button v-if="item.registered" size="small" text @click="openEditor(item)">编辑</el-button><el-button v-if="item.registered" size="small" text @click="toggleTool(item)">{{ item.enabled === false ? '启用' : '停用' }}</el-button><el-button v-if="item.registered" size="small" text type="danger" @click="removeTool(item)">删除</el-button></footer></article></section>
       <div v-if="!loading && !filtered.length" class="empty">没有匹配的模块。你仍然可以直接向 Codex 描述目标，它会把未知需求保留在计划中并说明下一步。</div>
     </div>
+    <MediaExperiencePanel v-model:open="experiencesOpen" />
+    <MediaToolOptionsPanel v-model:open="toolOptionsOpen" />
     <el-dialog v-model="editorVisible" :title="editingId ? '编辑工具' : '新增工具'" width="min(640px, calc(100vw - 28px))" destroy-on-close>
       <el-form label-position="top" @submit.prevent="saveTool">
         <div class="tool-form-grid"><el-form-item label="工具编号"><el-input v-model="form.module_id" :disabled="Boolean(editingId)" placeholder="例如 community.storyboard" /></el-form-item><el-form-item label="名称"><el-input v-model="form.title" placeholder="给用户看的名称" /></el-form-item><el-form-item label="版本轨道"><el-input v-model="form.version_track" placeholder="custom" /></el-form-item><el-form-item label="阶段"><el-select v-model="form.phase"><el-option v-for="value in ['intake','research','plan','create','edit','qa','deliver']" :key="value" :label="value" :value="value" /></el-select></el-form-item><el-form-item label="执行者"><el-select v-model="form.executor"><el-option v-for="value in ['codex','local','provider','manual']" :key="value" :label="value" :value="value" /></el-select></el-form-item><el-form-item label="可用性"><el-select v-model="form.availability"><el-option v-for="value in ['integrated','bridge','advisory']" :key="value" :label="value" :value="value" /></el-select></el-form-item></div>
@@ -35,6 +38,10 @@ import { useWorkbenchPage } from '@/composables/useWorkbenchPage'
 import { useLiveRefresh } from '@/composables/useLiveRefresh'
 import { componentStatus } from '@/utils/componentStatus'
 import orchestrationAPI from '@/api/orchestration'
+import MediaExperiencePanel from '@/components/MediaExperiencePanel.vue'
+import MediaToolOptionsPanel from '@/components/MediaToolOptionsPanel.vue'
+const toolOptionsOpen = ref(false)
+const experiencesOpen = ref(false)
 const items = ref([]); const query = ref(''); const track = ref(''); const loading = ref(false); const error = ref(''); const fileInput = ref(null); const runtimeProfile = ref(null)
 const editorVisible = ref(false); const editingId = ref('')
 const profileError = ref(''); const profileUpdatedAt = ref('')
@@ -42,7 +49,7 @@ const runtimeComponents = computed(() => (runtimeProfile.value?.components || []
 const form = reactive({ module_id:'', title:'', description_zh:'', version_track:'custom', phase:'create', executor:'codex', availability:'bridge', inputs:'', outputs:'', example:'', enabled:true })
 const filtered = computed(() => items.value.filter(item => (!track.value || item.version_track === track.value) && (!query.value || (item.module_id + ' ' + item.title + ' ' + item.description_zh + ' ' + item.description + ' ' + item.phase).toLowerCase().includes(query.value.toLowerCase()))))
 
-function phaseLabel(value) { return ({ intake: '准备', research: '研究', plan: '计划', create: '创作', edit: '剪辑', qa: '检查', deliver: '交付' })[value] || value || '其他' }
+function phaseLabel(value) { return ({ intake: '准备', analyze: '分析', research: '研究', plan: '计划', create: '创作', edit: '剪辑', qa: '检查', deliver: '交付' })[value] || value || '其他' }
 function phaseTone(value) { return value === 'qa' ? 'amber' : value === 'deliver' ? 'blue' : value === 'create' || value === 'edit' ? 'mint' : 'muted' }
 function availabilityLabel(value) { return ({ integrated: '已接入', bridge: 'Codex 调用', advisory: '规划参考' })[value] || value || '未知' }
 function availabilityTone(value) { return value === 'integrated' ? 'ready' : value === 'advisory' ? 'advisory' : 'bridge' }

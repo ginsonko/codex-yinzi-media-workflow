@@ -1072,7 +1072,7 @@ describe('YinziAPI asynchronous lifecycle', () => {
       return;
     }
     await sharp({ create: { width: 320, height: 180, channels: 3, background: '#315f73' } })
-      .png().toFile(path.join(storage, 'frame.png'));
+      .png().toFile(path.join(storage, '参考 图 #.jpg'));
     makeReferenceVideo(path.join(storage, 'motion.mp4'));
     fs.writeFileSync(path.join(storage, 'voice.mp3'), Buffer.from('audio'));
     let uploadCount = 0;
@@ -1081,6 +1081,10 @@ describe('YinziAPI asynchronous lifecycle', () => {
       if (String(url).endsWith('/files')) {
         uploadCount += 1;
         assert.ok(init.body instanceof FormData);
+        const uploaded = (await new Response(init.body).formData()).get('file');
+        assert.match(uploaded.name, /^reference-[0-9a-f]{20}\.[a-z0-9]+$/);
+        assert.equal(uploaded.type, ['image/png','video/mp4','audio/mpeg'][uploadCount-1]);
+        if (uploadCount === 1) assert.deepEqual(Buffer.from(await uploaded.arrayBuffer()), fs.readFileSync(path.join(storage, '参考 图 #.jpg')));
         return new Response(JSON.stringify({ id: `file-${uploadCount}` }), {
           status: 200,
           headers: { 'Content-Type': 'application/json' },
@@ -1097,7 +1101,7 @@ describe('YinziAPI asynchronous lifecycle', () => {
         base_url: 'https://api.yinziapi.top/v1', api_key: 'not-a-real-key', endpoint: '/videos',
       }, log, {
         model: 'mg-seedance2.0 -480p mini', prompt: 'test', duration: 5,
-        reference_urls: ['frame.png'],
+        reference_urls: ['参考 图 #.jpg'],
         reference_video_urls: ['motion.mp4'],
         reference_audio_urls: ['voice.mp3'],
         storage_local_path: storage,
@@ -1165,7 +1169,7 @@ describe('YinziAPI asynchronous lifecycle', () => {
       });
       assert.equal(result.task_id, 'task-bounded-image');
       assert.equal(uploadedFile.type, 'image/jpeg');
-      assert.match(uploadedFile.name, /yinzi-image-v1-jpeg1920-2m\.jpg$/);
+      assert.match(uploadedFile.name, /^reference-[0-9a-f]{20}\.jpg$/);
       assert.ok(uploadedFile.size <= 2 * 1024 * 1024);
       assert.deepEqual(fs.readFileSync(source), sourceBytes);
     } finally {
@@ -1250,8 +1254,8 @@ describe('YinziAPI asynchronous lifecycle', () => {
       ]);
       assert.deepEqual(uploads.map((file) => file.type), ['video/mp4', 'video/mp4']);
       assert.ok(uploads.every((file) => file.name.endsWith('.mp4')));
-      assert.match(uploads[0].name, /yinzi-ref-v3-fps24-1280x720\.mp4$/);
-      assert.match(uploads[1].name, /yinzi-ref-v3-fps24-1280x720\.mp4$/);
+      assert.match(uploads[0].name, /^reference-[0-9a-f]{20}\.mp4$/);
+      assert.match(uploads[1].name, /^reference-[0-9a-f]{20}\.mp4$/);
     } finally {
       global.fetch = originalFetch;
       db.close();

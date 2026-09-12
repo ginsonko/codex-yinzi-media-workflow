@@ -4,6 +4,8 @@ const {execute}=require('./localMediaExecutor');
 const {getOperation}=require('./localMediaOperations');
 const parameterSchemas=require('./localMediaParameterSchemas.json');
 const {sanitize}=require('./orchestrationService');
+const {createMediaExperiences,redact,summarizeParameters}=require('./mediaExperiences');
+const {snapshot:snapshotSources}=require('./localMediaSources');
 const connections=new WeakMap();
 const stamp=()=>new Date().toISOString();
 const fail=(code,message)=>Object.assign(new Error(message),{code});
@@ -12,9 +14,23 @@ function alive(pid){if(!pid)return false;try{process.kill(pid,0);return true;}ca
 function createLocalMediaJobs(db,cfg={},orchestration,injected={}){
   if(connections.has(db))return connections.get(db);
   db.exec(`CREATE TABLE IF NOT EXISTS local_media_jobs (id TEXT PRIMARY KEY,session_id TEXT NOT NULL,request_key TEXT NOT NULL,request_hash TEXT NOT NULL,status TEXT NOT NULL,owner_pid INTEGER,job_json TEXT NOT NULL,updated_at TEXT NOT NULL,UNIQUE(session_id,request_key))`);
+  db.exec(`CREATE TABLE IF NOT EXISTS local_media_attempt_receipts (request_key TEXT PRIMARY KEY,job_id TEXT NOT NULL,attempt INTEGER NOT NULL,status TEXT NOT NULL,receipt_json TEXT NOT NULL)`);
   const storage=path.resolve(cfg.storage?.local_path||'./data/storage');
   const manager=injected.manager||createComponentManager({root:path.resolve(cfg.media_components?.root||path.join(storage,'../media-components'))});
-  const running=new Map();let closed=false,retryTimer;const limit=machineProfile().recommended_concurrency;
+  const running=new Map();let closed=false,retryTimer,experienceRecovery;const limit=machineProfile().recommended_concurrency;
+  function remember(job){
+    try{
+      const key=`local-job:${job.id}:${job.attempt}:${job.status}`,result=job.result||{};
+      const snapshot=redact({id:job.id,session_id:job.session_id,attempt:job.attempt,status:job.status,operation_title:job.operation_title,
+        request:{module_id:job.request.module_id,parameters:summarizeParameters(redact(job.request.parameters||{})),input_identity:job.request.input_identity,sources:job.request.sources},
+        result:{component_id:result.component_id,component_version:result.component_version,components:result.components,input_sha256:result.input_sha256,
+          output_sha256:result.output_sha256,output_path:result.output_path,bytes:result.bytes,sources:result.sources,details:{quality_status:result.details?.quality_status}},error:job.error});
+      db.prepare('INSERT OR IGNORE INTO local_media_attempt_receipts VALUES (?,?,?,?,?)').run(key,job.id,job.attempt,job.status,JSON.stringify(snapshot));
+      const archived=JSON.parse(db.prepare('SELECT receipt_json FROM local_media_attempt_receipts WHERE request_key=?').get(key).receipt_json);
+      (injected.experiences||createMediaExperiences(db)).recordJob(archived);
+    }
+    catch(error){try{(injected.log||console).warn?.('media experience recording deferred',{job_id:job.id,code:error.code||'EXPERIENCE_WRITE_FAILED'});}catch{}}
+  }
   const get=id=>{const row=db.prepare('SELECT job_json FROM local_media_jobs WHERE id=?').get(id);return row?JSON.parse(row.job_json):null;};
   const save=db.transaction(job=>{const previous=db.prepare('SELECT status FROM local_media_jobs WHERE id=?').get(job.id);job.updated_at=stamp();db.prepare('UPDATE local_media_jobs SET status=?,owner_pid=?,job_json=?,updated_at=? WHERE id=?').run(job.status,job.owner_pid||null,JSON.stringify(job),job.updated_at,job.id);if(!job.node_id&&previous?.status!==job.status)orchestration?.syncLocalJobStatus(job.session_id);return job;});
   function list(sessionId){return db.prepare('SELECT job_json FROM local_media_jobs WHERE session_id=? ORDER BY updated_at DESC LIMIT 100').all(sessionId).map(row=>JSON.parse(row.job_json));}
@@ -51,11 +67,13 @@ function createLocalMediaJobs(db,cfg={},orchestration,injected={}){
       if(job.node_id)orchestration.updateNode(job.session_id,job.node_id,{status:'succeeded',output_refs:[{type:'artifact',id:'local-media:'+job.id}],actor:'system'});
       emit(job,{stage:'succeeded',message:receipt.details?.quality_status==='review_required'?'处理结果已保存，内容待核对':'成果已保存并验证，可继续下一步'});
       })();
+      remember(job);
     }catch(e){
       const transient=['COMPONENT_DOWNLOAD_FAILED','INCOMPLETE_DOWNLOAD','ECONNRESET','ETIMEDOUT','ENOTFOUND','EAI_AGAIN'].includes(e.code)||e.name==='AbortError'||e.name==='TypeError'&&/fetch failed/.test(e.message);
-      if(transient&&job.attempt<3){job.status='queued';job.next_retry_at=Date.now()+(injected.retryDelayMs??Math.min(30000,3000*job.attempt));save(job);emit(job,{stage:'retry_wait',message:'下载暂时中断，已保留进度，将自动重试并继续原任务',retry_at:new Date(job.next_retry_at).toISOString()});return;}
+      if(transient&&job.attempt<3){remember({...job,status:'failed',error:{code:e.code||'LOCAL_MEDIA_FAILED',message:sanitize(String(e.message)).slice(-1800)}});job.status='queued';job.next_retry_at=Date.now()+(injected.retryDelayMs??Math.min(30000,3000*job.attempt));save(job);emit(job,{stage:'retry_wait',message:'下载暂时中断，已保留进度，将自动重试并继续原任务',retry_at:new Date(job.next_retry_at).toISOString()});return;}
       job.status='failed';job.error={code:e.code||'LOCAL_MEDIA_FAILED',message:sanitize(String(e.message)).slice(-1800),retryable:true};save(job);emit(job,{stage:'failed',message:job.error.message});
       if(job.node_id){try{orchestration.updateNode(job.session_id,job.node_id,{status:'failed',error:job.error,actor:'system'});}catch{}}
+      remember(job);
     }finally{running.delete(job.id);if(!closed)pump();}
   }
   function pump(){if(closed)return;clearTimeout(retryTimer);const available=limit-running.size;if(available<=0)return;
@@ -86,10 +104,16 @@ function createLocalMediaJobs(db,cfg={},orchestration,injected={}){
     }
     if(op.build)op.build(parameters);
     const input_identity={size:stat.size,mtime_ms:stat.mtimeMs,ctime_ms:stat.ctimeMs,ino:stat.ino};
-    const request={module_id:op.id,input_path:input,input_identity,parameters};const hash=crypto.createHash('sha256').update(JSON.stringify(stable({...request,node_key:body.node_key||null}))).digest('hex');
+    const legacyRequest={module_id:op.id,input_path:input,input_identity,parameters};
+    const sources=snapshotSources({...legacyRequest,sources:body.sources});
+    const request={...legacyRequest,sources};const hash=crypto.createHash('sha256').update(JSON.stringify(stable({...request,node_key:body.node_key||null}))).digest('hex');
     return db.transaction(()=>{
       const previous=db.prepare('SELECT id,request_hash FROM local_media_jobs WHERE session_id=? AND request_key=?').get(sessionId,requestKey);
-      if(previous){if(previous.request_hash!==hash)throw fail('REQUEST_HASH_CONFLICT','同一请求键的素材或参数已变化');return{...get(previous.id),reused:true};}
+      if(previous){
+        const old=get(previous.id);
+        const legacyHash=!body.sources&&!old.request.sources?crypto.createHash('sha256').update(JSON.stringify(stable({...legacyRequest,node_key:body.node_key||null}))).digest('hex'):null;
+        if(previous.request_hash!==hash&&previous.request_hash!==legacyHash)throw fail('REQUEST_HASH_CONFLICT','同一请求键的素材或参数已变化');return{...old,reused:true};
+      }
       let nodeId=null;if(body.node_key){const node=orchestration.getBundle(sessionId).nodes.find(n=>n.node_key===body.node_key||n.id===body.node_key);if(!node||node.module_id!==op.id)throw fail('NODE_MISMATCH','节点与所选操作不匹配');nodeId=node.id;}
       const job={id:crypto.randomUUID(),session_id:sessionId,request_key:requestKey,request_hash:hash,node_id:nodeId,operation_title:op.title,request,status:'queued',attempt:0,created_at:stamp(),updated_at:stamp(),events:[],progress:{stage:'queued',message:'已排队，组件就绪后自动处理'}};
       db.prepare('INSERT INTO local_media_jobs (id,session_id,request_key,request_hash,status,job_json,updated_at) VALUES (?,?,?,?,?,?,?)').run(job.id,sessionId,requestKey,hash,job.status,JSON.stringify(job),job.updated_at);
@@ -101,9 +125,35 @@ function createLocalMediaJobs(db,cfg={},orchestration,injected={}){
     if(job.node_id)orchestration.retryNode(job.session_id,job.node_id,{actor:'system'});job.status='queued';job.error=null;save(job);setImmediate(pump);return job;}
   function recover(){for(const row of db.prepare("SELECT * FROM local_media_jobs WHERE status IN ('queued','running')").all()){
     if(row.status==='running'&&alive(row.owner_pid))continue;const job=JSON.parse(row.job_json);job.status='queued';job.owner_pid=null;save(job);
-  }pump();}
+  }pump();
+    // Rebuild only missing experience receipts from persisted terminal jobs.
+    // This never runs media again, and history is traversed in bounded pages.
+    let after='';
+    function backfill(){
+      if(closed)return;
+      try{
+        createMediaExperiences(db);
+        const rows=db.prepare(`SELECT id,job_json FROM local_media_jobs j WHERE status IN ('succeeded','failed') AND id>?
+          AND NOT EXISTS (SELECT 1 FROM media_experiences e WHERE e.request_key='local-job:'||j.id||':'||json_extract(j.job_json,'$.attempt')||':'||j.status)
+          ORDER BY id LIMIT 100`).all(after);
+        for(const row of rows)remember(JSON.parse(row.job_json));
+        if(rows.length===100){after=rows[rows.length-1].id;experienceRecovery=setImmediate(backfill);}
+        else experienceRecovery=setImmediate(()=>backfillAttempts(''));
+      }catch(error){try{(injected.log||console).warn?.('media experience recovery deferred',{code:error.code||'EXPERIENCE_RECOVERY_FAILED'});}catch{}}
+    }
+    function backfillAttempts(afterKey){
+      if(closed)return;
+      try{
+        const rows=db.prepare(`SELECT request_key,receipt_json FROM local_media_attempt_receipts a WHERE request_key>?
+          AND NOT EXISTS (SELECT 1 FROM media_experiences e WHERE e.request_key=a.request_key) ORDER BY request_key LIMIT 100`).all(afterKey);
+        for(const row of rows)remember(JSON.parse(row.receipt_json));
+        if(rows.length===100)experienceRecovery=setImmediate(()=>backfillAttempts(rows[rows.length-1].request_key));
+      }catch(error){try{(injected.log||console).warn?.('media attempt experience recovery deferred',{code:error.code||'EXPERIENCE_RECOVERY_FAILED'});}catch{}}
+    }
+    clearImmediate(experienceRecovery);experienceRecovery=setImmediate(backfill);
+  }
   const api={create,get,list,resume,manager,recover,activeCount:()=>db.prepare("SELECT COUNT(*) n FROM local_media_jobs WHERE status IN ('queued','running')").get().n,
-    waitForIdle:async()=>{pump();while(running.size||db.prepare("SELECT COUNT(*) n FROM local_media_jobs WHERE status='queued'").get().n){if(running.size)await Promise.allSettled([...running.values()]);else await new Promise(resolve=>setTimeout(resolve,25));}},close:async()=>{closed=true;clearTimeout(retryTimer);await Promise.allSettled([...running.values()]);}};
+    waitForIdle:async()=>{pump();while(running.size||db.prepare("SELECT COUNT(*) n FROM local_media_jobs WHERE status='queued'").get().n){if(running.size)await Promise.allSettled([...running.values()]);else await new Promise(resolve=>setTimeout(resolve,25));}},close:async()=>{closed=true;clearTimeout(retryTimer);clearImmediate(experienceRecovery);await Promise.allSettled([...running.values()]);}};
   connections.set(db,api);return api;
 }
 module.exports={createLocalMediaJobs};

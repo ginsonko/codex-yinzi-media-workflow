@@ -18,7 +18,9 @@ function recordPollProgress(db, videoGenId, providerTaskId, observation) {
   const state = observation.status;
   const waiting = ['queued', 'pending', 'submitted', 'waiting'].includes(state);
   const finished = ['completed', 'succeeded', 'success', 'done', 'finalizing'].includes(state);
-  const label = finished ? '上游已结束生成，正在准备取回成片' : waiting ? '上游正在排队' : '已查询上游，正在等待生成结果';
+  const failed = ['failed', 'failure', 'error', 'cancelled', 'canceled'].includes(state);
+  const label = failed ? '上游未完成生成，正在记录失败原因'
+    : finished ? '上游已结束生成，正在准备取回成片' : waiting ? '上游正在排队' : '已查询上游，正在等待生成结果';
   const percent = observation.progress;
   const hasProgress = typeof percent === 'number' && Number.isFinite(percent) && percent >= 0 && percent <= 100;
   // Local completion still requires the existing finalization/download path.

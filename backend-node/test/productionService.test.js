@@ -60,6 +60,20 @@ beforeEach(() => {
 afterEach(() => db.close());
 
 describe('production executor text stages', () => {
+  it('defers provider file references without claiming local readability', () => {
+    const run = createRun();
+    const service = createProductionService(db, {}, log, {});
+    const result = service.preflight(run.id, {
+      reference_media: ['file_id:file_saved', 'https://media.example/reference.mp4'],
+    });
+    const check = result.checks.find(item => item.key === 'local_assets');
+    assert.equal(check.ok, true);
+    assert.equal(result.issues.some(item => item.key === 'local_assets'), false);
+    assert.match(check.detail, /2 个非本地引用/);
+    assert.doesNotMatch(check.detail, /可读取/);
+    assert.equal(check.items[0].readable, null);
+  });
+
   it('uses one bounded non-stream JSON request for storyboard planning', async () => {
     let run = createRun('auto_accept');
     run = repo.updateRun(db, run.id, {

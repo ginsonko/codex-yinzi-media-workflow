@@ -2,6 +2,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { getOperation } = require('./localMediaOperations');
 const { createComponentManager, run, sha256, writeJson } = require('./componentRuntime');
+const { sourcesFor, identity:sourceIdentity, verify:verifySources } = require('./localMediaSources');
 async function execute(request, options = {}) {
   const op = getOperation(request.module_id); if (!op) throw Error('该合同尚无本地执行器');
   const input = path.resolve(request.input_path || '');
@@ -9,17 +10,24 @@ async function execute(request, options = {}) {
   fs.accessSync(input, fs.constants.R_OK);
   const dir = path.resolve(options.outputDir); fs.mkdirSync(dir, { recursive: true });
   const params = { ...op.defaults, ...(request.parameters || {}) };
+  // Old jobs may predate auxiliary-source snapshots. Capture their current
+  // files before component preparation; this cannot prove historical identity.
+  const sources = sourcesFor(request).map(source => ({...source,
+    identity:source.identity || sourceIdentity(source.path),identity_basis:source.identity ? 'queued_snapshot' : 'execution_start'}));
+  verifySources(sources);
   const manager = options.manager || createComponentManager();
   const report = options.onProgress || (() => {});
   report({ stage: 'preflight', message: '输入已就绪，正在准备所需组件' });
   const component = op.component_id ? await manager.ensureComponent(op.component_id, report) : { component_id: 'builtin', version: process.version, reused: true };
   const components = op.component_id ? { [op.component_id]: component } : {};
   for (const id of op.additional_components || []) components[id] = await manager.ensureComponent(id, report);
-  if (request.input_identity) {
-    const current=fs.statSync(input),expected=request.input_identity;
-    if(current.size!==expected.size || current.mtimeMs!==expected.mtime_ms || current.ctimeMs!==expected.ctime_ms || current.ino!==expected.ino) throw Object.assign(Error('排队期间原素材已变化，请使用当前素材建立新处理请求'),{code:'INPUT_CHANGED'});
+  verifySources(sources);
+  const hashes = new Map();
+  for (const source of sources) {
+    if (!hashes.has(source.path)) hashes.set(source.path, await sha256(source.path));
+    source.sha256 = hashes.get(source.path);
   }
-  const inputHash = await sha256(input);
+  const inputHash = hashes.get(input);
   report({ stage: 'executing', message: op.title + '，完成后自动检查成果' });
   // Keep the container/codec extension aligned with the Sharp operation. A
   // mismatched extension makes downstream previews and MIME sniffers report a
@@ -31,7 +39,7 @@ async function execute(request, options = {}) {
   const ext = op.output_extension || (op.kind === 'audio' ? 'wav' : op.kind === 'video' ? 'mp4' : imageExt);
   const output = path.join(dir, 'result.' + ext); let details;
   if (op.executeNative) {
-    const perform = () => op.executeNative({ inputPath: input, outputPath: output, parameters: params, components, report });
+    const perform = () => op.executeNative({ inputPath: input, outputPath: output, parameters: params, components, report, sources, integrityManaged: true });
     details = op.resource_group ? await manager.withResource(op.resource_group, perform) : await perform();
   } else if (op.kind === 'image' || op.processFile) {
     const workerInput = path.join(dir, 'image-job.json');
@@ -68,11 +76,12 @@ async function execute(request, options = {}) {
   }
   report({ stage: 'validating', message: '已生成成果，正在校验源文件和输出' });
   if (op.validateResult) op.validateResult(details, params);
-  if (inputHash !== await sha256(input)) throw Error('原素材发生变化，需核对');
+  verifySources(sources);
+  for (const [file, hash] of hashes) if (hash !== await sha256(file)) throw Object.assign(Error('处理期间输入素材发生变化，请核对原文件'),{code:'INPUT_CHANGED'});
   const receipt = { schema_version:1,module_id:op.id,component_id:component.component_id,component_version:component.version,
     components: Object.values(components).map(value => ({ component_id: value.component_id, version: value.version, reused: Boolean(value.reused) })),
     component_reused:Boolean(component.reused),status:'succeeded',input_sha256:inputHash,output_sha256:await sha256(output),bytes:fs.statSync(output).size,
-    output_path:output,parameters:params,details,verified_at:new Date().toISOString() };
+    output_path:output,parameters:params,sources,details,verified_at:new Date().toISOString() };
   writeJson(path.join(dir,'receipt.json'),receipt); report({stage:'validated',message:'素材检查通过，正在保存成果记录'}); return receipt;
 }
 module.exports = { execute };

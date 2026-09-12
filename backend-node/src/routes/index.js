@@ -104,6 +104,11 @@ function setupRouter(cfg, db, log, injected = {}) {
   r.get('/media-components/:componentId', orchestration.componentState);
   r.post('/media-components/ensure', orchestration.ensureComponent);
   r.get('/local-media/jobs', orchestration.listLocalMediaJobs);
+  r.get('/media-tool-options', orchestration.listMediaToolOptions);
+  r.get('/media-tool-options/:id', orchestration.getMediaToolOption);
+  r.get('/media-experiences', orchestration.listMediaExperiences);
+  r.post('/media-experiences', orchestration.recordMediaExperience);
+  r.get('/media-experiences/:experienceId', orchestration.getMediaExperience);
   r.post('/local-media/jobs', orchestration.createLocalMediaJob);
   r.get('/local-media/jobs/:jobId', orchestration.getLocalMediaJob);
   r.post('/local-media/jobs/:jobId/resume', orchestration.resumeLocalMediaJob);

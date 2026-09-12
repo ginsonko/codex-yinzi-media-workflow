@@ -5,6 +5,39 @@ const { pollVideoTask } = require('../src/services/videoClient');
 const { pollObservation, recordPollProgress } = require('../src/services/videoPollProgress');
 const log = { info() {}, warn() {}, error() {} };
 
+it('replaces waiting text with the actual failure and does not revive a failed task', () => {
+  const db = new Database(':memory:');
+  db.exec(`CREATE TABLE video_generations (id INTEGER, status TEXT, provider_task_id TEXT, task_id TEXT, deleted_at TEXT);
+    CREATE TABLE async_tasks (id TEXT, status TEXT, progress REAL, message TEXT, error TEXT, updated_at TEXT, completed_at TEXT, deleted_at TEXT);
+    INSERT INTO video_generations VALUES (1,'processing','provider-task','local-task',NULL);
+    INSERT INTO async_tasks VALUES ('local-task','processing',99,'等待生成结果',NULL,NULL,NULL,NULL);`);
+  try {
+    recordPollProgress(db, 1, 'provider-task', { status: 'failed', progress: 100 });
+    let row = db.prepare('SELECT * FROM async_tasks').get();
+    assert.doesNotMatch(row.message, /等待生成结果|取回成片/);
+    require('../src/services/taskService').updateTaskError(db, 'local-task', 'task failed');
+    row = db.prepare('SELECT * FROM async_tasks').get();
+    assert.equal(row.status, 'failed');
+    assert.equal(row.message, 'task failed');
+    assert.equal(row.error, 'task failed');
+    assert.ok(row.completed_at);
+    assert.equal(recordPollProgress(db, 1, 'provider-task', { status: 'processing', progress: 100 }), false);
+    assert.equal(db.prepare('SELECT message FROM async_tasks').get().message, 'task failed');
+  } finally { db.close(); }
+});
+
+it('retains failure message compatibility with databases without an error column', () => {
+  const db = new Database(':memory:');
+  db.exec(`CREATE TABLE async_tasks (id TEXT, status TEXT, progress REAL, message TEXT, updated_at TEXT, completed_at TEXT);
+    INSERT INTO async_tasks VALUES ('old-task','processing',99,'等待生成结果',NULL,NULL);`);
+  try {
+    require('../src/services/taskService').updateTaskError(db, 'old-task', 'upstream timeout');
+    const row = db.prepare('SELECT * FROM async_tasks').get();
+    assert.equal(row.status, 'failed');
+    assert.equal(row.message, 'upstream timeout');
+  } finally { db.close(); }
+});
+
 it('persists real provider progress during polling while retaining local delivery and cancellation states', async () => {
   const db = new Database(':memory:');
   db.exec(`CREATE TABLE video_generations (id INTEGER, status TEXT, provider_task_id TEXT, task_id TEXT, deleted_at TEXT);

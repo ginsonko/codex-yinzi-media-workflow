@@ -1,3 +1,4 @@
+const { uploadMetadata, appendReferenceFile } = require('../utils/uploadMetadata');
 // ? Go pkg/video + VideoGenerationService ????????? API??????(????)
 const fs = require('fs');
 const path = require('path');
@@ -3303,7 +3304,7 @@ async function uploadYinziReferenceFile(config, filePath, type, capability, log,
   const base = String(config.base_url || 'https://api.yinziapi.top/v1').replace(/\/$/, '');
   const form = new FormData();
   form.append('purpose', 'user_data');
-  form.append('file', new Blob([fs.readFileSync(uploadPath)], { type: mimeTypeForReference(uploadPath, type) }), path.basename(uploadPath));
+  appendReferenceFile(form, 'file', fs.readFileSync(uploadPath), uploadPath, mimeTypeForReference(uploadPath, type));
   const response = await fetch(`${base}/files`, {
     method: 'POST',
     headers: { Authorization: 'Bearer ' + (config.api_key || '') },
@@ -3326,9 +3327,11 @@ async function uploadYinziReferenceFile(config, filePath, type, capability, log,
 // in memory and is never written to logs or receipts.
 function localImageDataUrl(filePath) {
   const ext = path.extname(filePath).toLowerCase();
-  const mime = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp' }[ext];
-  if (!mime) throw new Error('YinziAPI 图片参考只支持 PNG、JPEG 或 WebP');
   const bytes = fs.readFileSync(filePath);
+  const declaredMime = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp' }[ext];
+  const metadata = uploadMetadata(bytes, filePath, declaredMime || 'application/octet-stream');
+  const mime = metadata.detected ? metadata.mime : declaredMime;
+  if (!mime?.startsWith('image/')) throw new Error('YinziAPI 图片参考需要可识别的图片格式');
   return { data_url: `data:${mime};base64,${bytes.toString('base64')}`, bytes: bytes.length, mime };
 }
 
@@ -3912,6 +3915,9 @@ async function callSoraVideoApi(config, log, opts) {
 
   let bodyBuffer;
   if (imageBuffer) {
+    const metadata = uploadMetadata(imageBuffer, imageFilename, imageMime);
+    imageFilename = metadata.filename;
+    imageMime = metadata.mime;
     const imgHeader = `--${boundary}\r\nContent-Disposition: form-data; name="input_reference"; filename="${imageFilename}"\r\nContent-Type: ${imageMime}\r\n\r\n`;
     bodyBuffer = Buffer.concat([
       Buffer.from(textPart, 'utf-8'),
@@ -4138,8 +4144,7 @@ async function callJimengAiApiVideo(config, log, opts) {
     form.append('duration', String(dur));
     form.append('resolution', resolution);
     for (const { buffer, filename } of fileParts) {
-      const blob = new Blob([buffer]);
-      form.append('files', blob, filename || 'image.jpg');
+      appendReferenceFile(form, 'files', buffer, filename || 'image.jpg', 'application/octet-stream');
     }
     fetchOpts.body = form;
     log.info('[JimengAI] multipart 提交', {

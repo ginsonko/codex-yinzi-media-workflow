@@ -39,9 +39,9 @@ function updateTaskError(db, taskId, errMsg) {
   const now = new Date().toISOString();
   try {
     db.prepare(
-      `UPDATE async_tasks SET status = 'failed', error = ?, progress = 0, completed_at = ?, updated_at = ?
+      `UPDATE async_tasks SET status = 'failed', error = ?, message = ?, progress = 0, completed_at = ?, updated_at = ?
        WHERE id = ?`
-    ).run(errMsg || '', now, now, taskId);
+    ).run(errMsg || '', errMsg || '任务失败', now, now, taskId);
   } catch (e) {
     if ((e.message || '').includes('error')) {
       updateTaskStatus(db, taskId, 'failed', 0, errMsg || '任务失败');

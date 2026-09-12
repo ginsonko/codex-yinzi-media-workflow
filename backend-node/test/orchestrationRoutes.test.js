@@ -23,6 +23,9 @@ beforeEach(async () => {
   app.get('/api/modules', routes.listModules);
   app.get('/api/modules/:moduleId', routes.getModule);
   app.get('/api/onboarding', routes.onboarding);
+  app.get('/api/experiences', routes.listMediaExperiences);
+  app.get('/api/experiences/:experienceId', routes.getMediaExperience);
+  app.post('/api/experiences', routes.recordMediaExperience);
   app.get('/api/sessions', routes.listSessions);
   app.post('/api/sessions', routes.createSession);
   app.get('/api/sessions/:id', routes.getSession);
@@ -52,6 +55,17 @@ beforeEach(async () => {
 afterEach(async () => { await new Promise((resolve) => server.close(resolve)); db.close(); });
 
 describe('Codex orchestration HTTP contract', () => {
+  it('experience HTTP requests distinguish reuse, conflicts and missing correction targets', async () => {
+    const post=body=>request('/experiences',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)});
+    const body={request_key:'local-method-one',title:'真实本地处理记录',source:'agent_note',guidance:{method:'保留同一作业恢复'}};
+    const first=await post(body);assert.equal(first.status,201);
+    const reused=await post(body);assert.equal(reused.body.data.id,first.body.data.id);assert.equal(reused.body.data.reused,true);
+    const conflict=await post({...body,title:'different'});assert.equal(conflict.status,409);assert.equal(conflict.body.error.code,'EXPERIENCE_REQUEST_CONFLICT');
+    const absent=await post({...body,request_key:'correction',supersedes_id:'missing'});assert.equal(absent.status,404);
+    const spoof=await post({...body,request_key:'spoof',source:'system_receipt'});assert.equal(spoof.status,400);
+    assert.equal((await request('/experiences')).body.data.total,1);
+    assert.equal((await request('/experiences/'+first.body.data.id)).body.data.guidance.method,body.guidance.method);
+  });
   it('returns a secret-free low-gate onboarding snapshot', async () => {
     const onboarding = await request('/onboarding');
     assert.equal(onboarding.status, 200);
