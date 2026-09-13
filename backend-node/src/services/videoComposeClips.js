@@ -1,6 +1,9 @@
+const { streamDuration } = require('./mediaStreamTiming');
+const { filterGraphArgs } = require('./mediaFilterGraph');
 const fs = require('node:fs');
 const path = require('node:path');
 const { run, sha256 } = require('./componentRuntime');
+const { transitions, transitionIds } = require('./videoTransitions');
 
 const fail = (message, code = 'COMPOSE_CLIPS_INVALID_INPUT') =>
   Object.assign(new Error(message), { code });
@@ -94,14 +97,17 @@ function validateAndPlanTimeline(clips, sourceDurations, fps = 24) {
     let transition = 'cut';
     let transitionDuration = 0;
 
+    if (i === 0 && c.transition != null && c.transition !== 'cut') {
+      throw fail('第一个片段没有前置画面，不能设置入场转场；请在第二个及之后片段设置');
+    }
     if (i > 0) {
       const rawTrans = c.transition ?? 'cut';
-      if (rawTrans !== 'cut' && rawTrans !== 'fade') {
-        throw fail(`片段 [${i}] 转场类型 (${rawTrans}) 不受支持，仅支持 'cut' 或 'fade'`);
+      if (!transitionIds.includes(rawTrans)) {
+        throw fail(`片段 [${i}] 转场类型 (${rawTrans}) 不受支持，请使用合同中的内置转场名称`);
       }
       transition = rawTrans;
 
-      if (transition === 'fade') {
+      if (transition !== 'cut') {
         transitionDuration = number(
           c.transition_duration ?? 0.5,
           `片段 [${i}] transition_duration`,
@@ -130,8 +136,8 @@ function validateAndPlanTimeline(clips, sourceDurations, fps = 24) {
   // For each intermediate clip i, the sum of incoming fade and outgoing fade
   // cannot exceed clip i's duration.
   for (let i = 0; i < rawPlanned.length; i++) {
-    const incomingFade = rawPlanned[i].transition === 'fade' ? rawPlanned[i].transition_duration : 0;
-    const outgoingFade = (i + 1 < rawPlanned.length && rawPlanned[i + 1].transition === 'fade')
+    const incomingFade = rawPlanned[i].transition !== 'cut' ? rawPlanned[i].transition_duration : 0;
+    const outgoingFade = (i + 1 < rawPlanned.length && rawPlanned[i + 1].transition !== 'cut')
       ? rawPlanned[i + 1].transition_duration
       : 0;
 
@@ -254,7 +260,7 @@ async function composeClips({ inputPath, outputPath, parameters: p = {}, compone
       throw fail(`素材源 [${i}] (${path.basename(resolvedPath)}) 未包含有效视频流`);
     }
 
-    const duration = Number(videoStream.duration || metadata.format?.duration);
+    const duration = await streamDuration({stream:videoStream,inputPath:resolvedPath,ffprobe:ffprobeBin,runner});
     if (!Number.isFinite(duration) || duration <= 0) {
       throw fail(`素材源 [${i}] 无法读取有效视频时长`);
     }
@@ -390,12 +396,13 @@ async function composeClips({ inputPath, outputPath, parameters: p = {}, compone
     ].join(',');
     filterChains.push(vFilter);
 
-    // Audio pipeline
-    if (audioMode === 'source') {
+    // A matching audio clock also preserves single-frame segment duration in
+    // concat. In silent-output mode this clock is discarded before encoding.
+    {
       const src = probedSources[clip.source];
       const relativeAudioStart=src.audio_start-src.video_start;
       const knownAudioEnd=Number.isFinite(src.audio_duration)&&src.audio_duration>0 ? relativeAudioStart+src.audio_duration : Infinity;
-      if (src.audio && relativeAudioStart < clip.source_out && knownAudioEnd > clip.source_in) {
+      if (audioMode === 'source' && src.audio && relativeAudioStart < clip.source_out && knownAudioEnd > clip.source_in) {
         // apad + atrim=duration ensures that even if audio stream is shorter than the requested video segment,
         // it will be padded with exact silence to prevent audio from shifting early.
         const aFilter = [
@@ -423,52 +430,43 @@ async function composeClips({ inputPath, outputPath, parameters: p = {}, compone
 
   // Step 2: Assemble clips sequentially using concat or xfade/acrossfade
   let currentV = '[v_clip_0]';
-  let currentA = audioMode === 'source' ? '[a_clip_0]' : null;
+  let currentA = '[a_clip_0]';
   let accumulatedOffset = plannedClips[0].duration;
 
   for (let i = 1; i < plannedClips.length; i++) {
     const clip = plannedClips[i];
     const nextV = `[v_clip_${i}]`;
-    const nextA = audioMode === 'source' ? `[a_clip_${i}]` : null;
+    const nextA = `[a_clip_${i}]`;
 
     const outV = i === plannedClips.length - 1 ? '[outv]' : `[v_stage_${i}]`;
-    const outA = audioMode === 'source'
-      ? (i === plannedClips.length - 1 ? '[outa]' : `[a_stage_${i}]`)
-      : null;
+    const outA = i === plannedClips.length - 1 ? '[outa]' : `[a_stage_${i}]`;
 
-    if (clip.transition === 'fade') {
+    if (clip.transition !== 'cut') {
       const offset = accumulatedOffset - clip.transition_duration;
       // Video crossfade
-      filterChains.push(`${currentV}${nextV}xfade=transition=fade:duration=${clip.transition_duration}:offset=${offset.toFixed(6)}${outV}`);
+      filterChains.push(`${currentV}${nextV}xfade=transition=${clip.transition}:duration=${clip.transition_duration}:offset=${offset.toFixed(6)}${outV}`);
       // Audio crossfade
-      if (audioMode === 'source') {
-        filterChains.push(`${currentA}${nextA}acrossfade=d=${clip.transition_duration}${outA}`);
-      }
+      filterChains.push(`${currentA}${nextA}acrossfade=d=${clip.transition_duration}${outA}`);
       accumulatedOffset = offset + clip.duration;
     } else {
       // Hard cut (concat)
-      filterChains.push(`${currentV}${nextV}concat=n=2:v=1:a=0${outV}`);
-      if (audioMode === 'source') {
-        filterChains.push(`${currentA}${nextA}concat=n=2:v=0:a=1${outA}`);
-      }
+      filterChains.push(`${currentV}${currentA}${nextV}${nextA}concat=n=2:v=1:a=1${outV}${outA}`);
       accumulatedOffset += clip.duration;
     }
 
     currentV = outV;
-    if (audioMode === 'source') {
-      currentA = outA;
-    }
+    currentA = outA;
   }
 
   // If only 1 clip, map directly
   if (plannedClips.length === 1) {
     filterChains.push(`${currentV}null[outv]`);
-    if (audioMode === 'source') {
-      filterChains.push(`${currentA}anull[outa]`);
-    }
+    filterChains.push(`${currentA}anull[outa]`);
   }
 
-  ffmpegArgs.push('-filter_complex', filterChains.join(';'));
+  if (audioMode === 'none') filterChains.push('[outa]anullsink');
+
+  ffmpegArgs.push(...filterGraphArgs(outputPath, filterChains));
   ffmpegArgs.push('-map', '[outv]');
   if (audioMode === 'source') {
     ffmpegArgs.push('-map', '[outa]');
@@ -570,7 +568,7 @@ async function composeClips({ inputPath, outputPath, parameters: p = {}, compone
 module.exports = {
   id: 'local.video.compose-clips',
   title: '多素材视频剪辑合成原生执行器',
-  description: '支持多个不同尺寸、帧率及有声/无声音视频素材的有序重剪，支持硬切与平滑淡化转场，采用 contain 补黑边对齐画幅，对齐 timebase 与采样率。',
+  description: '多素材有序剪辑，支持硬切与擦除、推移、圆形、溶解、像素、推近等内置转场；按片段设置衔接方式和时长，保留音视频时间关系。',
   kind: 'video',
   component_id: 'media.ffmpeg',
   source: 'https://ffmpeg.org/ffmpeg-filters.html#xfade',
@@ -582,6 +580,7 @@ module.exports = {
   executeNative: composeClips,
   validateSources,
   validateAndPlanTimeline,
+  transitions,
   RESOURCE_LIMITS,
   parameter_schema: {
     type: 'object',
@@ -594,8 +593,8 @@ module.exports = {
             source: { type: 'integer', minimum: 0, title: '素材源数字索引' },
             source_in: { type: 'number', minimum: 0, title: '片段源入点秒数' },
             source_out: { type: 'number', minimum: 0, title: '片段源出点秒数' },
-            transition: { type: 'string', enum: ['cut', 'fade'], default: 'cut', title: '转场方式' },
-            transition_duration: { type: 'number', minimum: 0.01, maximum: 30, default: 0.5, title: '淡化时长秒数' }
+            transition: { type: 'string', enum: transitionIds, default: 'cut', title: '转场方式', description: transitions.map(t=>`${t.id}：${t.title}`).join('；') },
+            transition_duration: { type: 'number', minimum: 0.01, maximum: 30, default: 0.5, title: '转场重叠时长（秒）' }
           },
           required: ['source', 'source_in', 'source_out']
         },

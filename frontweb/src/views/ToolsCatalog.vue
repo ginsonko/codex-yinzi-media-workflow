@@ -1,7 +1,7 @@
 <template>
   <div class="workbench-view">
     <div class="catalog-page">
-      <div class="tool-actions"><el-button @click="experiencesOpen = true">制作经验</el-button><el-button @click="toolOptionsOpen = true">探索制作方案</el-button></div>
+      <div class="tool-actions"><el-button @click="experiencesOpen = true">制作经验</el-button><el-button @click="toolOptionsOpen = true">探索制作方案</el-button><el-button @click="transitionsOpen = true">转场预览</el-button></div>
       <section class="catalog-hero"><div><span class="kicker">CODEX 可以自己选工具</span><h2>从目标出发，不用记工具名字</h2><p>你只需要说想完成什么。Codex 会先看任务和素材，再从这张目录里组合合适的能力；需要人工处理的模块会明确标出来。</p></div><div class="catalog-count"><strong>{{ filtered.length }}</strong><span>个可见模块</span></div></section>
       <section v-if="runtimeProfile" class="runtime-banner">
         <div><strong>本机运行环境：{{ runtimeProfile.machine?.platform }} / {{ runtimeProfile.machine?.arch }}</strong><p>CPU {{ runtimeProfile.machine?.cpu_count || '?' }} 核 · 内存 {{ runtimeProfile.machine?.memory_gib || '?' }} GiB</p><small v-if="profileUpdatedAt">最近同步 {{ profileUpdatedAt }}</small></div>
@@ -22,6 +22,7 @@
     </div>
     <MediaExperiencePanel v-model:open="experiencesOpen" />
     <MediaToolOptionsPanel v-model:open="toolOptionsOpen" />
+    <TransitionGallery v-model:open="transitionsOpen" :options="transitionOptions" />
     <el-dialog v-model="editorVisible" :title="editingId ? '编辑工具' : '新增工具'" width="min(640px, calc(100vw - 28px))" destroy-on-close>
       <el-form label-position="top" @submit.prevent="saveTool">
         <div class="tool-form-grid"><el-form-item label="工具编号"><el-input v-model="form.module_id" :disabled="Boolean(editingId)" placeholder="例如 community.storyboard" /></el-form-item><el-form-item label="名称"><el-input v-model="form.title" placeholder="给用户看的名称" /></el-form-item><el-form-item label="版本轨道"><el-input v-model="form.version_track" placeholder="custom" /></el-form-item><el-form-item label="阶段"><el-select v-model="form.phase"><el-option v-for="value in ['intake','research','plan','create','edit','qa','deliver']" :key="value" :label="value" :value="value" /></el-select></el-form-item><el-form-item label="执行者"><el-select v-model="form.executor"><el-option v-for="value in ['codex','local','provider','manual']" :key="value" :label="value" :value="value" /></el-select></el-form-item><el-form-item label="可用性"><el-select v-model="form.availability"><el-option v-for="value in ['integrated','bridge','advisory']" :key="value" :label="value" :value="value" /></el-select></el-form-item></div>
@@ -40,6 +41,9 @@ import { componentStatus } from '@/utils/componentStatus'
 import orchestrationAPI from '@/api/orchestration'
 import MediaExperiencePanel from '@/components/MediaExperiencePanel.vue'
 import MediaToolOptionsPanel from '@/components/MediaToolOptionsPanel.vue'
+import TransitionGallery from '@/components/TransitionGallery.vue'
+const transitionsOpen = ref(false)
+const transitionOptions = computed(() => items.value.find(item => item.module_id === 'local.video.compose-clips')?.transition_options || [])
 const toolOptionsOpen = ref(false)
 const experiencesOpen = ref(false)
 const items = ref([]); const query = ref(''); const track = ref(''); const loading = ref(false); const error = ref(''); const fileInput = ref(null); const runtimeProfile = ref(null)
