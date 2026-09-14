@@ -56,6 +56,7 @@ const server = app.listen(port, host, () => {
 async function shutdown() {
   logger.info('Shutting down server...');
   productionAutonomyRunner?.stop();
+  app.locals.mediaBatchService?.stop();
   await app.locals.blenderService?.stop();
   server.close(() => {
     closeDb();

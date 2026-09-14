@@ -55,6 +55,16 @@ before(async () => {
   apiServer = http.createServer(async (req, res) => {
     const url = new URL(req.url, 'http://127.0.0.1')
     const body = await readBody(req)
+    if (req.method === 'POST' && url.pathname === '/api/v1/orchestration-sessions/s1/activity') {
+      state.activityBody = body
+      return json(res, 200, {success:true,data:state.activityResult})
+    }
+    if (req.method === 'POST' && url.pathname === '/api/v1/prompt-adapter') {
+      const {executePromptRequest} = await import('../../../../backend-node/src/services/promptAdapter/index.mjs')
+      const result = executePromptRequest(body)
+      if (result.success === false) return json(res,400,{success:false,error:{code:result.code,message:(result.errors || []).join('; '),details:result}})
+      return json(res, 200, {success:true, data:result})
+    }
     if (url.pathname === '/api/v1/creative-preferences') {
       if (req.method === 'PUT') state.preferences = { ...state.preferences, ...body }
       return json(res, 200, { success: true, data: state.preferences })
@@ -224,6 +234,27 @@ function makeClient(overrides = {}) {
     close: () => { child.stdin.end(); child.kill() },
   }
 }
+
+test('prompt_adapt is discoverable and reaches the real local compiler without generation', async () => {
+  resetState()
+  const client = makeClient()
+  try {
+    const initialized = await client.request('initialize', {protocolVersion:'2024-11-05', capabilities:{}, clientInfo:{name:'prompt-review',version:'1'}})
+    assert.ok(initialized.result.serverInfo)
+    const listed = await client.request('tools/list')
+    assert.ok(listed.result.tools.some(t => t.name === 'prompt_adapt'))
+    const profiles = await client.call('prompt_adapt', {action:'profiles'})
+    assert.ok(profiles.data.profiles.some(p => p.profile_id === 'seedance-2.5'))
+    const result = await client.call('prompt_adapt', {text:'主角护住地球，军团随后退走。\n约束：不要留下主角残影',profile:'Seedance 2.5'})
+    assert.equal(result.isError,false)
+    assert.ok(result.data.compiled.prompt.includes('军团随后退走'))
+    assert.ok(result.data.compiled.prompt.includes('不要留下主角残影'))
+    const conflict = await client.call('prompt_adapt',{profile:'Seedance 2.5',ir:{version:'shot-ir/v1',shots:[{shot_id:1,subject:'主体',references:[{type:'image',index:1,path:'a.png'},{type:'image',index:1,path:'b.png'}]}]}})
+    assert.equal(conflict.isError,true)
+    assert.equal(state.videoSubmissions,0)
+    assert.equal(state.imageSubmissions,0)
+  } finally { client.close() }
+})
 
 test('auto-discovers an orchestration-capable local instance when the default port is an older healthy API', async () => {
   resetState()
@@ -1025,5 +1056,28 @@ test('video reconciliation preserves ambiguous provider acceptance as uncertain 
     assert.equal(state.patches[0].progress.submission_state, 'uncertain')
     assert.match(state.patches[0].progress.message, /是否受理仍不明确/)
     assert.equal(state.videoSubmissions, 0)
+  } finally { client.close() }
+})
+
+test('activity tool requests compact receipts and handles old and new runtime responses', async () => {
+  const legacy={session:{id:'s1',status:'paused',version:3,source_context:{analysis_report:'r'.repeat(50000),activity:{message:'本地剪辑完成',state:'working'}}},events:[{payload:'x'.repeat(300000)}]}
+  resetState({activityResult:legacy})
+  const client=makeClient()
+  try {
+    const result=await client.call('report_activity',{session_id:'s1',event_idempotency_key:'activity-1',message:'本地剪辑完成'})
+    assert.equal(result.isError,false)
+    assert.equal(state.activityBody.response_detail,'summary')
+    assert.equal(result.data.session.status,'paused')
+    assert.equal(result.data.reused,null)
+    assert.ok(JSON.stringify(result.data).length<1000)
+    const full=await client.call('report_activity',{session_id:'s1',event_idempotency_key:'activity-1',message:'本地剪辑完成',response_detail:'full'})
+    assert.equal(state.activityBody.response_detail,'full')
+    assert.deepEqual(full.data,legacy)
+    state.activityResult={response_detail:'summary',session:{id:'s1',status:'paused',version:3},activity:{message:'最新状态'},event:{id:55,event_type:'activity.reported'},reused:true}
+    const replay=await client.call('report_activity',{session_id:'s1',event_idempotency_key:'activity-1',message:'旧消息'})
+    assert.equal(replay.data.reused,true)
+    assert.equal(replay.data.event.id,55)
+    assert.equal(replay.data.activity.message,'最新状态')
+    assert.equal(state.videoSubmissions,0)
   } finally { client.close() }
 })

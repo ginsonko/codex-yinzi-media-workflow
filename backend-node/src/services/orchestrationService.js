@@ -549,10 +549,20 @@ function createOrchestrationService(db) {
         if (unfinished.length) throw makeError('COMPLETION_UNFINISHED_NODES', '请先收口分析节点的真实结果');
       }
       const event = recordEvent(id, { event_type: 'activity.reported', event_idempotency_key: input.event_idempotency_key, actor: input.actor || 'codex', payload: sanitize(input) });
-      if (event.reused) return getBundle(id);
+      const summary = input.response_detail === 'summary';
+      const receipt = (current) => ({
+        schema_version: 1, response_detail: 'summary', reused: event.reused,
+        session: { id: current.id, status: current.status, version: current.version, updated_at: current.updated_at },
+        activity: current.source_context?.activity || null,
+        analysis_report_available: current.source_context?.analysis_report != null,
+        event: { id: event.event.id, event_type: event.event.event_type },
+        details_path: `/api/v1/orchestration-sessions/${encodeURIComponent(id)}`,
+      });
+      if (event.reused) return summary ? receipt(session) : getBundle(id);
       const activity = sanitize({ stage: input.stage || 'analysis', state, message: input.message, next_action: input.next_action || '', needs_user: Boolean(input.needs_user), updated_at: nowIso() });
       const nextStatus = state === 'completed' && session.source_context?.intent === 'analyze' ? (listNodes(id).length ? computeSessionStatus(db, id) : 'succeeded') : session.status;
-      return updateSession(id, { status: nextStatus, source_context: { ...session.source_context, activity, ...(report == null ? {} : { analysis_report: report }) } });
+      const result = updateSession(id, { status: nextStatus, source_context: { ...session.source_context, activity, ...(report == null ? {} : { analysis_report: report }) } }, { includeBundle: !summary });
+      return summary ? receipt(result) : result;
     })();
   }
 
@@ -579,7 +589,7 @@ function createOrchestrationService(db) {
     return { reused: false, session: getSession(id) };
   }
 
-  function updateSession(id, input = {}) {
+  function updateSession(id, input = {}, { includeBundle = true } = {}) {
     const row = getSessionRow(db, id);
     if (!row) throw makeError('ORCHESTRATION_NOT_FOUND', '编排任务不存在');
     if (input.expected_version != null && Number(input.expected_version) !== row.version) throw makeError('VERSION_CONFLICT', '任务已更新，请刷新后重试', { current_version: row.version });
@@ -603,7 +613,7 @@ function createOrchestrationService(db) {
         nowIso(), completedAt, id,
       );
     appendEvent(db, id, 'session.updated', { status, mode, note: input.note || null }, { actor: input.actor || 'codex' });
-    return getBundle(id);
+    return includeBundle ? getBundle(id) : getSession(id);
   }
 
   function archiveSession(id, input = {}) {
@@ -691,6 +701,9 @@ function createOrchestrationService(db) {
           throw makeError('PLAN_RUNNING_NODE_CONFLICT', `节点 ${row.node_key} 正在运行，不能静默修改其模块、依赖、输入或执行条件`);
         }
       }
+      for (const row of existingRows) {
+        if (invalidated.has(row.node_key)) assertExternalAttemptResolved(row);
+      }
       const revision = session.plan_revision + 1;
       db.prepare(`UPDATE orchestration_nodes SET active=0,updated_at=?,version=version+1 WHERE session_id=? AND status NOT IN ('running')`).run(nowIso(), id);
       const getExisting = db.prepare('SELECT * FROM orchestration_nodes WHERE session_id=? AND node_key=?');
@@ -718,6 +731,7 @@ function createOrchestrationService(db) {
         if (existing) {
           const invalidation = invalidated.get(nodeKey);
           if (invalidation) {
+            archiveNodeAttempt(existing, 'plan_changed', input.actor || 'codex');
             invalidate.run(values.moduleId, values.moduleVersion, revision, values.phase, values.sortOrder, values.depends, values.inputs, values.executor, values.configRevision, values.decision, nowIso(), existing.id);
             appendEvent(db, id, 'node.invalidated_by_plan', {
               node_key: nodeKey, previous_status: existing.status, previous_attempt: existing.attempt,
@@ -812,17 +826,109 @@ function createOrchestrationService(db) {
     return tx();
   }
 
+  function externalAttemptEvidence(row) {
+    const decision = parse(row.decision_json, {});
+    const progress = parse(row.progress_json, {});
+    const refs = parse(row.output_refs_json, []);
+    const reservation = row.request_hash && db.prepare("SELECT id,payload_json FROM orchestration_events WHERE node_id=? AND event_type='node.external_request_reserved' AND json_extract(payload_json,'$.request_hash')=? ORDER BY id DESC LIMIT 1").get(row.id, row.request_hash);
+    const linked = refs.some(ref => ['video_generation', 'image_generation', 'workflow_result'].includes(ref.type));
+    if (!row.request_hash && !linked && !progress.submission_state && !decision.provider_result && !decision.response_summary) return null;
+
+    // Read the current generation rows before snapshots: legacy retry erased
+    // progress, and a local failure is not evidence that the provider rejected it.
+    const generations = [];
+    for (const [table, type] of [['video_generations', 'video_generation'], ['image_generations', 'image_generation']]) {
+      const columns = new Set(db.prepare(`PRAGMA table_info(${table})`).all().map(column => column.name));
+      if (!columns.size) continue;
+      const ids = refs.filter(ref => ref.type === type).map(ref => String(ref.id));
+      const clauses = []; const args = [];
+      if (ids.length) { clauses.push(`id IN (${ids.map(() => '?').join(',')})`); args.push(...ids); }
+      if (row.request_hash && columns.has('prompt_contract_json')) {
+        clauses.push("json_extract(CASE WHEN json_valid(prompt_contract_json) THEN prompt_contract_json ELSE '{}' END,'$.orchestration_request_hash')=?");
+        args.push(row.request_hash);
+      }
+      if (clauses.length) generations.push(...db.prepare(`SELECT * FROM ${table} WHERE ${clauses.join(' OR ')}`).all(...args));
+    }
+    if (!generations.length) {
+      const snapshot = decision.provider_result?.generation || decision.response_summary;
+      if (snapshot && typeof snapshot === 'object') generations.push(snapshot);
+    }
+    if (!generations.length && !reservation && !linked && !decision.paid && !progress.submission_state && !decision.provider_result && !decision.response_summary) return null;
+    const classify = generation => {
+      const submission = String(generation.submission_status || generation.provider_submission_status || '').toLowerCase();
+      const status = String(generation.generation_status || generation.status || '').toLowerCase();
+      if (['ambiguous', 'uncertain', 'submitting'].includes(submission) || ['ambiguous', 'queued', 'pending', 'processing', 'running'].includes(status)) return 'unresolved';
+      if (status === 'failed' && ['rejected', 'not_sent'].includes(submission) && !generation.provider_task_id) return 'rejected';
+      if (['completed', 'succeeded'].includes(status)) return 'settled';
+      // Dispatch/poll exceptions can also persist failed + accepted + task ID.
+      // Only an explicit provider terminal receipt makes that safe to release.
+      const receipt = generation.submission_receipt_json ? parse(generation.submission_receipt_json, {}) : (generation.submission_receipt || {});
+      const providerStatus = String(receipt.provider_status || '').toLowerCase();
+      if (status === 'failed' && submission === 'accepted' && generation.provider_task_id && ['failed', 'cancelled', 'canceled', 'rejected'].includes(providerStatus)) return 'settled';
+      return 'unresolved';
+    };
+    if (generations.length) {
+      const states = generations.map(classify);
+      return { state: states.includes('unresolved') ? 'unresolved' : states.every(state => state === 'rejected') ? 'rejected' : 'settled', reservation };
+    }
+    // Events retain the submission state even when an older retry cleared the
+    // node's progress. Read only events belonging to this reservation.
+    const event = reservation && db.prepare("SELECT payload_json FROM orchestration_events WHERE node_id=? AND id>=? AND json_extract(payload_json,'$.progress.submission_state') IS NOT NULL ORDER BY id DESC LIMIT 1").get(row.id, reservation.id);
+    const prior = event ? parse(event.payload_json, {}) : {};
+    const submission = progress.submission_state || prior.progress?.submission_state;
+    const status = TERMINAL_NODE_STATUSES.has(row.status) ? row.status : prior.status;
+    const resolved = ['failed', 'succeeded', 'partial'].includes(status) && ['rejected', 'settled'].includes(submission);
+    return { state: resolved ? submission : 'unresolved', reservation };
+  }
+
+  function assertExternalAttemptResolved(row) {
+    const evidence = externalAttemptEvidence(row);
+    if (evidence?.state === 'unresolved') throw makeError('EXTERNAL_REQUEST_UNRESOLVED', '原外部请求仍在提交、已受理或结果未知；请查询并对账原请求，不能通过重试或重开再次提交', { request_hash: row.request_hash, next_actions: ['reconcile', 'inspect'] });
+    return evidence;
+  }
+
+  function archiveNodeAttempt(row, reason, actor) {
+    appendEvent(db, row.session_id, 'node.attempt_archived', { node_key: row.node_key, attempt: row.attempt, request_hash: row.request_hash, reason, node: publicNode(row) }, { node_id: row.id, actor });
+  }
+
+  function nextAttemptDecision(row, evidence) {
+    const decision = parse(row.decision_json, {});
+    if (!evidence) return decision;
+    const reserved = parse(evidence.reservation?.payload_json, {});
+    // New reservations record exactly which decision fields they own. The
+    // fallback covers the existing MCP decision contract for legacy attempts.
+    const keys = new Set([...(reserved.decision_keys || []), ...[
+      'paid', 'idempotency_key', 'provider', 'model', 'video_config_id', 'image_config_id',
+      'configured_group', 'requested_group', 'pricing_snapshot', 'price_snapshot', 'capability_snapshot',
+      'authorization_source', 'diagnostics', 'maximum_cost_cny', 'request', 'response_summary',
+      'provider_result', 'media_probe', 'cost_outcome', 'pricing_basis', 'native_currency',
+      'estimated_cost_native', 'price_ceiling_basis', 'maximum_unit_price_usd', 'maximum_unit_price_cny',
+      'bridge_method', 'bridge_path',
+    ]]);
+    for (const key of keys) {
+      delete decision[key];
+      if (Object.prototype.hasOwnProperty.call(reserved.previous_decision || {}, key)) decision[key] = reserved.previous_decision[key];
+    }
+    return decision;
+  }
+
   function retryNode(sessionId, nodeIdOrKey, input = {}) {
-    const row = getNodeRow(db, sessionId, nodeIdOrKey);
-    if (!row) throw makeError('ORCHESTRATION_NODE_NOT_FOUND', '编排节点不存在');
-    if (row.status === 'running') throw makeError('NODE_RUNNING', '节点仍在运行；请先停止本地观察或等待真实结果');
-    if (row.status === 'succeeded' && !input.force) throw makeError('NODE_ALREADY_SUCCEEDED', '节点已经成功；如需重新执行，请明确 force=true');
-    const stamp = nowIso();
-    db.prepare(`UPDATE orchestration_nodes SET status='ready',attempt=attempt+1,progress_json='{}',error_json='{}',started_at=NULL,completed_at=NULL,updated_at=?,version=version+1,active=1 WHERE id=?`).run(stamp, row.id);
-    db.prepare(`UPDATE orchestration_sessions SET status='running',last_error_json='{}',updated_at=?,completed_at=NULL,version=version+1 WHERE id=?`).run(stamp, sessionId);
-    const node = publicNode(db.prepare('SELECT * FROM orchestration_nodes WHERE id=?').get(row.id));
-    appendEvent(db, sessionId, 'node.retry_authorized', { node_key: node.node_key, attempt: node.attempt, note: input.note || null }, { node_id: node.id, actor: input.actor || 'user' });
-    return { node, bundle: getBundle(sessionId) };
+    return db.transaction(() => {
+      const row = getNodeRow(db, sessionId, nodeIdOrKey);
+      if (!row) throw makeError('ORCHESTRATION_NODE_NOT_FOUND', '编排节点不存在');
+      if (input.expected_version != null && Number(input.expected_version) !== row.version) throw makeError('VERSION_CONFLICT', '节点已更新，请刷新后重试', { current_version: row.version });
+      if (row.status === 'running') throw makeError('NODE_RUNNING', '节点仍在运行；请先停止本地观察或等待真实结果');
+      if (row.status === 'succeeded' && input.force !== true) throw makeError('NODE_ALREADY_SUCCEEDED', '节点已经成功；如需重新执行，请明确 force=true');
+      const evidence = assertExternalAttemptResolved(row);
+      archiveNodeAttempt(row, 'retry', input.actor || 'user');
+      const stamp = nowIso();
+      db.prepare(`UPDATE orchestration_nodes SET status='ready',attempt=attempt+1,progress_json='{}',error_json='{}',output_refs_json='[]',request_hash=NULL,config_revision=NULL,cost_ledger_id=NULL,decision_json=?,started_at=NULL,completed_at=NULL,updated_at=?,version=version+1,active=1 WHERE id=?`)
+        .run(json(nextAttemptDecision(row, evidence), {}), stamp, row.id);
+      db.prepare(`UPDATE orchestration_sessions SET status='running',last_error_json='{}',updated_at=?,completed_at=NULL,version=version+1 WHERE id=?`).run(stamp, sessionId);
+      const node = publicNode(db.prepare('SELECT * FROM orchestration_nodes WHERE id=?').get(row.id));
+      appendEvent(db, sessionId, 'node.retry_authorized', { node_key: node.node_key, attempt: node.attempt, previous_request_hash: row.request_hash, note: input.note || null }, { node_id: node.id, actor: input.actor || 'user' });
+      return { node, bundle: getBundle(sessionId) };
+    }).immediate();
   }
 
   function actOnNode(sessionId, nodeIdOrKey, action, input = {}) {
@@ -1044,8 +1150,12 @@ function createOrchestrationService(db) {
       const priorSubmission = parse(row.progress_json, {}).submission_state;
       if (row.request_hash) {
         if (row.request_hash !== requestHash) throw makeError('REQUEST_HASH_CONFLICT', '该节点已绑定另一请求；请重开节点或提交新计划，禁止静默覆盖');
-        return { reserved: false, reused: true, reconciliation_required: ['submitting', 'accepted', 'uncertain', 'settled'].includes(priorSubmission), node: publicNode(row) };
+        return { reserved: false, reused: true, reconciliation_required: externalAttemptEvidence(row)?.state === 'unresolved' || ['submitting', 'accepted', 'uncertain', 'settled'].includes(priorSubmission), node: publicNode(row) };
       }
+      if (db.prepare("SELECT 1 FROM orchestration_events WHERE node_id=? AND event_type IN ('node.external_request_reserved','node.attempt_archived') AND json_extract(payload_json,'$.request_hash')=? LIMIT 1").get(row.id, requestHash)) {
+        throw makeError('REQUEST_HASH_RETIRED', '该请求属于历史尝试；查询旧记录请使用对账，新尝试请使用新的 idempotency_key');
+      }
+      assertExternalAttemptResolved(row);
       if (!['ready', 'waiting_confirmation'].includes(row.status)) {
         throw makeError('NODE_NOT_READY', '节点尚未就绪，不能创建新的外部请求');
       }
@@ -1057,7 +1167,7 @@ function createOrchestrationService(db) {
         .run(requestHash, json(progress, {}), json(decision, {}), stamp, stamp, row.id);
       db.prepare(`UPDATE orchestration_sessions SET status='running',updated_at=?,completed_at=NULL,version=version+1 WHERE id=?`).run(stamp, sessionId);
       const node = publicNode(db.prepare('SELECT * FROM orchestration_nodes WHERE id=?').get(row.id));
-      appendEvent(db, sessionId, 'node.external_request_reserved', { node_key: node.node_key, request_hash: requestHash, attempt: node.attempt }, { node_id: node.id, actor: input.actor || 'codex' });
+      appendEvent(db, sessionId, 'node.external_request_reserved', { node_key: node.node_key, request_hash: requestHash, attempt: node.attempt, previous_decision: parse(row.decision_json, {}), decision_keys: Object.keys(input.decision || {}) }, { node_id: node.id, actor: input.actor || 'codex' });
       return { reserved: true, reused: false, reconciliation_required: false, node };
     });
     return tx.immediate();

@@ -9,6 +9,7 @@ import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 import readline from 'node:readline'
 import { reverseTools } from './reverse-tools.mjs'
+import { activityResponse } from '../skills/codex-yinzi-universal-video/scripts/activity-response.mjs'
 import { readRegistry, localOrigin, verifyUi, openBrowser } from '../scripts/runtime-state.mjs'
 
 const execFileAsync = promisify(execFile)
@@ -957,6 +958,7 @@ async function reconcileImage(args) {
 }
 
 const tools = [
+  { name:'prompt_adapt', description:'本地分镜提示词适配：读取profiles、拆分可编辑IR或编译目标提示词；保留素材引用与约束，返回差异报告，不提交媒体生成。', inputSchema:{type:'object',properties:{action:{type:'string',enum:['profiles','parse','validate','compile']},text:{type:'string'},ir:{type:'object'},profile:{oneOf:[{type:'string'},{type:'object'}]},options:{type:'object'}}} },
   ...reverseTools,
   { name: 'get_workflow_preferences', description: '读取实时质量档位与持久化挂机模式。', inputSchema: { type: 'object', properties: {} } },
   { name: 'set_workflow_preferences', description: '更新本机工作流偏好。用户勾选挂机、明确说自己挂机或授权自主花费时，可设置 unattended_mode=true；可随时关闭。保留用户任务范围与预算。', inputSchema: { type: 'object', properties: { unattended_mode: { type: 'boolean' }, quality_profile: { enum: ['quality', 'balanced', 'speed'] } } } },
@@ -978,7 +980,7 @@ const tools = [
   { name: 'list_sessions', description: '检索已存在的可恢复编排任务，避免重复创建。默认隐藏已归档任务；archived=true 查询归档，all 查询全部。', inputSchema: { type: 'object', properties: { status: { type: 'string' }, linked_run_id: { type: 'string' }, limit: { type: 'integer' }, archived: { type: 'string', enum: ['true', 'false', 'all'], description: 'true 仅归档，false 仅未归档（默认），all 全部；直接任务 ID 始终可恢复。' } } } },
   { name: 'get_session', description: '读取一个编排任务的会话、节点、事件和回执真值。', inputSchema: { type: 'object', required: ['session_id'], properties: { session_id: { type: 'string' }, include_inactive: { type: 'boolean' }, event_limit: { type: 'integer' } } } },
   { name: 'begin_media_task', description: '立即登记或恢复当前媒体任务并打开对应页面；分析阶段即可展示，不发起付费生成。', inputSchema: { type:'object', required:['user_goal','idempotency_key'], properties:{ user_goal:{type:'string'}, idempotency_key:{type:'string'}, title:{type:'string'}, intent:{enum:['analyze','create']}, source_context:{type:'object'}, open_browser:{type:'boolean',default:true} } } },
-  { name: 'report_activity', description: '记录当前真实动作、下一步、是否需要用户和分析报告。分析完成可收口；不会执行媒体生成。', inputSchema: { type:'object', required:['session_id','event_idempotency_key','message'], properties:{ session_id:{type:'string'}, event_idempotency_key:{type:'string'}, stage:{type:'string'}, state:{enum:['working','waiting','completed']}, message:{type:'string'}, next_action:{type:'string'}, needs_user:{type:'boolean'}, analysis_report:{type:['object','string']} } } },
+  { name: 'report_activity', description: '记录当前真实动作、下一步、是否需要用户和分析报告。分析完成可收口；不会执行媒体生成。', inputSchema: { type:'object', required:['session_id','event_idempotency_key','message'], properties:{ session_id:{type:'string'}, event_idempotency_key:{type:'string'}, stage:{type:'string'}, state:{enum:['working','waiting','completed']}, message:{type:'string'}, next_action:{type:'string'}, needs_user:{type:'boolean'}, response_detail:{enum:['summary','full'],description:'默认仅返回本次进度摘要；需要完整任务资料时选full或调用get_session'}, analysis_report:{type:['object','string']} } } },
   { name: 'create_session', description: '使用稳定幂等键创建或复用 Codex 视频编排任务。', inputSchema: { type: 'object', required: ['idempotency_key', 'user_goal'], properties: { idempotency_key: { type: 'string' }, title: { type: 'string' }, user_goal: { type: 'string' }, mode: { enum: ['auto', 'collaborate', 'manual'] }, source_context: { type: 'object' }, budget: { type: 'object' } } } },
   { name: 'submit_plan', description: '提交可动态增删重排的计划和节点；计划版本冲突会拒绝覆盖。', inputSchema: { type: 'object', required: ['session_id', 'nodes'], properties: { session_id: { type: 'string' }, expected_revision: { type: 'integer' }, confirm: { type: 'boolean' }, plan: { type: 'object' }, nodes: { type: 'array', items: { type: 'object' } } } } },
   { name: 'session_action', description: '确认/开始/暂停/恢复任务或保存检查点。', inputSchema: { type: 'object', required: ['session_id', 'action'], properties: { session_id: { type: 'string' }, action: { enum: ['confirm', 'start', 'pause', 'resume', 'checkpoint'] }, expected_revision: { type: 'integer' }, expected_version: { type: 'integer' }, checkpoint: { type: 'object' }, note: { type: 'string' } } } },
@@ -1021,7 +1023,9 @@ async function callTool(name, args = {}) {
     }
     case 'report_activity': {
       const {session_id,...body}=args;rejectSecrets(body)
-      return api('POST',`/api/v1/orchestration-sessions/${encodeURIComponent(session_id)}/activity`,{...body,actor:'codex'})
+      const detail = body.response_detail || 'summary'
+      const result = await api('POST',`/api/v1/orchestration-sessions/${encodeURIComponent(session_id)}/activity`,{...body,response_detail:detail,actor:'codex'})
+      return activityResponse(result, detail)
     }
     case 'open_workflow': {
       let health
@@ -1079,6 +1083,7 @@ async function callTool(name, args = {}) {
     }
     case 'search_media_tool_options': return api('GET', `/api/v1/media-tool-options?${new URLSearchParams(Object.entries(args).filter(([,value])=>value!=null)).toString()}`);
     case 'get_media_tool_option': return api('GET', `/api/v1/media-tool-options/${encodeURIComponent(args.option_id)}`);
+    case 'prompt_adapt': rejectSecrets(args); return api('POST', '/api/v1/prompt-adapter', args);
     case 'local_media_run': rejectSecrets(args); return api('POST', '/api/v1/local-media/jobs', args);
     case 'local_media_get_job': return api('GET', `/api/v1/local-media/jobs/${encodeURIComponent(args.job_id)}`);
     case 'local_media_resume': return api('POST', `/api/v1/local-media/jobs/${encodeURIComponent(args.job_id)}/resume`, {});

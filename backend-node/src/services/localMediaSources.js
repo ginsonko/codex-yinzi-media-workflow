@@ -21,6 +21,21 @@ function sourcesFor(request) {
   if (!sources.some(item => item.path === input)) sources.push({ role:'primary', path:input, identity:request.input_identity });
   const narration = request.module_id === 'local.video.edit-timeline' ? request.parameters?.narration_path : null;
   if (narration && !sources.some(item => item.path === path.resolve(narration))) sources.push({ role:'narration', path:path.resolve(narration) });
+  const tracks = ['local.video.track-faces', 'local.video.face-mask'].includes(request.module_id) ? request.parameters?.tracks_path : null;
+  if (tracks && !sources.some(item => item.path === path.resolve(tracks))) sources.push({ role:'tracks', path:path.resolve(tracks) });
+  const indexCache = request.module_id === 'local.media.index' ? request.parameters?.cache_path : null;
+  if (indexCache && !sources.some(item => item.path === path.resolve(indexCache))) sources.push({ role:'index_cache', path:path.resolve(indexCache) });
+  if (request.module_id === 'local.video.assemble-frames') {
+    for (const extra of require('./videoFrameSequence').extraAssembleSources(request.module_id, request.parameters, input)) {
+      if (!sources.some(item => item.path === extra.path)) sources.push(extra);
+    }
+  }
+  if (request.module_id === 'local.ae.compose') {
+    const job = JSON.parse(fs.readFileSync(input, 'utf8').replace(/^\uFEFF/, ''));
+    const dependencies = [...(job.assets || []).map(a => ({ role:'ae_asset',path:a.path })), ...(job.open_project ? [{role:'ae_project',path:job.open_project}] : [])];
+    for (const source of dependencies) if (!sources.some(item => item.path === path.resolve(source.path))) sources.push({ ...source, path:path.resolve(source.path) });
+    if (sources.length > 256) throw error('INVALID_SOURCES', 'AE job has too many source files');
+  }
   return sources;
 }
 function snapshot(request) { return sourcesFor(request).map(item => ({ role:item.role, path:item.path, identity:identity(item.path) })); }

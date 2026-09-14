@@ -397,6 +397,47 @@ describe('Codex orchestration service', () => {
 });
 
 describe('visible analysis lifecycle', () => {
+  it('returns compact progress without dropping history, artifacts or paused state', () => {
+    const id = service.beginWork({ idempotency_key:'compact-history', user_goal:'恢复原任务', intent:'create' }).session.id;
+    service.updateSession(id, { status:'paused', source_context:{ analysis_report:'报告'.repeat(20000) } });
+    for (let i=0; i<60; i++) service.recordEvent(id, {event_type:'audit.saved',event_idempotency_key:`old-${i}`,payload:{text:'x'.repeat(7000)}});
+    service.recordArtifact(id, {artifact_id:'original-frame',type:'image',path:'original.png',bytes:12});
+    const full = service.getBundle(id);
+    const result = service.reportActivity(id, {event_idempotency_key:'progress-1',message:'素材检查完成',response_detail:'summary'});
+    assert.equal(result.response_detail,'summary');
+    assert.equal(result.session.status,'paused');
+    assert.equal(result.reused,false);
+    assert.equal(result.analysis_report_available,true);
+    assert.ok(Buffer.byteLength(JSON.stringify(result))<1500);
+    assert.ok(Buffer.byteLength(JSON.stringify(full))>400000);
+    assert.equal(result.events,undefined);
+    assert.equal(result.session.source_context,undefined);
+    service.reportActivity(id, {event_idempotency_key:'progress-2',message:'开始本地剪辑',response_detail:'summary'});
+    const beforeReplay = service.getBundle(id);
+    const replay = service.reportActivity(id, {event_idempotency_key:'progress-1',message:'旧请求重放不覆盖',response_detail:'summary'});
+    assert.equal(replay.reused,true);
+    assert.equal(replay.event.id,result.event.id);
+    assert.equal(replay.activity.message,'开始本地剪辑');
+    assert.equal(replay.session.version,beforeReplay.session.version);
+    const after = service.getBundle(id);
+    assert.equal(after.events.length,beforeReplay.events.length);
+    assert.deepEqual(after.artifacts,full.artifacts);
+    assert.equal(after.session.source_context.analysis_report,full.session.source_context.analysis_report);
+    assert.ok(full.events.every(e=>after.events.some(a=>a.id===e.id)));
+  });
+  it('retains full HTTP compatibility and analysis completion errors with compact receipts', () => {
+    const id = service.beginWork({idempotency_key:'compact-analysis',user_goal:'分析',intent:'analyze'}).session.id;
+    assert.throws(()=>service.reportActivity(id,{event_idempotency_key:'done',message:'完成',state:'completed',response_detail:'summary'}),{code:'ANALYSIS_REPORT_REQUIRED'});
+    const done=service.reportActivity(id,{event_idempotency_key:'done',message:'完成',state:'completed',analysis_report:'可采用AE',response_detail:'summary'});
+    assert.equal(done.session.status,'succeeded');
+    assert.equal(done.analysis_report_available,true);
+    for(const response_detail of [undefined,'full']) {
+      const full=service.reportActivity(id,{event_idempotency_key:'done',message:'完成',response_detail});
+      assert.ok(Array.isArray(full.events));
+      assert.equal(full.session.source_context.analysis_report,'可采用AE');
+    }
+    assert.throws(()=>service.reportActivity('missing',{event_idempotency_key:'x',message:'检查',response_detail:'summary'}),{code:'ORCHESTRATION_NOT_FOUND'});
+  });
   it('registers before planning, resumes without resetting, and closes analysis with a report without generation', () => {
     const created = service.beginWork({ idempotency_key:'visible-analysis', user_goal:'先分析视频，暂不生成', intent:'analyze' });
     const id = created.session.id;

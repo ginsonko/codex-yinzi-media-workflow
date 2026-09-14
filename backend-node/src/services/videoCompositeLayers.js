@@ -3,6 +3,8 @@ const path = require('node:path');
 const { run, sha256 } = require('./componentRuntime');
 const { streamDuration } = require('./mediaStreamTiming');
 const { filterGraphArgs } = require('./mediaFilterGraph');
+const { normalizeAnimation, animationSchema } = require('./keyframeTracks');
+const { animationCanvas, buildLayerAnimation } = require('./videoLayerAnimation');
 
 const fail = (message, code = 'COMPOSITE_LAYERS_INVALID_INPUT') =>
   Object.assign(new Error(message), { code });
@@ -28,6 +30,19 @@ const RESOURCE_LIMITS = {
 const FIT_MODES = ['contain', 'cover', 'fill'];
 const MASK_MODES = ['luminance', 'alpha'];
 const AUDIO_MODES = ['source', 'none'];
+
+function validateParameters(parameters = {}) {
+  const layers = parameters.layers ?? [];
+  if (!Array.isArray(layers)) throw fail('layers 必须为数组');
+  if (layers.length > RESOURCE_LIMITS.MAX_LAYERS) throw fail('图层数量超过系统资源上限');
+  for (const layer of layers) {
+    if (!layer || typeof layer !== 'object' || Array.isArray(layer)) throw fail('图层配置无效');
+    const start = number(layer.start ?? 0, '图层 start', 0, RESOURCE_LIMITS.MAX_DURATION);
+    const end = layer.end == null ? RESOURCE_LIMITS.MAX_DURATION : number(layer.end, '图层 end', start, RESOURCE_LIMITS.MAX_DURATION);
+    if (end <= start) throw fail('图层结束时间必须晚于开始时间');
+    normalizeAnimation(layer.animation, end - start);
+  }
+}
 
 function validateSources(sources) {
   if (!Array.isArray(sources) || sources.length === 0) {
@@ -132,6 +147,8 @@ function validateAndPlanLayers(layers, probedSources, baseDuration) {
     const mask = maskSourceIdx == null ? null : probedSources[maskSourceIdx];
     if (mask && !mask.is_image && sourceIn >= mask.duration) throw fail(`图层 [${i}] 蒙版在该入点已结束`);
     const effectiveEnd = mask && !mask.is_image ? Math.min(sourceEnd, start + mask.duration - sourceIn) : sourceEnd;
+    const animation = normalizeAnimation(l.animation, layerDuration);
+    animationCanvas({ width, height, animation });
     planned.push({
       index: i,
       source: sourceIdx,
@@ -147,6 +164,7 @@ function validateAndPlanLayers(layers, probedSources, baseDuration) {
       height,
       fit,
       opacity,
+      animation,
       mask_source: maskSourceIdx,
       mask_mode: maskMode,
       mask_invert: maskInvert
@@ -387,7 +405,7 @@ async function executeNative({
 
     if (src.is_image) {
       filterChains.push(
-        `[${srcIdx}:v:0]format=rgba${rawLayerLabel}`
+        `[${srcIdx}:v:0]setpts=PTS-STARTPTS,fps=${fps}:start_time=0,setpts=PTS+${layer.start}/TB,format=rgba${rawLayerLabel}`
       );
     } else {
       // Video layer: trim from source_in, align presentation timestamp with layer.start
@@ -405,7 +423,7 @@ async function executeNative({
     let layerWithAlphaLabel = scaledLayerLabel;
 
     // Apply global opacity if < 1
-    if (layer.opacity < 1) {
+    if (layer.opacity < 1 && !layer.animation.opacity) {
       const opacityLabel = `[layer_opac_${i}]`;
       filterChains.push(
         `${layerWithAlphaLabel}colorchannelmixer=aa=${layer.opacity.toFixed(4)},format=rgba${opacityLabel}`
@@ -422,7 +440,7 @@ async function executeNative({
       const finalMaskLabel = `[mask_final_${i}]`;
 
       if (maskSrc.is_image) {
-        filterChains.push(`[${maskIdx}:v:0]format=rgba${rawMaskLabel}`);
+        filterChains.push(`[${maskIdx}:v:0]setpts=PTS-STARTPTS,fps=${fps}:start_time=0,setpts=PTS+${layer.start}/TB,format=rgba${rawMaskLabel}`);
       } else {
         const maskTrimStart = maskSrc.video_start + layer.source_in;
         filterChains.push(
@@ -469,11 +487,15 @@ async function executeNative({
       layerWithAlphaLabel = maskedLayerLabel;
     }
 
+    const animated = buildLayerAnimation(layer, i, fps, layerWithAlphaLabel);
+    filterChains.push(...animated.filters);
+    layerWithAlphaLabel = animated.label;
+
     // Overlay onto current canvas
     const nextV = i === plannedLayers.length - 1 ? '[outv_rgba]' : `[v_comp_${i}]`;
     const overlayOpts = [
-      `x=${layer.x}`,
-      `y=${layer.y}`,
+      `x='${animated.x}'`,
+      `y='${animated.y}'`,
       `enable='gte(t,${layer.start})*lt(t,${layer.end})'`,
       'eof_action=pass',
       'repeatlast=0',
@@ -634,6 +656,7 @@ const parameter_schema = {
           height: { type: 'integer', minimum: 2, maximum: 8192, description: '图层目标高度' },
           fit: { type: 'string', enum: ['contain', 'cover', 'fill'], description: '缩放适配模式' },
           opacity: { type: 'number', minimum: 0, maximum: 1, description: '图层不透明度 (0-1)' },
+          animation: animationSchema,
           mask_source: { type: 'integer', minimum: 0, description: '蒙版素材 sources 索引' },
           mask_mode: { type: 'string', enum: ['luminance', 'alpha'], description: '蒙版模式：luminance 灰度/亮度蒙版，alpha 透明通道蒙版' },
           mask_invert: { type: 'boolean', description: '是否对蒙版执行反相' }
@@ -646,7 +669,7 @@ const parameter_schema = {
 module.exports = {
   id: 'local.video.composite-layers',
   title: '视频图层与蒙版原生合成',
-  description: '支持主底片视频基底叠加多层视频或图像图层，具备时间启停、坐标偏移(支持负坐标裁剪)、尺寸自适应适配、透明度调节及灰度/Alpha动态/静态蒙版遮罩。',
+  description: '视频与图片多层合成，支持位置、双轴缩放、旋转、透明度独立关键帧，时间启停、灰度/Alpha动态蒙版和原音轨同步。',
   kind: 'video',
   component_id: 'media.ffmpeg',
   source: 'https://ffmpeg.org/ffmpeg-filters.html#overlay',
@@ -656,5 +679,6 @@ module.exports = {
   },
   inputs: ['input_path', 'sources', 'parameters'],
   executeNative,
+  validateParameters,
   parameter_schema
 };

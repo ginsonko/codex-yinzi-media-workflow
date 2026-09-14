@@ -1,6 +1,6 @@
-# 本地媒体组件与 124 项执行合同
+# 本地媒体组件与执行合同
 
-本轮新增 124 项实际可调用的处理操作：36 项图片、48 项视频、40 项音频。它们共用两个可复用组件：Sharp 0.35.3 和 FFmpeg 9.0.1。工具目录总计 172 项，包含原有 48 项；原有目录中的规划参考项仍按原状态展示。124 是独立处理操作数量，不是 124 个模型或安装包。
+本地操作按独立执行合同计数，组件包、转场参数和研究候选分别统计。运行 `node backend-node/scripts/capability-inventory.cjs` 查看当前源码的准确数量、组件平台和源码匹配小样数量；工作台“工具目录”使用同一统计入口。组件可复用于多个操作。历史验收记录保留其当时的源码指纹，代码变化后必须重新核验才能展示当前源码实测标识。
 
 ## 用户看到的过程
 
@@ -15,9 +15,13 @@
 | 电商主图统一尺寸、白底、压缩、隐私清理 | 图片 resize/crop/flatten/convert/metadata-strip | CPU 本地批处理，无需重复分析整套素材；透明铺白底不等于自动分割商品 |
 | 已有短视频剪辑、色彩修复、降噪、补帧 | 视频 trim/eq/hqdn3d/deflicker/fps/minterpolate | 尽快给出预览；混帧插值不能重新生成缺失的人物细节 |
 | 讲解视频声音处理 | 音频 loudnorm/afftdn/highpass/adeclick/atrim | 修响度、噪声和杂点；不能承诺分离所有人声和背景音 |
+| 中文或英文文本配音 | local.audio.synthesize-speech | 复用 Windows 已安装声音，输出 PCM WAV、原文和声音参数；可选择语言、声线与语速，声音表现需试听 |
+| 访谈、教程、直播字幕与语音笔记 | local.audio.transcribe | 本地 whisper.cpp CPU 转写，自动准备多语言模型，输出 JSON/TXT/SRT/VTT；需核对专有名词与实际字幕时序 |
+| MAD、直播切片、教程与 Vlog 选片 | local.video.analyze-shots + local.audio.analyze-beats | 输出真实时间码、镜头关键帧总览和音乐候选卡点，再按画面内容决定剪辑 |
 | 动漫素材优化与风格预览 | 锐化、调色板、线稿、像素化 | 图像处理效果；不等于真人转动漫模型 |
 | Seedance 成果轻微闪烁、曝光差异、压缩噪声 | deflicker/eq/deband/hqdn3d | 只修对应画面质量问题，不能修复身份语义错误 |
-| 原视频全身角色替换且背景尽量不变 | 专用分割/跟踪/生成/合成路线，见后续候选 | 当前 124 项基础操作不能独立实现；不自动降级为滤镜冒充换人 |
+| 实拍照片与连续外景换天 | local.image.sky-replace / local.video.sky-replace | 自动天空分割、用户蒙版退路、连续处理及音轨保留；细边缘与光线匹配需实际看图验收 |
+| 原视频全身角色替换且背景尽量不变 | 专用分割/跟踪/生成/合成路线，见后续候选 | 基础滤镜不能独立实现；按真实替换结果验收 |
 
 ## 运行和恢复设计
 
@@ -31,7 +35,9 @@
 
 ## Codex 调用
 
-先按 `list_modules` 的 `q` 搜索目标，选中实际执行合同。全局 172 项目录无需每次全部读入。示例：
+Windows 新安装使用紧凑的独立版本目录，避免把过长的哈希和 UUID 叠加到可执行路径上；旧安装仍可复用，修复时保留旧目录，健康检查通过后再切换。若用户指定的目录本身仍太深，Codex 可在 `media_components.root` 配置短路径；未显式配置时也支持 `YINZI_WORKFLOW_COMPONENT_DIR`。这只选择组件位置，原任务和素材目录继续保留。
+
+先按 `list_modules` 的 `q` 搜索目标，选中实际执行合同。每次按任务检索必要模块即可。响应中的 `inventory` 始终统计完整目录，不受搜索条件影响。示例：
 
 ```json
 {
@@ -197,15 +203,15 @@
 | --- | --- | --- |
 | [FFmpeg](https://ffmpeg.org/ffmpeg-filters.html) / [Gyan 构建](https://www.gyan.dev/ffmpeg/builds/) | 视频、音频滤镜和格式处理 | 已注册自动安装；依赖版本、来源和 GPL/LGPL 构建信息见 scripts/dependencies.json |
 | [Sharp](https://github.com/lovell/sharp) / [API](https://sharp.pixelplumbing.com/api-operation/) | CPU 高效图片处理 | 已注册自动安装；Apache-2.0，libvips 等依赖保留各自许可证 |
-| [rembg](https://github.com/danielgatis/rembg) | 背景移除、CPU ONNX 推理、模型自动下载 | 下一优先候选，解决电商抠图；需锁定 Python/ONNX/模型并验证头发和透明商品；未注册执行组件 |
-| [whisper.cpp](https://github.com/ggml-org/whisper.cpp) | CPU 语音识别、量化、Windows | 下一优先候选，字幕与口播转写；代码 MIT，模型分别核查；未在本轮注册/安装 |
+| [U-2-Net](https://github.com/xuebinqin/U-2-Net) / [rembg ONNX模型](https://github.com/danielgatis/rembg) | 主体蒙版、透明抠图、CPU ONNX推理 | 已注册 local.image.foreground-mask / remove-background，组件 vision.foreground-seg；Node+ONNX，无Python依赖。固定U2NetP/U2Net模型，空目录安装/损坏修复、EXIF、原alpha孔洞和主备真实图对比已实测；发丝/玻璃/轮辐需检查与局部回改 |
+| [whisper.cpp](https://github.com/ggml-org/whisper.cpp) | CPU 语音识别、量化、Windows | 已注册 local.audio.transcribe；b5130预编译与base/tiny模型，空目录安装、中英/静音/偏移与损坏模型恢复已实测，实际文本需复核 |
 | [Real-ESRGAN](https://github.com/xinntao/Real-ESRGAN) | 通用/动漫超分，小型动漫视频模型，ncnn Vulkan 版本 | 图像放大候选；“动漫模型”用于动漫素材修复，不能冒充真人转动漫；需测试分块、显卡兼容、闪烁和速度 |
 | [MediaPipe](https://github.com/google-ai-edge/mediapipe) | 视觉任务与跨端部署基础 | 面部关键点、局部美颜和跟踪候选；需具体任务模型、许可证、CPU 性能及真实肖像测试，未注册 |
 | [SAM 2](https://github.com/facebookresearch/sam2) | 图像/视频提示式分割与流式记忆 | 更难遮挡的角色分割候选；官方依赖 PyTorch，Windows 推荐 WSL，原生零配置适配尚未完成 |
 | [FaceFusion](https://github.com/facefusion/facefusion) | 人脸处理工作流 | 面部替换候选，不能当全身换人；README 明示安装需技术能力，代码许可 OpenRAIL-AS，具体权重需单独检查；未注册 |
 | [Wan2.2 / Wan-Animate](https://github.com/Wan-Video/Wan2.2#run-wan-animate) | Animate-14B 动作驱动与 replacement 模式、背景/遮罩/姿态输入 | 全身角色替换和跨角色风格的重型候选；需专门的设备探测、固定权重、GPU运行包和遮挡片段质量验收。本轮未下载安装，未实测，不能承诺普通 CPU 轻载一步完成 |
 
-下一阶段先推进 rembg、whisper.cpp 等 CPU 组件，再接超分/关键点美颜，最后接 Wan-Animate 等重模型。每增加一个可执行组件，都复用本轮“空安装目录→自动准备→真实任务→输出检查→缓存复用→中断恢复→界面”的验收流程；没有通过时只留研究候选。重模型需要的磁盘、显存、驱动支持从该组件真实版本和本机探针决定，不套用其他模型的硬件数字。
+下一阶段继续主体分割、关键点美颜与视频跟踪等工具，再完善 Wan-Animate 等重模型路线。每增加一个可执行组件，都复用本轮“空安装目录→自动准备→真实任务→输出检查→缓存复用→中断恢复→界面”的验收流程；没有通过时只留研究候选。重模型需要的磁盘、显存、驱动支持从该组件真实版本和本机探针决定，不套用其他模型的硬件数字。
 
 ## 验收证据与复现
 
@@ -218,4 +224,4 @@ node backend-node/scripts/accept-local-media.cjs ABSOLUTE_ACCEPTANCE_DIR
 node backend-node/scripts/export-local-acceptance.cjs ABSOLUTE_ACCEPTANCE_DIR
 ```
 
-首次目录无组件时会实际下载。全部 124 项会执行并保留素材及回执；发布导出要求全部成功且源码摘要未变化。本轮的生成样本是短视频、图片和音频，验证了可执行性、可解码性、源文件不变及代表性操作效果；不代表所有真实长视频、所有参数组合、所有肖像效果都已验证。
+首次目录无组件时会实际下载。验收脚本按当前注册表执行覆盖范围内的操作并保留素材及回执；发布导出要求全部成功且源码摘要未变化。短视频、图片和音频样本验证可执行性、可解码性、源文件不变及代表性操作效果；各类真实长视频、参数组合和肖像效果需要对应任务的作品验收。

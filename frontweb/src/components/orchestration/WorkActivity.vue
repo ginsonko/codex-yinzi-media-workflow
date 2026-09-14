@@ -13,7 +13,7 @@
       <span role="status">{{ continuationHint }}</span>
     </div>
     <textarea v-if="showContinuationText" class="continuation-text" aria-label="原任务继续指令" readonly :value="continuationPrompt" @focus="$event.target.select()" />
-    <p v-if="session.source_context?.intent === 'analyze'" class="intent-note">本次为分析任务；分析结论会保存在这里。</p>
+    <p v-if="session.source_context?.intent === 'analyze'" class="intent-note">本次为分析任务：记录可恢复，不等于后台生成或下载；分析结论会保存在这里。</p>
     <details v-if="acceptance.length"><summary>本次验收目标</summary><ul><li v-for="(item,index) in acceptance" :key="index">{{ item }}</li></ul></details>
     <details v-if="report"><summary>查看分析结论与验收标准</summary><pre>{{ reportText }}</pre><el-button size="small" plain @click="downloadReport">下载分析报告</el-button></details>
     <slot />

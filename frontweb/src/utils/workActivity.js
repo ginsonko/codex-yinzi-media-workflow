@@ -34,6 +34,15 @@ export function describeWorkActivity(session = {}, nodes = [], now = Date.now())
   if (unknown.length) return { ...base, label: '提交结果待核对', message: unknown[0].progress?.message || unknown[0].error?.message || '上游是否受理尚不明确，原请求已保留。', next: '核对原请求记录，避免重复提交' }
   if (base.needsUser) return { ...base, label: '等待补充信息' }
   if (activity.state === 'waiting') return { ...base, label: '等待中' }
-  if (stale) return { ...base, label: '暂未收到新进展', message: '尚无新的执行回报，下面保留最近一次记录。', lastMessage: activity.message, next: '查看 Codex 对话的执行状态，已有任务记录和素材仍保留' }
+  if (stale) return { ...base, label: '可恢复分析记录', message: '这是可恢复的分析上下文，不是后台正在计算；任务记录和素材仍保留，不会因此阻止升级。', lastMessage: activity.message, next: '查看 Codex 对话继续原任务，或在任务结束后再更新' }
+  if (session.source_context?.intent === 'analyze' || activity.stage === 'analysis') {
+    return {
+      ...base,
+      label: '分析上下文',
+      message: activity.message || '分析记录已保存，可稍后继续。',
+      notice: '这是可恢复的分析上下文，不等于后台生成、下载或本地处理。',
+      next: activity.next_action || '需要时继续分析或确认计划',
+    }
+  }
   return { ...base, label: STAGES[activity.stage] || '正在准备' }
 }

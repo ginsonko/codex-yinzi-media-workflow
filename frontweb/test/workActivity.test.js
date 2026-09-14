@@ -6,10 +6,22 @@ import { progressFromNodes } from '../src/utils/orchestrationExperience.js'
 const now = Date.parse('2026-09-09T15:00:00Z')
 const session = { status: 'running', updated_at: new Date(now).toISOString(), source_context: { activity: { stage: 'create', state: 'working', message: '准备320项', updated_at: '2026-09-09T14:50:00Z' } } }
 
+test('a current analysis report is recoverable context, not live backend work', () => {
+  const current = {
+    status: 'draft',
+    source_context: { intent: 'analyze', activity: { stage: 'analysis', state: 'working', message: '正在整理镜头', updated_at: new Date(now).toISOString() } },
+  }
+  const view = describeWorkActivity(current, [], now)
+  assert.equal(view.label, '分析上下文')
+  assert.equal(view.message, '正在整理镜头')
+  assert.match(view.notice, /不等于后台生成/)
+})
+
 test('polling or changing the session does not turn stale agent activity into live work', () => {
   const view = describeWorkActivity(session, [], now)
-  assert.equal(view.label, '暂未收到新进展')
+  assert.equal(view.label, '可恢复分析记录')
   assert.equal(view.lastMessage, '准备320项')
+  assert.match(view.message, /不是后台正在计算/)
   assert.equal(describeWorkActivity({ status: 'running' }, [], now).stale, true)
 })
 test('a submitted provider task remains visible when the agent report is old', () => {

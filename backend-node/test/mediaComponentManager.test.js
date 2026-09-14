@@ -8,6 +8,16 @@ const hash=b=>crypto.createHash('sha256').update(b).digest('hex');
 function archive(text){const z=new AdmZip();z.addFile('payload.txt',Buffer.from(text));return z.toBuffer();}
 const manifest=(bytes,version='1')=>({component_id:'test.component',version,kind:'zip',platforms:[process.platform+'-'+process.arch],urls:['https://github.com/test/component.zip'],sha256:hash(bytes),disk_bytes:1,executables:{file:'payload.txt'}});
 const response=bytes=>new Response(bytes,{headers:{'content-length':String(bytes.length)}});
+
+test('official asset API negotiates binary and validates redirected bytes',async()=>{
+ const root=tmp(),bytes=Buffer.from('release-asset'),target=path.join(root,'asset.part');let calls=0;
+ try { await download('https://api.github.com/repos/example/tool/releases/assets/1',target,hash(bytes),()=>{},async(url,options)=>{
+  assert.equal(options.headers.Accept,'application/octet-stream');calls++;
+  if(calls===1)return new Response(null,{status:302,headers:{location:'https://release-assets.githubusercontent.com/example/asset'}});
+  assert.match(url,/release-assets/);return response(bytes);
+ });assert.equal(calls,2);assert.equal(await sha256(target),hash(bytes));}
+ finally{fs.rmSync(root,{recursive:true,force:true});}
+});
 test('trusted registry rejects arbitrary manifests and unknown components',()=>{
  const bytes=archive('ok'),m=createComponentManager({root:tmp(),registry:[manifest(bytes)]});
  assert.throws(()=>m.ensureComponent({component_id:'test.component',url:'https://evil.invalid/x'}),/任意/);
@@ -18,8 +28,10 @@ test('fresh install, concurrent ensure, cached reuse, and broken files repair',a
  const root=tmp(),bytes=archive('ok');let calls=0,checks=0;
  const m=createComponentManager({root,registry:[manifest(bytes)],fetch:async()=>{calls++;return response(bytes);},probe:async(_,dir)=>{checks++;assert.equal(fs.readFileSync(path.join(dir,'payload.txt'),'utf8'),'ok');return 'ok';}});
  const [a,b]=await Promise.all([m.ensureComponent('test.component'),m.ensureComponent('test.component')]);assert.equal(a.directory,b.directory);assert.equal(calls,1);
+ assert.ok(path.relative(path.join(root,'test.component'),a.directory).length<=12);
  assert.equal((await m.ensureComponent('test.component')).reused,true);assert.equal(calls,1);
  fs.writeFileSync(path.join(a.directory,'payload.txt'),'broken');const repaired=await m.ensureComponent('test.component');assert.notEqual(repaired.directory,a.directory);assert.equal(calls,1);assert.ok(checks>=2);
+ assert.equal(fs.readFileSync(path.join(a.directory,'payload.txt'),'utf8'),'broken');
  fs.rmSync(root,{recursive:true,force:true});
 });
 test('failed new health check preserves installed current version',async()=>{
@@ -47,6 +59,33 @@ test('unsafe zip ADS names are rejected before file write',()=>{
 test('two independent managers share a cross-process installation lock',async()=>{
  const root=tmp(),bytes=archive('ok');let calls=0;const options={root,registry:[manifest(bytes)],fetch:async()=>{calls++;return response(bytes);},probe:async()=>true};
  const [a,b]=await Promise.all([createComponentManager(options).ensureComponent('test.component'),createComponentManager(options).ensureComponent('test.component')]);assert.equal(a.directory,b.directory);assert.equal(calls,1);fs.rmSync(root,{recursive:true,force:true});
+});
+
+test('existing version directories remain reusable after compact layout change',async()=>{
+ const root=tmp(),bytes=archive('ok'),definition=manifest(bytes),directory=path.join(root,'test.component','versions','old-hash-and-uuid');
+ fs.mkdirSync(directory,{recursive:true});fs.writeFileSync(path.join(directory,'payload.txt'),'ok');
+ fs.writeFileSync(path.join(root,'test.component','current.json'),JSON.stringify({component_id:'test.component',sha256:definition.sha256,status:'ready',directory,files:{'payload.txt':hash(Buffer.from('ok'))}}));
+ const manager=createComponentManager({root,registry:[definition],fetch:async()=>{throw Error('unexpected download')},probe:async()=>true});
+ try{const result=await manager.ensureComponent('test.component');assert.equal(result.directory,directory);assert.equal(result.reused,true);}
+ finally{fs.rmSync(root,{recursive:true,force:true});}
+});
+
+test('model artifacts use a verified fallback and never activate a corrupt model',async()=>{
+ const root=tmp(),bytes=archive('engine'),model=Buffer.from('valid model');
+ const definition={...manifest(bytes),verify_all_files:true,artifacts:[{name:'model',path:'models/sky.onnx',urls:['https://huggingface.co/test/weights','https://hf-mirror.com/test/weights'],sha256:hash(model)}]};
+ const calls=[];
+ try {
+  const manager=createComponentManager({root,registry:[definition],fetch:async url=>{
+   calls.push(url);if(url.endsWith('.zip'))return response(bytes);
+   if(url.includes('huggingface.co'))return new Response(null,{status:503});return response(model);
+  },probe:async(_,dir)=>assert.equal(fs.readFileSync(path.join(dir,'models/sky.onnx'),'utf8'),'valid model')});
+  const installed=await manager.ensureComponent('test.component');
+  assert.equal(calls.length,3);assert.equal(installed.files[path.join('models','sky.onnx')],hash(model));
+  const corrupt={...definition,version:'2',sha256:hash(archive('changed')),artifacts:[{...definition.artifacts[0],sha256:'a'.repeat(64)}]};
+  const next=createComponentManager({root,registry:[corrupt],fetch:async url=>response(url.endsWith('.zip')?archive('changed'):model),probe:async()=>{throw Error('corrupt model reached healthcheck')}});
+  await assert.rejects(next.ensureComponent('test.component'),{code:'COMPONENT_HASH_MISMATCH'});
+  assert.equal(next.readState('test.component').directory,installed.directory);
+ }finally{fs.rmSync(root,{recursive:true,force:true});}
 });
 
 test('native component integrity includes weights and repairs a changed model from verified cache',async()=>{

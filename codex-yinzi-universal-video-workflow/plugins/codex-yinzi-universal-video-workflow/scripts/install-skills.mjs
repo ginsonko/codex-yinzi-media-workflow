@@ -10,6 +10,7 @@ async function digestTree(root) {
   const hash=crypto.createHash('sha256')
   async function visit(relative) {
     for(const e of (await fs.readdir(path.join(root,relative),{withFileTypes:true})).sort((a,b)=>a.name.localeCompare(b.name))) {
+      if(e.name==='node_modules') continue
       const name=path.join(relative,e.name)
       if(e.isDirectory()) await visit(name)
       else {hash.update(name.replaceAll('\\','/'));hash.update(await fs.readFile(path.join(root,name)))}
@@ -24,7 +25,7 @@ export async function installSkills({projectRoot,skillsRoots,codexHome=process.e
   const complete=path.join(path.dirname(installed),'complete.json')
   if(!await readJson(complete)) {
     await fs.mkdir(path.dirname(installed),{recursive:true})
-    await fs.cp(plugin,installed,{recursive:true})
+    await fs.cp(plugin,installed,{recursive:true,filter:file=>!path.relative(plugin,file).split(path.sep).includes('node_modules')})
     await atomicJson(complete,{digest})
   }
   const recordFile=path.join(stateRoot(),'skill-installation.json')

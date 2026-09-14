@@ -1,0 +1,6 @@
+{
+  "name": "yinzi-local-face-detector-component",
+  "version": "1.0.0",
+  "private": true,
+  "dependencies": { "onnxruntime-node": "1.17.3" }
+}

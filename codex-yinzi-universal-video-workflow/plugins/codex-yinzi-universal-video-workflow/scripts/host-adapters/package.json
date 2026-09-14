@@ -1,0 +1,16 @@
+{
+  "name": "mcp-host-adapters",
+  "version": "1.1.0",
+  "description": "Multi-host MCP and Skills configuration adapter",
+  "type": "module",
+  "scripts": {
+    "test": "node --test host-config.test.mjs"
+  },
+  "dependencies": {
+    "@iarna/toml": "^3.0.0",
+    "jsonc-parser": "^3.3.1"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

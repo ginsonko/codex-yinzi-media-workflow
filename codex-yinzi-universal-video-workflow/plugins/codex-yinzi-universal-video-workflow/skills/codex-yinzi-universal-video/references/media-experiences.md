@@ -12,6 +12,16 @@ Notes never authorize another paid generation, installation or external action. 
 
 Record credential locations or saved configuration IDs when useful, never Key/Cookie/Authorization values or signed URL query strings. Record a portable recipe and its conditions rather than hardcoding one user's character or duration. Prefer actual component versions and input/output hashes over unverified claims. The tools page's **制作经验** shows the same records; user notes remain identified as user notes.
 
+## Reuse a delivered method without another plan approval
+
+On a similar new request, search the relevant category/module, read the useful record and its `superseded_by` corrections, and check later task/user feedback. Compare the requested result, input type, quality target, local/cloud preference, costs, privacy and current tool availability. Matching is a contextual Skill decision, not a hardcoded task-name allowlist.
+
+A real successfully delivered result with no later objection can establish the default method under the user's current repeat request. Show the reused plan and proceed without a satisfaction survey or another plan approval. Mere absence of feedback on a failed, unknown or unfinished run does not qualify. If the user expresses dissatisfaction, asks for another route or materially changes constraints, explain the updated proposal and follow the current approval mode. A recipe never overrides an instruction to wait or independently authorizes paid or external actions.
+
+After delivery, record a compact reusable recipe in the existing note's `guidance` object: `recipe` (steps/module IDs and method), `applies_when`, `constraints`, `fallbacks`, `delivery_refs` and `feedback_basis`. Distinguish explicit acceptance from `delivered_no_objection`; do not call the latter user praise or fabricate a `quality_status:passed`. Record actual technical/quality evidence separately. A later correction uses `supersedes_id` and preserves history. Do not store a success recipe while a task is still unfinished. Missing recipe metadata in older notes does not invalidate their genuine evidence; inspect that evidence before deciding whether reuse fits.
+
+See [visible planning](visible-planning.md) for the table and existing plan confirmation commands.
+
 CLI fallback (the same local service, no extra daemon):
 
 ```text

@@ -9,7 +9,7 @@ const AdmZip = require('adm-zip');
 const dependencyLock = require('../../../scripts/dependencies.json');
 const ROOT = path.resolve(__dirname, '../..');
 const MAX_BYTES = 512 * 1024 ** 2;
-const HOSTS = new Set(['github.com','release-assets.githubusercontent.com','objects.githubusercontent.com','raw.githubusercontent.com','www.gyan.dev']);
+const HOSTS = new Set(['github.com','api.github.com','release-assets.githubusercontent.com','objects.githubusercontent.com','raw.githubusercontent.com','media.githubusercontent.com','www.gyan.dev','huggingface.co','hf-mirror.com','cas-bridge.xethub.hf.co']);
 const fail = (code, message) => Object.assign(new Error(message), { code });
 function safeId(value) { if (!/^[a-z][a-z0-9.-]{1,99}$/.test(value || '')) throw fail('INVALID_COMPONENT_ID','组件编号无效'); return value; }
 function readJson(file) { try { return JSON.parse(fs.readFileSync(file,'utf8')); } catch { return null; } }
@@ -26,7 +26,12 @@ function registry() { return [
   const template=path.join(ROOT,'components',definition.template),hash=crypto.createHash('sha256');
   hash.update(JSON.stringify(definition));for(const file of ['package.json','package-lock.json','healthcheck.cjs'])hash.update(fs.readFileSync(path.join(template,file)));
   return {...definition,kind:'npm',sha256:hash.digest('hex')};
-})]; }
+}),require('./skyModelManifest').SKY_COMPONENT_DEFINITION,require('./faceModelManifest').FACE_COMPONENT_DEFINITION,require('./whisperModelManifest').WHISPER_COMPONENT_DEFINITION,require('./foregroundModelManifest').FOREGROUND_COMPONENT_DEFINITION,require('./mediaDownloadManifest').YT_DLP_COMPONENT_DEFINITION].map(definition => {
+  if (definition.sha256) return definition;
+  const template=path.join(ROOT,'components',definition.template),hash=crypto.createHash('sha256');
+  hash.update(JSON.stringify(definition));for(const file of ['package.json','package-lock.json','healthcheck.cjs'])hash.update(fs.readFileSync(path.join(template,file)));
+  return {...definition,kind:'npm',sha256:hash.digest('hex')};
+}); }
 function trustedUrl(url) { const u=new URL(url); if(u.protocol!=='https:'||u.username||u.password||!HOSTS.has(u.hostname)) throw fail('UNTRUSTED_COMPONENT_SOURCE','组件来源不在受信 HTTPS 清单'); return u.href; }
 function run(executable,args,options={}) { return new Promise((resolve,reject)=>{
   const child=spawn(executable,args,{cwd:options.cwd,windowsHide:true,shell:false,stdio:['ignore','pipe','pipe']}); let stdout='',stderr='';
@@ -39,11 +44,11 @@ async function download(url,target,digest,onProgress=()=>{},fetcher=fetch) {
   let offset=fs.existsSync(target)?fs.statSync(target).size:0,response,next=trustedUrl(url);
   const controller=new AbortController();let idle;const reset=()=>{clearTimeout(idle);idle=setTimeout(()=>controller.abort(),45000);};reset();
   try {
-    for(let hop=0;hop<6;hop++) { response=await fetcher(next,{redirect:'manual',headers:{'Accept-Encoding':'identity',...(offset?{Range:`bytes=${offset}-`}:{})},signal:controller.signal}); if(![301,302,303,307,308].includes(response.status))break;const location=response.headers.get('location');await response.body?.cancel();next=trustedUrl(new URL(location,next).href); }
+    for(let hop=0;hop<6;hop++) { response=await fetcher(next,{redirect:'manual',headers:{Accept:'application/octet-stream','Accept-Encoding':'identity',...(offset?{Range:`bytes=${offset}-`}:{})},signal:controller.signal}); if(![301,302,303,307,308].includes(response.status))break;const location=response.headers.get('location');await response.body?.cancel();next=trustedUrl(new URL(location,next).href); }
     const encoded=value=>Boolean(value.headers.get('content-encoding') && value.headers.get('content-encoding').toLowerCase()!=='identity');
     if(response.status===206&&encoded(response)){
       await response.body?.cancel();
-      response=await fetcher(next,{redirect:'manual',headers:{'Accept-Encoding':'identity'},signal:controller.signal});
+      response=await fetcher(next,{redirect:'manual',headers:{Accept:'application/octet-stream','Accept-Encoding':'identity'},signal:controller.signal});
       if(response.status!==200){await response.body?.cancel();throw fail('INVALID_CONTENT_RANGE','压缩响应无法按本地字节断点续传，需要完整响应');}
     }
     if(response.status===416&&offset){await response.body?.cancel();fs.unlinkSync(target);return download(url,target,digest,onProgress,fetcher);}
@@ -85,7 +90,13 @@ function createComponentManager(options={}){
     if(m.template)return(await run(process.execPath,[path.join(dir,'healthcheck.cjs')],{cwd:dir,timeout:120000})).stdout.trim();
     if(m.kind==='npm'){const code="(async()=>{const s=require('sharp');const b=await s({create:{width:8,height:8,channels:3,background:'red'}}).png().toBuffer();if(!b.length)throw Error('empty');console.log(JSON.stringify({sharp:s.versions.sharp,bytes:b.length}))})().catch(e=>{console.error(e.message);process.exit(1)})";return(await run(process.execPath,['-e',code],{cwd:dir})).stdout.trim();}
     return Promise.all(Object.values(m.executables).map(async file=>{
-      const result=await run(path.join(dir,file),m.probe_args||['-version'],{cwd:dir,exitCodes:m.probe_exit_codes});
+      const executable=path.join(dir,file);let result;
+      try{result=await run(executable,m.probe_args||['-version'],{cwd:dir,exitCodes:m.probe_exit_codes});}
+      catch(error){
+        if(process.platform==='win32'&&error.code==='ENOENT'&&executable.length>=260&&fs.existsSync(executable))
+          throw fail('COMPONENT_PATH_TOO_LONG','组件文件已存在，但 Windows 无法从此长路径启动。请为 media_components.root 或 YINZI_WORKFLOW_COMPONENT_DIR 配置较短目录，再恢复原任务；旧安装已保留。');
+        throw error;
+      }
       if(m.probe_output&&!((result.stdout||'')+(result.stderr||'')).includes(m.probe_output))throw fail('COMPONENT_HEALTH_FAILED','组件未返回预期的运行信息');
       return (result.stdout||result.stderr).split(/\r?\n/)[0];
     }));
@@ -107,7 +118,9 @@ function createComponentManager(options={}){
         report({stage:'repair',message:'组件文件失效，自动重新准备'});
       }}
       const stat=fs.statfsSync(root);if(stat.bavail*stat.bsize<m.disk_bytes)throw fail('INSUFFICIENT_DISK','组件安装空间不足，原任务已保留');
-      const next=path.join(dir,'versions',m.sha256.slice(0,12)+'-'+crypto.randomUUID());fs.mkdirSync(next,{recursive:true});report({stage:'preparing',message:'正在准备组件，完成后自动继续'});
+      // Keep each attempt isolated without spending Windows' executable path
+      // budget on a full hash and UUID. Existing version paths remain valid.
+      fs.mkdirSync(dir,{recursive:true});const next=fs.mkdtempSync(path.join(dir,'v-'));report({stage:'preparing',message:'正在准备组件，完成后自动继续'});
       if(m.kind==='zip'){
         const cache=path.join(root,'.cache');fs.mkdirSync(cache,{recursive:true});const archive=path.join(cache,m.sha256+'.part');let error;
         for(const url of m.urls){try{await download(url,archive,m.sha256,report,options.fetch);error=null;break;}catch(e){error=e;}}if(error)throw error;
@@ -121,7 +134,13 @@ function createComponentManager(options={}){
       for(const artifact of m.artifacts||[]){
         const output=path.resolve(next,artifact.path);if(!output.startsWith(next+path.sep)||artifact.path.includes(':'))throw fail('UNSAFE_COMPONENT_PATH','组件模型路径越界');
         const cache=path.join(root,'.cache');fs.mkdirSync(cache,{recursive:true});const file=path.join(cache,artifact.sha256+'.part');
-        report({stage:'download',message:'正在准备 '+artifact.name});await download(artifact.url,file,artifact.sha256,event=>report({...event,message:'正在准备 '+artifact.name}),options.fetch);
+        report({stage:'download',message:'正在准备 '+artifact.name});
+        let downloadError;
+        for(const url of artifact.urls || [artifact.url]){
+          try{await download(url,file,artifact.sha256,event=>report({...event,message:'正在准备 '+artifact.name}),options.fetch);downloadError=null;break;}
+          catch(error){downloadError=error;}
+        }
+        if(downloadError)throw downloadError;
         fs.mkdirSync(path.dirname(output),{recursive:true});fs.copyFileSync(file,output);
       }
       report({stage:'healthcheck',message:'组件已安装，正在实际运行检查'});const health=await probe(m,next),files={};for(const file of m.kind==='npm'||m.verify_all_files?installedFiles(next):Object.values(m.executables))files[file]=await sha256(path.join(next,file));

@@ -23,6 +23,8 @@ node_modules/
 .yinzi-local/
 work/
 outputs/
+evidence/
+*.timestamp-*.mjs
 backend-node/tools/ffmpeg/*.exe
 backend-node/tools/ffmpeg/downloads/
 backend-node/tools/ffmpeg/LICENSE-DOWNLOADED.txt

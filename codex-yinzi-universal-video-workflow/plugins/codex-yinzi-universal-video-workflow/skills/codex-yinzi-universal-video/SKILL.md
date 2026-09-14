@@ -5,7 +5,7 @@ description: Use Codex to analyze user-authorized assets, dynamically plan, exec
 
 # Codex 银子万能媒体工作流
 
-Treat Codex as the primary conversation, reasoning, research, and orchestration layer. The local application is the durable system of record, executor bridge, audit console, configuration surface, and manual fallback. Never ask the user to repeat the request in the application UI.
+Treat the current host Agent (such as Codex or Grok) as the primary conversation, reasoning, research, and orchestration layer. The local application is the durable system of record, executor bridge, audit console, configuration surface, and manual fallback. Never ask the user to repeat the request in the application UI.
 
 ## Start or recover
 
@@ -13,7 +13,9 @@ An update must preserve the existing session ID, task history and database bindi
 
 For an eligible media request, first use the installed `scripts/check-update.mjs --apply` (plugin scripts directory). This checks only the official repository, fast-forwards a clean main checkout when idle, and preserves local edits, custom branches, offline operation and active work. `YINZI_WORKFLOW_AUTO_UPDATE=0` opts out. When it returns `install_required`, automatically execute its platform-specific `install_command` under the user's installation/update authorization; read back the launched runtime and reload this Skill from the checkout. Pulling source alone is not an activated update. If installation fails, explain the actual state and resume installation before claiming the new version is running. On `deferred`, finish the current task and check once again. Other check failures should not delay usable existing media work.
 
-Immediately after startup/update, use **`begin_media_task`**, before reading large catalogs or doing long analysis. Give it `user_goal`, a stable `idempotency_key` derived from the real Codex task ID plus goal, `intent: analyze` for analysis-only requests (otherwise `create`), and optional `source_context` with input names and acceptance targets. It creates or reuses a durable task, records the analysis phase, opens its page, and returns the actual `frontend_url`. Do not invent a task identifier or port. Return that clickable task URL in the conversation.
+Immediately after startup/update, use **`begin_media_task`**, before reading large catalogs or doing long analysis. Give it `user_goal`, a stable `idempotency_key` derived from the current host's real session/task ID plus goal, `intent: analyze` for analysis-only requests (otherwise `create`), and optional `source_context` with input names and acceptance targets. If the host exposes no session ID, create and save a local UUID once for this goal and reuse it; this is a local request identity, not a claimed host ID. It creates or reuses a durable task, records the analysis phase, opens its page, and returns the actual `frontend_url`. Use the returned media task identifier and port. Return that clickable task URL in the conversation.
+
+Recover an existing media session only when the user is continuing that goal and its inputs and constraints match. A recent session, shared runtime, or matching host alone does not identify the current task. Start a distinct task for a distinct request and persist its returned session ID. For a clear batch request with the count, subjects and concurrency already chosen, show a concise plan, begin the task and use the persistent batch API. Once CLI or MCP works, continue through it; do not repeatedly scan the backend, search for another plugin or rerun installation while the batch is executing.
 
 When MCP is unavailable, use the same path through the bundled CLI:
 1. Write a UTF-8 JSON input with `user_goal`, `idempotency_key`, `intent`, optional `title` and `source_context`.
@@ -21,6 +23,8 @@ When MCP is unavailable, use the same path through the bundled CLI:
 3. Use `activity <session-id> --input <file>` for progress. The same JSON as MCP `report_activity` is accepted, excluding `session_id`.
 
 At meaningful boundaries report a factual `message`, `stage`, `next_action`, `needs_user`, and a stable `event_idempotency_key`. Examples: files inspected, shot breakdown ready, draft plan prepared, awaiting the user's missing reference, generation submitted, original file downloading, verification completed. Record user-facing summaries and findings, not private reasoning. Do not run a timer that says Codex is active without actual work. Local backend polling continues independently and is displayed as such.
+
+MCP `report_activity` and CLI `activity` return a compact receipt by default so long tasks do not repeatedly load their complete history. Read the current activity, session version, event identity and `details_path`; `reused: null` means an older runtime did not report replay status. If `truncated_fields` is present, the full text is still stored. Use `get_session` / CLI `get` only when its details are needed, or explicitly set `response_detail: full` for the original complete receipt. Save large readbacks to files and inspect relevant fields instead of printing entire bundles into the conversation.
 
 For analysis-only work, save `analysis_report` (a Markdown string or an object with `summary`, findings, proposed approach and acceptance criteria) and report `state: completed` after any analysis nodes have their true final results. This closes the analysis task without submitting paid generation. For a continuation, read that session and its report, then update its intent/plan only according to the current user request. For already-authorized production work, proceed without asking the same approval again.
 
@@ -31,6 +35,15 @@ When onboarding or a required model Key is missing, use beginner language and re
 Do not write SQLite directly. Do not store API keys in a plan, node, event, receipt, source context, command argument, or normal log. Refer to an already saved local configuration by ID or role.
 
 Use `record_event` after a meaningful fact, decision, research result, asset classification, progress milestone, or QA finding. Always provide a stable `event_idempotency_key`; never put credentials or binary contents in the payload. Repeating the same key is a readback/reuse, not a new event.
+
+## Show the route before execution
+
+Every media task gets a visible, readable plan table in the conversation before production starts, including unattended work and repeated tasks. Explain the desired result, the registered tools you will use, each tool's purpose, and what the user will receive. Keep a user-selected route concise and fast; give an open-ended request a substantial beginner-friendly explanation and relevant fallback routes. Read [visible planning and recipe reuse](references/visible-planning.md) for the table format, discovery commands, approval metadata and resumption rules.
+
+- **User-selected route:** when the user already chose how to do the work, follow it. Show a short table, check only the relevant contracts and inputs, and execute without another plan approval. Do not add exploratory workflows or quality downgrades for speed.
+- **Agent-designed route:** when the user provides a goal or idea and leaves the method open, inspect all registered tools through the compact paged `module-index` CLI, including tools whose components are not installed. Read relevant contracts and experience notes, compare quality, time, cost and the user's constraints, then explain the best-fitting route and useful alternatives. Do not dump every tool's full schema into context or install the entire catalog.
+- **Approval:** a new agent-designed route in ordinary mode waits for the user's approval after the table. Unattended mode shows the same plan and immediately proceeds. A matching previously successful delivered method with no later objection also proceeds after showing the reused plan. User instructions to stop, preview only or approve first take precedence; a clear goal alone does not mean the method was already chosen.
+- **Continuity:** save the plan and its actual approval basis with the existing task. After interruption, recover that revision and progress instead of asking again or repeating completed work. A relevant failure triggers a justified remaining fallback within the original authorization, not a new task.
 
 ## Understand before planning
 
@@ -62,7 +75,7 @@ Read `creative_preferences.unattended_mode` from the startup result or `get_work
 
 With unattended mode enabled, proceed through planning, generation, review and refinement within the user's requested task and budget, without per-video or per-step confirmation. Pass any user-specified cost ceiling to the tools; when the user has left spending to Codex, choose reasonably and do not invent a mandatory budget question. Keep progress and results visible. Turning the mode off affects subsequent work; already submitted media keeps its original reconciliation path.
 
-In ordinary mode, use the user's existing authorization; `confirmed_paid_action: true` records that authorization and does not mean asking again. Explain the plan and relevant cost assumptions briefly, then execute authorized work. Ask only when a material decision or action falls outside the authorization. Unattended mode covers the media task; unrelated publishing, messages, deletion and production operations retain their own task scope.
+In ordinary mode, a new agent-designed method needs the visible plan approval described above. Existing authorization for a user-selected, already approved or matching successful route does not require another approval. `confirmed_paid_action: true` records actual authorization for that action; recipe reuse does not independently authorize new spending or external actions. Unattended mode covers the media task; unrelated publishing, messages, deletion and production operations retain their own task scope.
 
 Keep a user-provided internal cost basis, the provider catalog quote, the authorized budget and settled billing separate. For image generation, `max_unit_price_cny` is compared with the catalog quote. When the user explicitly distinguishes internal costs and authorizes a total budget without a separate catalog-price ceiling, allocate a catalog ceiling within that remaining budget and proceed; do not copy the internal cost into this field and then ask again about the resulting mismatch. Preserve an explicit user ceiling on catalog exposure. A successful request or catalog reservation is not proof of the final charge.
 
@@ -70,11 +83,32 @@ Ordinary local reads, reversible planning, audit writes, status updates, retries
 
 ## Execute and report truthfully
 
+For professional local motion graphics, precise keyframes, typography, masks,
+layered compositing, advanced transitions, time remapping or 2.5D camera work,
+consider After Effects as a primary production tool. When the user chooses AE,
+use the visible editor directly through the structured job bridge. Read
+[AE professional production](references/after-effects.md) for the executable
+contract, scene selection, dependency order, property discovery and recovery.
+The installed CLI `ae` commands work without restarting an active media server.
+Explain the planned AE work visibly and retain the editable AEP with the movie.
+Use lightweight local tools for simple cuts/encoding and Blender for full 3D
+geometry when they better fit that part of the job.
+
 For existing-media preparation, phone photos, product image fitting, OCR/searchable PDF, soundtrack preservation and local recovery, read the relevant recipe in [references/local-task-recipes.md](references/local-task-recipes.md). When a searchable image-based PDF is requested and the runtime exposes it, use `local.image.searchable-pdf`; it automatically prepares OCR and PDF components and returns the file through the normal job/artifact path.
 
 For music-driven MAD, MV or remix cuts, `local.audio.analyze-beats` produces a local JSON timeline and SVG of transient candidates. Use the relevant guidance in [music-driven editing](references/music-driven-editing.md): candidate onsets are editing suggestions, and the tempo hypothesis needs listening checks before aligning shots.
 
-For existing-media processing, search `list_modules` by the needed operation instead of loading every contract. `local.*` V5 contracts have concrete local executors. Use `local_media_run` with the current `session_id`, stable `request_key`, `module_id`, authorized `input_path` and structured `parameters`. This immediately returns a durable job; the backend automatically downloads a missing registered component, verifies and installs it, then continues processing. No separate install action or provider authentication is needed. Read `local_media_get_job` for real progress and results; `local_media_resume` continues the same failed job. CLI fallback commands are `local-run --input FILE`, `local-job JOB_ID`, `local-resume JOB_ID`, and `components`.
+For gathering public source media or organizing an authorized folder, read
+[source download and indexing](references/source-library.md). Use the registered
+download/index executors for provenance, recoverable downloads and duplicates,
+then combine shot and rhythm analysis with the Agent's actual content review.
+
+For pixel-level frame repair, drawn effects or mask cleanup with original timing
+and audio, read [frame sequence editing](references/frame-sequences.md). Export
+only the needed shot, let the Agent record deliberate frame replacements, and
+check the assembled video and neighbouring frames before delivery.
+
+For existing-media processing, use the compact catalog discovery above for an open-ended request; a user-selected route needs only the relevant contracts. `local.*` V5 contracts have concrete local executors. Use `local_media_run` with the current `session_id`, stable `request_key`, `module_id`, authorized `input_path` and structured `parameters`. This immediately returns a durable job; the backend automatically downloads a missing registered component, verifies and installs it, then continues processing. No separate install action or provider authentication is needed. Read `local_media_get_job` for real progress and results; `local_media_resume` continues the same failed job. CLI fallback commands are `local-run --input FILE`, `local-job JOB_ID`, `local-resume JOB_ID`, and `components`.
 
 For a routine task such as OCR, resizing or transcoding, use the matching registered executor as soon as the input and requested result are clear. A brief plan and focused result check are usually sufficient. For image-to-text, `local.image.ocr` accepts the image path and returns UTF-8 text, recognized lines, boxes and a quality note; its installer prepares `vision.ocr` automatically. This operation does not create a searchable PDF. Use an actual document executor when that format is requested. A `review_required` result is available for inspection and continued work: compare names, numbers and uncertain text with the source, preserve ambiguity, and continue authorized correction without requiring a new user approval. Keep local checks proportional to the requested result; developer test suites and exploratory endpoint guessing do not belong in ordinary media production. Record time from the user's request to the first usable result and to final delivery, separately from inference time.
 
@@ -88,6 +122,16 @@ Tell the user why a component fits and that a successful installation is reused.
 - Checkpoint after material milestones and before long waits, handoff, compaction, or final delivery. The application readback is authoritative over remembered narrative.
 
 ## Review and adapt
+
+For model prompt conversion or editable multi-shot plans, use the local `prompt_adapt` tool and read [prompt adaptation](references/prompt-adaptation.md). Preserve shot intent, reference bindings and constraints; use the selected channel's configurable contract and inspect differences before generation.
+
+For local face detection or face-local blur, pixelation, eye bars and grids, read [face masks](references/face-masks.md). Use the registered image executors, inspect real face indices, and keep manual regions distinct from automatic detections.
+
+For product or subject cutouts, transparent PNGs and foreground masks, read [foreground segmentation](references/foreground-segmentation.md). Use the registered local image executors, inspect the real mask and compare difficult edges; preserve explicit user masks when refining small regions.
+
+For sky replacement in photos or continuous footage, read [sky replacement](references/sky-replacement.md). Choose the registered image/video executor and inspect actual masks, edges, lighting and sound timing before accepting the result.
+
+For offline narration or speech recognition and subtitles, read [local speech](references/offline-speech.md). Choose installed voices for text narration or local Whisper for audio/video transcription; check pronunciation, text and timing before using the result in the existing editor.
 
 For a shot that benefits from precise 3D blocking, multi-angle composition, or
 repeatable camera motion, read [references/blender-director-api.md](references/blender-director-api.md)

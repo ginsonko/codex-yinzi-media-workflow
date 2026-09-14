@@ -231,10 +231,20 @@ operations.push(require('./localSearchablePdfOperation'));
 operations.push(...require('./videoReversePrompt').operations);
 operations.push(require('./videoTimelineEdit'));
 operations.push(require('./audioBeatAnalysis'));
+operations.push(require('./audioTranscribe'));
+operations.push(require('./videoShotAnalysis'));
 operations.push(require('./imageCompositeLayers'));
 operations.push(require('./videoComposeClips'));
 operations.push(require('./videoCompositeLayers'));
 operations.push(require('./videoCameraMotion'));
+operations.push(require('./localAfterEffectsOperation'));
+operations.push(require('./skyReplaceImage'), require('./skyReplaceVideo'));
+operations.push(require('./faceImageOperations').faceDetectOperation, require('./faceImageOperations').faceMaskOperation);
+operations.push(require('./videoFaceTracking').trackFacesOperation, require('./videoFaceTracking').faceMaskOperation);
+operations.push(require('./localSystemSpeech'));
+operations.push(require('./foregroundImageOperations').foregroundMaskOperation, require('./foregroundImageOperations').removeBackgroundOperation);
+operations.push(...require('./sourceLibraryOperations').operations);
+operations.push(require('./videoFrameSequence').exportFramesOperation, require('./videoFrameSequence').assembleFramesOperation);
 function getOperation(id) { return operations.find(o=>o.id===id); }
 function contracts() { return operations.map(o=>({module_id:o.id,title:o.title,description:o.description||o.title,description_zh:o.description_zh||o.description||o.title,version:1,version_track:'V5',phase:o.phase||'edit',executor:'local',availability:'bridge',component_id:o.component_id,auto_install:Boolean(o.component_id),
   additional_components:o.additional_components || [],validation_status:verifiedOperation(o.id)?'verified_windows_fixture':'execution_receipt_required',source_refs:[o.source],inputs:o.inputs||['input_path','parameters'],outputs:['derived_media','execution_receipt'],parameters:o.defaults,parameter_schema:o.parameter_schema||parameterSchemas[o.id],transition_options:o.transitions,

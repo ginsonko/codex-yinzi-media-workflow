@@ -10,7 +10,7 @@ async function main() {
   const requireComponent = createRequire(path.join(job.component_dir, 'package.json'));
   if (op.processFile) {
     const requireComponents = Object.fromEntries(Object.entries(job.component_dirs || {}).map(([id, directory]) => [id, createRequire(path.join(directory, 'package.json'))]));
-    const result = await op.processFile({inputPath:job.input_path,outputPath:job.output_path,parameters:job.parameters||{},requireComponent,requireComponents,componentDir:job.component_dir});
+    const result = await op.processFile({inputPath:job.input_path,outputPath:job.output_path,parameters:job.parameters||{},requireComponent,requireComponents,componentDir:job.component_dir,sources:job.sources||[]});
     console.log(JSON.stringify(result));
     return;
   }
