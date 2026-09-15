@@ -37,7 +37,7 @@ async function execute(request, options = {}) {
     : op.id.endsWith('.webp-quality') ? 'webp'
     : op.id.endsWith('.convert') ? (params.format || 'webp')
     : 'png';
-  const ext = op.output_extension || (op.kind === 'audio' ? 'wav' : op.kind === 'video' ? 'mp4' : imageExt);
+  const ext = op.outputExtension?.(params) || op.output_extension || (op.kind === 'audio' ? 'wav' : op.kind === 'video' ? 'mp4' : imageExt);
   const output = path.join(dir, 'result.' + ext); let details;
   if (op.executeNative) {
     const ensureComponent = async id => {
@@ -54,6 +54,15 @@ async function execute(request, options = {}) {
     details = JSON.parse(result.stdout);
   } else {
     const binaries = component.executables;
+    if (op.prepare) {
+      await op.prepare({
+        ffmpeg: binaries?.ffmpeg,
+        ffprobe: binaries?.ffprobe,
+        component,
+        parameters: params,
+        timeoutMs: options.probeTimeoutMs,
+      });
+    }
     const probe = async file => JSON.parse((await run(binaries.ffprobe, ['-v','error','-show_streams','-show_format','-of','json',file])).stdout);
     const before = await probe(input), filter = op.build(params);
     if(op.id.endsWith('.reverse') && Number(before.format?.duration)>120) throw Object.assign(Error('倒放会缓存帧；请先将素材分为不超过 120 秒的片段，处理后拼接'),{code:'INPUT_SEGMENT_REQUIRED'});

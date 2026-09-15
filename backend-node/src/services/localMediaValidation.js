@@ -3,6 +3,8 @@ const files=['localMediaOperations.js','localMediaParameterSchemas.json','localM
 files.push('ade20kLabels.js','skyReplaceCore.js','skyReplaceImage.js','skyReplaceVideo.js','skyVideoStream.js','skyModelManifest.js','skyMaskRefinement.js');
 files.push('sourceLibraryOperations.js','mediaDownload.js','mediaIndex.js','mediaDownloadManifest.js');
 files.push('videoFrameSequence.js');
+files.push('mediaExtensionCandidates.js');
+files.push('mediaExtensionSchemas.json');
 function sourceFingerprints(){return Object.fromEntries(files.map(file=>[file,crypto.createHash('sha256').update(fs.readFileSync(path.join(__dirname,file),'utf8').replace(/\r\n/g,'\n')).digest('hex') ]));}
 let cached;
 function verifiedOperation(id){

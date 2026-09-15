@@ -2,7 +2,7 @@
   <div class="workbench-view">
     <div class="catalog-page">
       <div class="tool-actions"><el-button @click="experiencesOpen = true">制作经验</el-button><el-button @click="toolOptionsOpen = true">探索制作方案</el-button><el-button @click="transitionsOpen = true">转场预览</el-button></div>
-      <section class="catalog-hero"><div><span class="kicker">CODEX 可以自己选工具</span><h2>从目标出发，不用记工具名字</h2><p>你只需要说想完成什么。Codex 会先看任务和素材，再从这张目录里组合合适的能力；需要人工处理的模块会明确标出来。</p></div><div class="catalog-count"><strong>{{ filtered.length }}</strong><span>个可见模块</span></div></section>
+      <section class="catalog-hero"><div><span class="kicker">CODEX 可以自己选工具</span><h2>从目标出发，不用记工具名字</h2><p>你只需要说想完成什么。Codex 会先看任务和素材，再从这张目录里组合合适的能力；需要人工处理的模块会明确标出来。</p></div><div class="catalog-count" aria-live="polite"><strong>{{ items.length }}</strong><span>个目录模块</span><span v-if="query || track" class="filter-count">当前筛选 {{ filtered.length }} 项</span></div></section>
       <dl v-if="inventory" class="inventory-strip" aria-label="完整能力目录统计">
         <div><dt>本地执行合同</dt><dd>{{ inventory.local_operation_contracts }}</dd></div>
         <div><dt>其他内置模块</dt><dd>{{ inventory.other_builtin_modules }}</dd></div>
@@ -67,7 +67,7 @@ function phaseTone(value) { return value === 'qa' ? 'amber' : value === 'deliver
 function availabilityLabel(value) { return ({ integrated: '已接入', bridge: 'Codex 调用', advisory: '规划参考' })[value] || value || '未知' }
 function availabilityTone(value) { return value === 'integrated' ? 'ready' : value === 'advisory' ? 'advisory' : 'bridge' }
 function executorLabel(value) { return ({ local: '本机', provider: '模型服务', codex: 'Codex', manual: '你或 Codex' })[value] || value }
-function componentLabel(value) { return ({ 'media.ffmpeg':'FFmpeg 媒体处理', 'media.sharp':'Sharp 图像处理', 'vision.realesrgan':'Real-ESRGAN 图片超分', 'vision.ocr':'图片文字识别', 'document.pdf':'PDF 文档处理', 'vision.sky-seg':'天空识别与换天' })[value] || value }
+function componentLabel(value) { return ({ 'media.ffmpeg':'FFmpeg 媒体处理', 'media.sharp':'Sharp 图像处理', 'vision.realesrgan':'Real-ESRGAN 图片超分', 'vision.ocr':'图片文字识别', 'document.pdf':'PDF 文档处理', 'vision.sky-seg':'天空识别与换天', 'vision.face-detector':'人脸检测与局部处理', 'media.whisper':'离线语音识别与字幕', 'vision.foreground-seg':'主体识别与透明抠图', 'tool.yt-dlp':'素材下载与恢复' })[value] || value }
 async function refreshProfile() {
   try {
     const profile = await orchestrationAPI.componentProfile()
@@ -110,6 +110,7 @@ useWorkbenchPage({ refresh: load, error: () => error.value, loading: () => loadi
 .example{min-height:0!important;color:var(--text-primary)!important;font-size:12px!important}details summary{cursor:pointer;color:var(--text-muted);font-size:12px}details code{display:block;margin:10px 0;overflow-wrap:anywhere}
 .tool-form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 14px}.form-output{margin-top:8px}.catalog-error{margin-top:-6px}@media(max-width:650px){.tool-form-grid{grid-template-columns:1fr}}
 .runtime-banner{padding:14px 0;border-block:1px solid var(--border-color)}
+.filter-count{margin-top:6px;white-space:nowrap}
 .runtime-banner small{color:var(--text-muted);font-size:11px}
 .component-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;width:min(560px,100%)}
 .component-state{min-width:0;font-size:12px;overflow-wrap:anywhere}

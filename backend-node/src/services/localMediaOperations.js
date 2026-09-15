@@ -2,7 +2,7 @@
 // just because a component probe succeeded; acceptance is per operation.
 const operations = [];
 const {verifiedOperation}=require('./localMediaValidation');
-const parameterSchemas=require('./localMediaParameterSchemas.json');
+const parameterSchemas={...require('./localMediaParameterSchemas.json'),...require('./mediaExtensionSchemas.json')};
 function number(p, key, fallback, min, max) { const n = p[key] == null ? fallback : Number(p[key]); if (!Number.isFinite(n) || n < min || n > max) throw new Error(`参数 ${key} 应在 ${min} 到 ${max} 之间`); return n; }
 function image(id,title,apply,defaults={}) { const op={id:'local.image.'+id,title,kind:'image',component_id:'media.sharp',apply,defaults,source:'https://sharp.pixelplumbing.com/api-operation/'}; operations.push(op); return op; }
 function filter(kind,id,title,build,defaults={}) { operations.push({id:`local.${kind}.${id}`,title,kind,component_id:'media.ffmpeg',build,defaults,source:'https://ffmpeg.org/ffmpeg-filters.html#'+id}); }
@@ -243,8 +243,12 @@ operations.push(require('./faceImageOperations').faceDetectOperation, require('.
 operations.push(require('./videoFaceTracking').trackFacesOperation, require('./videoFaceTracking').faceMaskOperation);
 operations.push(require('./localSystemSpeech'));
 operations.push(require('./foregroundImageOperations').foregroundMaskOperation, require('./foregroundImageOperations').removeBackgroundOperation);
+operations.push(require('./videoForegroundOperations').videoForegroundMaskOperation, require('./videoForegroundOperations').videoForegroundReplaceOperation);
 operations.push(...require('./sourceLibraryOperations').operations);
 operations.push(require('./videoFrameSequence').exportFramesOperation, require('./videoFrameSequence').assembleFramesOperation);
+// Professionally scoped FFmpeg filters are kept in a separate manifest so
+// they can be updated or disabled without rewriting the core operation list.
+operations.push(...require('./mediaExtensionCandidates').operations);
 function getOperation(id) { return operations.find(o=>o.id===id); }
 function contracts() { return operations.map(o=>({module_id:o.id,title:o.title,description:o.description||o.title,description_zh:o.description_zh||o.description||o.title,version:1,version_track:'V5',phase:o.phase||'edit',executor:'local',availability:'bridge',component_id:o.component_id,auto_install:Boolean(o.component_id),
   additional_components:o.additional_components || [],validation_status:verifiedOperation(o.id)?'verified_windows_fixture':'execution_receipt_required',source_refs:[o.source],inputs:o.inputs||['input_path','parameters'],outputs:['derived_media','execution_receipt'],parameters:o.defaults,parameter_schema:o.parameter_schema||parameterSchemas[o.id],transition_options:o.transitions,

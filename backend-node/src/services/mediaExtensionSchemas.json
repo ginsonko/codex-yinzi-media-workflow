@@ -1,0 +1,238 @@
+{
+  "local.audio.deesser": {
+    "type": "object",
+    "description": "自动检测并衰减人声高频齿音与嘶嘶杂音(De-Essing)，保持中频对白自然温润",
+    "properties": {
+      "intensity": {
+        "type": "number",
+        "default": 0.12,
+        "minimum": 0,
+        "maximum": 1,
+        "description": "齿音检测与衰减强度 (0为微弱，1为强力削减)"
+      },
+      "max": {
+        "type": "number",
+        "default": 0.5,
+        "minimum": 0,
+        "maximum": 1,
+        "description": "最大齿音压制比例上限 (0-1)"
+      },
+      "frequency": {
+        "type": "number",
+        "default": 0.5,
+        "minimum": 0,
+        "maximum": 1,
+        "description": "齿音频段中心频率相对位置 (0-1，对应约2kHz-10kHz)"
+      },
+      "mode": {
+        "type": "integer",
+        "default": 1,
+        "minimum": 0,
+        "maximum": 2,
+        "description": "输出模式：0=原始输入(对照), 1=处理后平滑输出, 2=仅齿音杂音孤立监听"
+      }
+    }
+  },
+  "local.audio.anlmdn": {
+    "type": "object",
+    "description": "基于非局部均值(NLMeans)算法的宽带音频降噪，有效分离平稳背景底噪与瞬态音频",
+    "properties": {
+      "strength": {
+        "type": "number",
+        "default": 0.00005,
+        "minimum": 0.00001,
+        "maximum": 10,
+        "description": "降噪强度系数 (从 1e-05 到 10)"
+      },
+      "patch": {
+        "type": "number",
+        "default": 0.002,
+        "minimum": 0.001,
+        "maximum": 0.1,
+        "description": "音频切片样本持续时间 (秒)"
+      },
+      "research": {
+        "type": "number",
+        "default": 0.006,
+        "minimum": 0.002,
+        "maximum": 0.3,
+        "description": "相似切片搜索窗口时间 (秒)"
+      },
+      "smooth": {
+        "type": "number",
+        "default": 11,
+        "minimum": 1,
+        "maximum": 1000,
+        "description": "时间平滑因子"
+      }
+    }
+  },
+  "local.audio.crystalizer": {
+    "type": "object",
+    "description": "音频高频细节锐化与动态泛音放大滤镜，增强暗淡音轨的通透感与空间立体感",
+    "properties": {
+      "intensity": {
+        "type": "number",
+        "default": 2.0,
+        "minimum": -10,
+        "maximum": 10,
+        "description": "锐化强度 (-10到10，正数为高频动态增强，负数为柔化)"
+      },
+      "clipping": {
+        "type": "boolean",
+        "default": true,
+        "description": "是否开启防爆音硬削波保护"
+      }
+    }
+  },
+  "local.audio.virtualbass": {
+    "type": "object",
+    "description": "心理声学低频谐波发生器，在小型扬声器或耳机上产生超下潜听感的丰满虚拟低音",
+    "properties": {
+      "cutoff": {
+        "type": "number",
+        "default": 250,
+        "minimum": 100,
+        "maximum": 500,
+        "description": "虚拟低音截止频率 (Hz)"
+      },
+      "strength": {
+        "type": "number",
+        "default": 2.0,
+        "minimum": 0.5,
+        "maximum": 3.0,
+        "description": "低频谐波发生与注入强度"
+      }
+    }
+  },
+  "local.audio.afwtdn": {
+    "type": "object",
+    "description": "基于小波分解(Wavelet Denoising)的时频联合降噪，擅长消除高频毛刺与环境白噪声",
+    "properties": {
+      "sigma": {
+        "type": "number",
+        "default": 0.02,
+        "minimum": 0,
+        "maximum": 1,
+        "description": "噪声标准差估计 (0为自动估计)"
+      },
+      "levels": {
+        "type": "integer",
+        "default": 10,
+        "minimum": 1,
+        "maximum": 12,
+        "description": "小波分解层数"
+      },
+      "wavet": {
+        "type": "integer",
+        "default": 4,
+        "minimum": 0,
+        "maximum": 6,
+        "description": "小波类型基函数 (0=sym2, 1=sym4, 2=rbior68, 3=deb10, 4=sym10, 5=coif5, 6=bl3)"
+      },
+      "percent": {
+        "type": "number",
+        "default": 85,
+        "minimum": 0,
+        "maximum": 100,
+        "description": "降噪抑制百分比"
+      },
+      "softness": {
+        "type": "number",
+        "default": 1.0,
+        "minimum": 0,
+        "maximum": 10,
+        "description": "阈值平滑柔软度系数"
+      }
+    }
+  },
+  "local.video.atadenoise": {
+    "type": "object",
+    "description": "自适应多帧时域联合均值降噪(Adaptive Temporal Averaging Denoiser)，抑制视频传感器时域噪点",
+    "properties": {
+      "threshold_a": {
+        "type": "number",
+        "default": 0.02,
+        "minimum": 0,
+        "maximum": 0.3,
+        "description": "第1~3平面的时域差异检测阈值 A (0 到 0.3)"
+      },
+      "threshold_b": {
+        "type": "number",
+        "default": 0.04,
+        "minimum": 0,
+        "maximum": 5,
+        "description": "第1~3平面的时域差异平滑阈值 B (0 到 5)"
+      },
+      "frames": {
+        "type": "integer",
+        "default": 9,
+        "minimum": 5,
+        "maximum": 129,
+        "description": "参与时域联合平均的相邻参考帧数 (必须为奇数)"
+      }
+    }
+  },
+  "local.video.bm3d": {
+    "type": "object",
+    "description": "业界顶级图像/视频BM3D时空块匹配降噪，在强力去噪的同时最大程度保留边缘与高频纹理",
+    "properties": {
+      "sigma": {
+        "type": "number",
+        "default": 2.0,
+        "minimum": 0,
+        "maximum": 100,
+        "description": "噪声标准差估计强度"
+      },
+      "block": {
+        "type": "integer",
+        "default": 16,
+        "minimum": 8,
+        "maximum": 64,
+        "description": "局部块匹配尺寸 (像素)"
+      },
+      "bstep": {
+        "type": "integer",
+        "default": 4,
+        "minimum": 1,
+        "maximum": 64,
+        "description": "滑动步长"
+      },
+      "group": {
+        "type": "integer",
+        "default": 1,
+        "minimum": 1,
+        "maximum": 256,
+        "enum": [1, 4, 8, 16, 32, 64, 128, 256],
+        "description": "最大相似匹配块成组数量；当前 Windows 构建仅支持列出的值"
+      },
+      "range": {
+        "type": "integer",
+        "default": 9,
+        "minimum": 1,
+        "maximum": 100,
+        "description": "块匹配搜索半径范围"
+      }
+    }
+  },
+  "local.video.cas": {
+    "type": "object",
+    "description": "AMD Contrast Adaptive Sharpening算法移植，根据局部画面对比度自适应锐化，避免振铃伪影",
+    "properties": {
+      "strength": {
+        "type": "number",
+        "default": 0.4,
+        "minimum": 0,
+        "maximum": 1,
+        "description": "CAS 自适应锐化强度 (0 为微弱，1 为最大锐度)"
+      },
+      "planes": {
+        "type": "integer",
+        "default": 7,
+        "minimum": 0,
+        "maximum": 15,
+        "description": "过滤平面位掩码 (默认 7 为全部 YUV/RGB 平面)"
+      }
+    }
+  }
+}
