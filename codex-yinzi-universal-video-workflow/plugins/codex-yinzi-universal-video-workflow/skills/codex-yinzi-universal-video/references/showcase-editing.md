@@ -39,6 +39,40 @@ and allow each case to settle before the next one. Inspect both sides of every
 cut: a commerce excerpt that flashes a new source shot immediately before the
 AE section looks like an accidental edit even if both files decode correctly.
 
+## Keep the demonstration moving for the intended duration
+
+Compare every excerpt's usable motion duration with its timeline duration.
+A short source extended by a compositor can silently hold its last frame;
+the file still decodes and the soundtrack continues, but the showcase appears
+to freeze. Inspect multiple frames near each excerpt's end, not just its first
+frame or contact-sheet thumbnail. Make the ending deliberate: trim, choose a
+longer source, or render the animation for the required duration.
+
+For a decorative background or continuously moving collage, an explicit loop
+can be appropriate after checking the seam. Do not apply that fix globally to
+story footage or repeat a character's action to disguise missing material.
+If the brief needs a longer animation with continued development, extend and
+rerender its real animation rather than stretching a short export or holding it.
+
+An event highlight needs a legible event before its reaction. In the NASA
+example, the landing result followed by the control-room celebration explained
+the clip better than celebration alone. Select by actual event timecodes;
+reactions from unrelated moments do not establish what happened.
+
+## Demonstrate the real interface
+
+When claiming visible progress, tool management or supervisor configuration,
+record the running application performing those actions. A section title or
+invented HTML stand-in does not show the workflow. Use an isolated demonstration
+instance when needed, preserve the real task database and credentials, and
+distinguish seeded demo content from a completed production task.
+
+Treat a user-provided screen recording as a finished source with its own aspect
+ratio. Fit it proportionally, then use a surrounding layout or an intentional
+crop where needed; do not stretch the interface to fill the film frame. Check
+actual timeline frames for readable text, cropping and available motion before
+calling the replacement complete.
+
 ## Show accurate comparisons
 
 Bind before/after media by source identity and operation receipt, then inspect
