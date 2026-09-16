@@ -67,6 +67,7 @@ const navGroups = computed(() => [
     { to: '/director', label: '3D 导演台', icon: 'VideoCamera' },
     { to: '/projects', label: '项目与剧集', icon: 'Film' },
     { to: '/tools', label: '工具目录', icon: 'Grid' },
+    { to: '/supervisors', label: '作品监督', icon: 'User' },
   ] },
   { label: '管理', items: [
     { to: '/history', label: '历史记录', icon: 'Clock' },

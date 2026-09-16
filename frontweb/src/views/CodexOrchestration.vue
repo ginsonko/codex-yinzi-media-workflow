@@ -130,6 +130,7 @@
               </div>
             </section>
 
+            <StyleSupervisorPanel :session="bundle.session" :disabled="runtimeWriteBlocked" @changed="refreshCurrentTask" />
             <section v-if="bundle.nodes?.length || bundle.session.source_context?.intent !== 'analyze'" class="plan-card">
               <div class="section-heading">
                 <div><small>当前方案</small><h3>Codex 动态执行计划</h3></div>
@@ -302,6 +303,7 @@ import OrchestrationProgress from '@/components/orchestration/OrchestrationProgr
 import OrchestrationArtifactGallery from '@/components/orchestration/OrchestrationArtifactGallery.vue'
 import OrchestrationFeedback from '@/components/orchestration/OrchestrationFeedback.vue'
 import OrchestrationDelivery from '@/components/orchestration/OrchestrationDelivery.vue'
+import StyleSupervisorPanel from '@/components/orchestration/StyleSupervisorPanel.vue'
 
 const route = useRoute()
 const router = useRouter()

@@ -171,6 +171,18 @@ if (command === 'ae') {
   } catch (error) { fail(JSON.stringify({ code:error.code, message:error.message }), 2) }
 }
 const routes = {
+  supervisors: ['GET', `/api/v1/media-supervisors?${new URLSearchParams({ q: option('--query') || '', include_deleted: args.includes('--include-deleted') })}`],
+  supervisor: ['GET', `/api/v1/media-supervisors/${encodeURIComponent(pos[0] || '')}`],
+  'supervisor-create': ['POST', '/api/v1/media-supervisors'],
+  'supervisor-update': ['PUT', `/api/v1/media-supervisors/${encodeURIComponent(pos[0] || '')}`],
+  'supervisor-delete': ['DELETE', `/api/v1/media-supervisors/${encodeURIComponent(pos[0] || '')}`],
+  'supervisor-restore': ['POST', `/api/v1/media-supervisors/${encodeURIComponent(pos[0] || '')}/restore`],
+  'supervisor-recommend': ['POST', '/api/v1/media-supervisors/recommend'],
+  'supervisor-export': ['GET', `/api/v1/media-supervisors/export?${new URLSearchParams(Object.entries({ q: option('--query'), offset: option('--offset'), limit: option('--limit') }).filter(([,value]) => value !== undefined))}`],
+  'supervisor-import': ['POST', '/api/v1/media-supervisors/import'],
+  'task-supervisor': ['GET', `/api/v1/orchestration-sessions/${encodeURIComponent(pos[0] || '')}/supervisor`],
+  'supervisor-select': ['PUT', `/api/v1/orchestration-sessions/${encodeURIComponent(pos[0] || '')}/supervisor`],
+  'supervisor-review': ['POST', `/api/v1/orchestration-sessions/${encodeURIComponent(pos[0] || '')}/supervisor/reviews`],
   'prompt-profiles': ['GET', '/api/v1/prompt-adapter/profiles'],
   'prompt-adapt': ['POST', '/api/v1/prompt-adapter'],
   components: ['GET', '/api/v1/media-components/profile'],
@@ -208,6 +220,7 @@ const routes = {
 }
 
 if (command === 'help' || !routes[command]) {
+  process.stdout.write('Supervisors: supervisors [--query TEXT]; supervisor ID; supervisor-create/update/delete/restore/recommend/import --input FILE (update/delete/restore also ID); supervisor-export; task-supervisor SESSION; supervisor-select/review SESSION --input FILE\n')
   process.stdout.write('Prompts: prompt-profiles; prompt-adapt --input request.json (editable IR, references and constraints; no generation)\n')
   process.stdout.write('Catalog: module-index [--limit 60] [--offset 0] (all registered tools, compact pages); module MODULE_ID (one full contract)\n')
   process.stdout.write('AE: ae discover; ae run --input job.json --output DIR; ae read --output DIR (local visible editor)\n')
@@ -218,6 +231,7 @@ if (command === 'help' || !routes[command]) {
 if (['activity', 'get', 'export', 'plan', 'confirm', 'start', 'pause', 'resume', 'checkpoint'].includes(command) && !pos[0]) fail(`${command} 需要 session-id`)
 if (['node', 'retry'].includes(command) && (!pos[0] || !pos[1])) fail(`${command} 需要 session-id 和 node-key/node-id`)
 if (command === 'module' && !pos[0]) fail('module requires a module ID')
+if (['supervisor','supervisor-update','supervisor-delete','supervisor-restore','task-supervisor','supervisor-select','supervisor-review'].includes(command) && !pos[0]) fail(`${command} requires an ID`)
 
 if (command === 'begin') {
   const {ensure} = await import('../../../scripts/runtime-core.mjs')

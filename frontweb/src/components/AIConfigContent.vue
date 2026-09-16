@@ -18,6 +18,13 @@
                 : '银子 API：文本、图片和视频都可以分别保存多个配置；每个服务都使用自己的 URL、Key 和模型。' }}
             </div>
           </el-alert>
+          <div v-if="!vendorLock.enabled" class="api-help-links" aria-label="API 入门与配置教程">
+            <span>不会用 API？可以从银子 API 开始。</span>
+            <a href="https://yinziapi.top/" target="_blank" rel="noopener noreferrer">访问银子 API</a>
+            <a href="https://yinziapi.top/guide/" target="_blank" rel="noopener noreferrer">新手教程</a>
+            <a href="https://yinziapi.top/guide/codex/" target="_blank" rel="noopener noreferrer">Codex 安装与配置</a>
+            <small>已有其他渠道？直接添加配置即可。</small>
+          </div>
           <!-- 普通模式操作栏 -->
           <div v-if="!vendorLock.enabled" class="content-actions">
             <div class="actions-left">
@@ -1325,10 +1332,16 @@ input_reference = (图片文件，可选)</pre>
       </div>
 
       <div class="yinzi-onboarding-steps" aria-label="银子 API 配置步骤">
-        <article><b>1</b><div><strong>打开银子 API</strong><a href="https://yinziapi.top/" target="_blank" class="one-key-link">yinziapi.top</a></div></article>
+        <article><b>1</b><div><strong>打开银子 API</strong><a href="https://yinziapi.top/" target="_blank" rel="noopener noreferrer" class="one-key-link">yinziapi.top</a></div></article>
         <article><b>2</b><div><strong>创建 API Key</strong><span>登录后进入 API Key / 密钥页面，点击创建。</span></div></article>
         <article><b>3</b><div><strong>复制完整 Key</strong><span>复制完整的 <code>sk-...</code>，粘贴到下面。</span></div></article>
       </div>
+      <p class="yinzi-tutorial-links">
+        第一次配置？
+        <a href="https://yinziapi.top/guide/" target="_blank" rel="noopener noreferrer">看新手教程</a>
+        <span aria-hidden="true">·</span>
+        <a href="https://yinziapi.top/guide/codex/" target="_blank" rel="noopener noreferrer">安装与配置 Codex</a>
+      </p>
       <p class="yinzi-onboarding-note">请分别填写文本、图片、视频三个服务的 URL、Key 和模型。<b>不要填写“智能路由 Key”</b>：它无法保证三个站点分别按用途路由，也不适合本工作流的独立计费和故障切换。保存后 Codex 才能按任务调用对应服务。</p>
 
       <el-form label-position="top" class="yinzi-config-form">
@@ -3323,6 +3336,42 @@ onMounted(async () => {
 .distribution-profile-copy {
   margin-top: 3px;
   line-height: 1.5;
+}
+.api-help-links {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px 16px;
+  margin: 0 0 18px;
+  padding: 0 0 14px;
+  border-bottom: 1px solid var(--border-color);
+  color: var(--text-primary);
+  font-size: 13px;
+  line-height: 1.65;
+}
+.api-help-links small {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+.api-help-links a,
+.yinzi-tutorial-links a {
+  color: var(--ui-accent);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.api-help-links a:focus-visible,
+.yinzi-tutorial-links a:focus-visible {
+  outline: 2px solid var(--ui-accent);
+  outline-offset: 4px;
+}
+.yinzi-tutorial-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  margin: 0 0 12px;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.65;
 }
 .actions-left {
   display: flex;

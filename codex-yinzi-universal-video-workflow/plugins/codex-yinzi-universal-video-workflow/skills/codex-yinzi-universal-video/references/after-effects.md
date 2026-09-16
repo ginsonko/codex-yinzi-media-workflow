@@ -262,6 +262,12 @@ active render, independent `aerender -project ...` without `-reuse` can isolate
 the current GUI instance. Use locally discovered template names and an explicit
 inclusive `-s`/`-e` frame range; choose memory/MFR options from measured pressure.
 Allow the launched render worker to finish even when its launcher exits early.
+For command-line MFR control, the tested AE 26.2.1 syntax takes both a state
+and a CPU percentage, including when disabled: `-mfr OFF 25`. Omitting the
+second value caused an "Illegal argument flag" on the following option in a
+real attempt. Inspect the installed version's help; do not diagnose that parser
+error as a GPU crash or a filename-encoding failure. Applying a locally
+enumerated output template inside JSX also avoids shell quoting ambiguity.
 Check both the completion log and actual frame count/duration. In the Windows
 AE 26.2.1 recovery sample, GUI `timeSpanDuration=48/fps` exported 49 frames while
 independent inclusive frame bounds exported the intended 48. Do not silently

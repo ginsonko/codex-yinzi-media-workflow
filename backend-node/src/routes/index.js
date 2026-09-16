@@ -95,6 +95,7 @@ function setupRouter(cfg, db, log, injected = {}) {
   // ---------- Codex-led open-world orchestration ----------
   // These endpoints describe and record dynamic plans. They do not replace
   // the existing production workflow or silently execute paid providers.
+  r.use(require('./styleSupervisors')(db));
   r.get('/orchestration-modules', orchestration.listModules);
   r.use('/prompt-adapter', require('./promptAdapter')());
   r.post('/orchestration-modules', orchestration.registerModule);

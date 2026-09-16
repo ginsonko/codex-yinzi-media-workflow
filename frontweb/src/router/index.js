@@ -10,6 +10,12 @@ const router = createRouter({
   },
   routes: [
     {
+      path: '/supervisors',
+      name: 'style-supervisors',
+      component: () => import('@/views/StyleSupervisors.vue'),
+      meta: { title: '作品监督' }
+    },
+    {
       path: '/',
       name: 'list',
       component: () => import('@/views/HomeDashboard.vue'),

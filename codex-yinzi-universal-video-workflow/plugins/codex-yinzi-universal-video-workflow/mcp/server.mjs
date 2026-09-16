@@ -9,6 +9,7 @@ import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 import readline from 'node:readline'
 import { reverseTools } from './reverse-tools.mjs'
+import { styleSupervisorTools, styleSupervisorRequest, selectionSchema } from './style-supervisor-tools.mjs'
 import { activityResponse } from '../skills/codex-yinzi-universal-video/scripts/activity-response.mjs'
 import { readRegistry, localOrigin, verifyUi, openBrowser } from '../scripts/runtime-state.mjs'
 
@@ -55,7 +56,11 @@ function sanitize(value, depth = 0) {
   if (typeof value === 'string') return redactString(value)
   if (Array.isArray(value)) return value.slice(0, 3000).map((item) => sanitize(item, depth + 1))
   if (typeof value === 'object') {
-    return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, SECRET_KEYS.has(key.toLowerCase()) ? '[REDACTED]' : sanitize(item, depth + 1)]))
+    const supervisorBundle = value.schema_version === 1 && value.kind === 'yinzi-style-supervisors' && Array.isArray(value.profiles)
+    // Portable catalog bundles are byte-bounded by the backend. Preserve every
+    // profile across both API and MCP serialization, while still redacting text.
+    return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, SECRET_KEYS.has(key.toLowerCase()) ? '[REDACTED]'
+      : supervisorBundle && key === 'profiles' ? item.map(profile => sanitize(profile, depth + 1)) : sanitize(item, depth + 1)]))
   }
   return String(value)
 }
@@ -958,6 +963,7 @@ async function reconcileImage(args) {
 }
 
 const tools = [
+  ...styleSupervisorTools,
   { name:'prompt_adapt', description:'本地分镜提示词适配：读取profiles、拆分可编辑IR或编译目标提示词；保留素材引用与约束，返回差异报告，不提交媒体生成。', inputSchema:{type:'object',properties:{action:{type:'string',enum:['profiles','parse','validate','compile']},text:{type:'string'},ir:{type:'object'},profile:{oneOf:[{type:'string'},{type:'object'}]},options:{type:'object'}}} },
   ...reverseTools,
   { name: 'get_workflow_preferences', description: '读取实时质量档位与持久化挂机模式。', inputSchema: { type: 'object', properties: {} } },
@@ -1005,7 +1011,13 @@ tools.find(tool => tool.name === 'generate_video_once').inputSchema.properties.c
   properties: { video_config_id: { type: 'integer' }, model: { type: 'string' }, unit_price: { type: 'number', minimum: 0 }, billing_unit: { enum: ['per_second', 'per_request', 'fixed_duration'] }, source: { const: 'user_reported' } },
 }
 
+for (const name of ['begin_media_task','create_session']) tools.find(tool=>tool.name===name).inputSchema.properties.supervisor = selectionSchema
+
 async function callTool(name, args = {}) {
+  if (name === 'style_supervisors' || name === 'task_supervisor') {
+    rejectSecrets(args)
+    return api(...styleSupervisorRequest(name,args))
+  }
   if (name === 'get_workflow_preferences') return api('GET', '/api/v1/creative-preferences')
   if (name === 'set_workflow_preferences') {
     rejectSecrets(args)

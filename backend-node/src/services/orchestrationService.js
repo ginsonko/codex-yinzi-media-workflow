@@ -373,11 +373,13 @@ function createReceipt(db, node, rawReceipt = {}, fallbackStatus) {
 }
 
 const creativePreferences = require('./creativePreferences');
+const { createStyleSupervisors } = require('./styleSupervisors');
 
 function createOrchestrationService(db) {
   ensureSchema(db);
+  const supervisors = createStyleSupervisors(db);
 
-  function getSession(id) { return publicSession(getSessionRow(db, id)); }
+  function getSession(id) { const session = publicSession(getSessionRow(db, id)); return session ? { ...session, supervisor: supervisors.context(id) } : null; }
   function listSessions(query = {}) {
     const limit = Math.min(Math.max(Number(query.limit) || 50, 1), 200);
     const status = String(query.status || '').trim();
@@ -570,12 +572,15 @@ function createOrchestrationService(db) {
     const idem = input.idempotency_key ? String(input.idempotency_key).trim() : null;
     if (idem) {
       const reused = db.prepare('SELECT * FROM orchestration_sessions WHERE idempotency_key=? AND deleted_at IS NULL').get(idem);
-      if (reused) return { reused: true, session: publicSession(reused) };
+      if (reused) return { reused: true, session: getSession(reused.id) };
     }
     const mode = String(input.mode || 'collaborate');
     if (!['auto', 'collaborate', 'manual'].includes(mode)) throw makeError('ORCHESTRATION_MODE_INVALID', 'mode 必须是 auto、collaborate 或 manual');
     const id = String(input.id || crypto.randomUUID());
     const stamp = nowIso();
+    const supervisorInput = input.supervisor || { mode: mode === 'auto' || creativePreferences.get(db).unattended_mode ? 'auto' : 'suggested' };
+    supervisors.prepare(supervisorInput, sanitizeString(input.user_goal || '', new Set()).slice(0, 12000));
+    return db.transaction(() => {
     db.prepare(`
       INSERT INTO orchestration_sessions
         (id,idempotency_key,title,user_goal,mode,status,source_context_json,linked_drama_id,linked_run_id,plan_revision,plan_json,budget_json,usage_json,checkpoint_json,last_error_json,version,created_at,updated_at)
@@ -586,7 +591,9 @@ function createOrchestrationService(db) {
       '{}', normalizedJson(input.budget, {}), '{}', '{}', '{}', stamp, stamp,
     );
     appendEvent(db, id, 'session.created', { title: input.title || 'Codex 视频任务', mode, linked_run_id: input.linked_run_id || null }, { actor: input.actor || 'codex' });
+    supervisors.choose(id, { ...supervisorInput, expected_revision: 0 });
     return { reused: false, session: getSession(id) };
+    })();
   }
 
   function updateSession(id, input = {}, { includeBundle = true } = {}) {
@@ -1022,7 +1029,8 @@ function createOrchestrationService(db) {
   function exportSession(id) {
     const bundle = getBundle(id, { include_inactive: true, event_limit: 500 });
     if (!bundle) throw makeError('ORCHESTRATION_NOT_FOUND', '编排任务不存在');
-    return { exported_at: nowIso(), schema: 'yinzi.codex-video-orchestration/v1', ...bundle };
+    return { exported_at: nowIso(), schema: 'yinzi.codex-video-orchestration/v1', ...bundle,
+      supervisor_history: supervisors.history(id).items, supervisor_reviews: supervisors.reviews(id) };
   }
 
   function recordArtifact(sessionId, input = {}) {
