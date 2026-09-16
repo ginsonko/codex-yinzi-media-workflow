@@ -45,7 +45,7 @@ test('imports validated pure data as copies and rolls back the whole invalid pac
   assert.throws(()=>supervisors.importProfiles({...exported,profiles:[custom(),{...custom(),command:'powershell bad'}]}),{code:'SUPERVISOR_INVALID'});
   assert.equal(supervisors.list().total,before);
   assert.throws(()=>supervisors.importProfiles({...exported,profiles:[{...custom(),tags:0}]}),{code:'SUPERVISOR_INVALID'});
-  assert.throws(()=>supervisors.importProfiles({...exported,profiles:[{...custom(),name:'sk-thisIsATestSecretOnlyNotARealKey12345'}]}),{code:'SUPERVISOR_SECRET'});
+  assert.throws(()=>supervisors.importProfiles({...exported,profiles:[{...custom(),name:'sk-thisisatestcredential123456789'}]}),{code:'SUPERVISOR_SECRET'});
   const result=supervisors.importProfiles(exported);assert.equal(result.imported,20);assert.equal(result.overwrite,false);
   assert.ok(result.items.every(i=>!i.builtin && i.id.startsWith('custom-')));
   assert.equal(supervisors.get('builtin-mischief').revision,1);
