@@ -37,3 +37,18 @@ Long input is bounded by `max_duration` and `max_frames`; split a large source i
 Match important actions, gestures, reveals and emotional changes to selected musical events. Keep enough lead-in and recovery around each action. Use cuts for clear accents and a fade when scene continuity benefits. Not every detected transient needs a cut or effect. Retain the original soundtrack timing when assembling the video.
 
 The tool prepares cut suggestions; it does not by itself produce a finished MAD or guarantee artistic quality. Verify the rendered video at normal speed, then inspect important cut points and audio/video synchronization. Record the actual successful settings, useful failure lessons and quality limits in the local experience records, linked to the job rather than copied into a new automatic receipt.
+
+When a user reports stutter despite a valid constant-frame-rate file, inspect
+source-to-output speed and frame repetition before changing the player. In a
+real anime MAD revision, stretching sub-second shots to 0.3–0.6x speed caused
+visible pauses despite complete decoding. Shortening the edit and restoring
+action speed addresses that cause; changing the export FPS alone does not.
+Align action peaks and reveals as well as cut boundaries to selected accents.
+
+Use optical flow selectively inside a clean shot, never indiscriminately
+across a montage. In that revision it reduced repeated action frames but
+created doubled eyelids in an expression close-up; those close-ups retained
+their original animation cadence. Examine faces, hands, guns and occlusion
+boundaries after interpolation. Intentional short graphic holds may remain,
+but distinguish them from accidentally frozen movement. A lower duplicate
+frame ratio is not a quality verdict, and computed onsets do not prove listening.

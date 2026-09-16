@@ -231,6 +231,51 @@ Keep AEP, assets, job JSON and the final movie as the reusable deliverable.
 
 ## Heavy projects and reusable acceptance
 
+### Recover a crash or an apparently successful render with no output
+
+When the editor and another GPU-accelerated application fail together, compare
+their logs with Windows Display 4101 / NVIDIA TDR events and resource-exhaustion
+events. A driver reset establishes a GPU failure event, not its provoking
+workload or a VRAM/RAM exhaustion diagnosis. Post-crash free memory cannot prove
+what happened at the peak. Preserve the AEP, existing job/receipt, event times
+and source hashes before changing the recovery copy.
+
+Keep process launch, script execution and completed media separate. Do not wrap
+an interactive AE launch in a subprocess timeout that kills its child while
+the editor is still working. Preserve argument boundaries with a process API,
+then reconcile a newly written JSX receipt. A launcher exit code, an empty log
+or a queue item that remains QUEUED does not prove rendering. ExtendScript is
+not modern Node JavaScript: feature-check helpers such as `Date.toISOString`
+and `File.flush`; use `getTime()` and explicit open/write/close where needed.
+
+For a confirmed stopped attempt, a useful recovery option is a saved copy using
+`GpuAccelType.SOFTWARE`, multi-frame rendering disabled, and a short representative
+full-resolution range. These are workload choices, not permanent defaults or a
+guarantee that input decoding and the UI no longer use the GPU. Monitor available
+RAM, commit and VRAM; keep effects and resolution unless the brief permits a
+change. A locally enumerated lossless output template followed by CPU encoding
+can isolate GPU output encoding from composition rendering.
+
+If `render()` returns without producing a file in an otherwise responsive GUI,
+inspect queue status and actual paths. With the project safely saved and no
+active render, independent `aerender -project ...` without `-reuse` can isolate
+the current GUI instance. Use locally discovered template names and an explicit
+inclusive `-s`/`-e` frame range; choose memory/MFR options from measured pressure.
+Allow the launched render worker to finish even when its launcher exits early.
+Check both the completion log and actual frame count/duration. In the Windows
+AE 26.2.1 recovery sample, GUI `timeSpanDuration=48/fps` exported 49 frames while
+independent inclusive frame bounds exported the intended 48. Do not silently
+drop a frame without checking the intended timeline and audio alignment.
+
+A normal editor restart after preserving the current project restored GUI
+preview and script rendering in that sample; the exact anomalous-state cause
+remained unknown. Reopen and inspect the saved project after any restart.
+The same recovery produced a fully decoded 406-frame 1080p movie with aligned
+audio. This proves that recovery route on that project, not long-term driver
+stability or final artistic quality. Source captions, black gaps and rhythm
+still need their own review. Avoid driver, paging or TDR-registry changes merely
+to conceal an unisolated failure.
+
 Before a full render, inspect the composition duration, work area, nested in/out
 points and a few representative frames. An opening countdown, placeholder or
 author-credit section is not evidence of the requested animation. Select the
@@ -270,6 +315,22 @@ adjustment, measured output, user feedback and remaining limits. Use
 [media experiences](media-experiences.md) to find or reuse related recipes; local
 notes are the recovery entry if an older running backend lacks that endpoint.
 
+For time-remapped trailer edits, add the intended remap keys before removing
+unused default keys. On AE 26.2.1, removing every remap key first disabled the
+property and subsequent `setValueAtTime` failed with a hidden-property error.
+Retain explicit source-to-composition times and inspect both sides of internal
+source cuts; a named clean clip or coarse contact sheet is not a clean handle.
+When a transition reveals the previous shot, extend every visible panel layer
+through that overlap and hold its last safe source frame. Extending only one
+panel can expose black; extrapolating source time can introduce the next PV
+title card. Check the rendered transition midpoint and final held frame.
+
+AE can hold imported audio files open. Reuse unchanged, verified audio or write
+a new version when the mix changes. A failed preparation command must prevent
+dispatch of a stale JSX file. Keep build, dispatch receipt, AEP save and actual
+render completion as separate steps, especially in PowerShell where a later
+statement can run after an earlier native executable failed.
+
 The Windows AE 26.2.1 example accepted on 2026-09-14 produced a four-second
 1080p60 showcase and a 1.5-second 1920x816 clean montage segment. Its new titles
 use built-in AE operations, but nested source animation still references
@@ -277,3 +338,10 @@ Deep Glow (`PEDG`), Particular (`tc Particular`) and `S_WipeDots`. This proves
 that particular rendered result and editable package; it does not validate
 plugin-free portability, automatic tracking/roto or every AE technique. Preserve
 the user's accepted result and original-versus-new-work attribution when reusing it.
+
+After an interrupted render, inspect the existing output before rerendering.
+A progress log can stop before the container's actual last decoded frame.
+Verify complete decoding, actual frame count, intended duration, audio timing
+and the final picture; only then recover a delivery encode from that output.
+An encoder exit code alone does not establish completeness. Keep the source
+project and original render until the recovered version is checked.

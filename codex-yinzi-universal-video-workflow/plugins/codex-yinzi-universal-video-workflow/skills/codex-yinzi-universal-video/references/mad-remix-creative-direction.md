@@ -14,6 +14,14 @@ Cold-save a concise creative brief and review it for theme, material sufficiency
 
 Build a source inventory with provenance, local path, relevant range, character/action, framing, motion direction, entry and exit state, clean handles, image quality and known use conditions. Keep source audio when it may supply a gesture, joke, dialogue or impact. Official trailers, permitted public clips, user footage, static artwork and generated assets can serve different roles. Public availability alone does not establish commercial reuse permission; keep that fact in the asset record without making ordinary authorized research wait for an unrelated approval.
 
+For short trailer shots, inspect precise in/out frames and transition handles.
+A one-second source interval may already contain another character, a credit
+or a full-screen title. Slow motion and freeze endings amplify a single bad
+boundary. In a real dual-character MAD revision, extending a split-screen
+layer and freezing the last safe frame fixed a black reveal and an unintended
+PV title. The useful lesson is boundary inspection, not reuse of that anime's
+timestamps. Distinguish original animation from new masks, retiming and graphics.
+
 When dynamic anime footage is requested, collect enough real action, expression, detail and environment shots to support the idea. Character portraits may enrich composition but do not replace the requested dynamic source. For a deliberately static MAD, design layers, perspective, masks and meaningful transitions around the available artwork. Neither asset count nor animation speed establishes quality.
 
 Search for missing material by its function in the sequence. A missing turn, reaction or environment may justify another public source, AI image/video generation or a revised cut. Reuse relevant generation and spatial-continuity experience, the selected model and existing authorization. Preserve results of uncertain paid requests; reconcile them before retrying. Do not pre-generate a complete rigid shot set if the actual preceding output needs to establish the scene's spatial relationships.
@@ -46,9 +54,44 @@ When several agents share AE, coordinate ownership of the application and render
 
 Review the full render for the viewer's experience, then inspect weak ranges: theme recognition, emotional progression, action readability, motif development, humor where relevant, spatial/graphic continuity, sound, cut timing and the ending. Compare representative passages with the user's references. Technical checks cover full decode, timing, missing frames, accidental black/silent intervals, clipping and delivery format; they do not replace artistic review. Keep rejected output distinct from accepted showcase material.
 
+When the viewer likes the effects and rhythm but cannot say what the piece means,
+revise the relationship between shots before adding more effects. A short arc
+can establish a character contrast, develop it through action and resolve it
+with a gesture. Group related footage when intercutting obscures the idea; this
+is a choice for clarity, not a rule that all MAD must separate action and daily
+life. Brief words or a recurring graphic can help establish and resolve the
+contrast. Check source-time overlaps: a repeat should change meaning, escalate
+a joke or deliberately recall a motif. Reusing an impressive shot without new
+information weakens progression. Do not invent a rescue or spatial continuity
+that the actual source does not show.
+
+A style supervisor must assess the actual cut and explain findings with time
+codes. Passing a design, liking a character or counting effects is not an
+artistic verdict. Record whether the supervisor inspected images, playback or
+audio; do not turn an unavailable hearing review into a claim of beat-perfect
+sound. A playful persona should ask where the surprise is set up and paid off,
+while retaining the user's chosen tone instead of forcing jokes into every work.
+
 Store concise experience records tied to actual evidence: initial intent, source characteristics, method, observed problem, adjustment, result and remaining uncertainty. Separate user-confirmed success, inspected failure, technical success, tutorial advice and an untested hypothesis. A portable insight explains when and why a choice helped; it does not prescribe this case's character, song, duration or effect settings for every future user.
 
-The 2026-09-15/16 showcase iteration supplies a verified failure lesson: several static-character entrances, repeated gradient backgrounds and an ending grid were judged a character presentation rather than the requested ambitious MAD. Merely changing resolution or adding more transitions would not answer that feedback. The resulting dynamic-footage/new-music direction is a revised method to validate, not a recorded artistic success.
+The 2026-09-15/16 showcase iteration supplies a verified failure lesson: several static-character entrances, repeated gradient backgrounds and an ending grid were judged a character presentation rather than the requested ambitious MAD. Merely changing resolution or adding more transitions would not answer that feedback. In a later dynamic-footage edit, the user accepted the technique, rhythm and red-eye action beat for promotional selection, while rejecting the explanatory copy as unnatural and insufficiently surprising. Preserve this separate verdict: accepted editing does not imply accepted writing or a finished film.
+
+When the audience already recognizes a meme's usual payoff, repeating that
+payoff is not automatically a new joke. Try a specific interaction between
+source phrases, a misleading setup, an unexpected response or a changed role.
+Let the voices and actions carry the joke before adding captions explaining it.
+Check that each attributed phrase exists in the source; an ASR transcript can
+misrecognize familiar names and short catchphrases even when the job succeeds.
+Use the source's actual captions and audio to correct it, retaining uncertain
+word boundaries until reviewed. Choose a creative reviewer for a concrete
+writing problem; if its service fails, retain that failure and continue the
+authorized edit without claiming its endorsement.
+
+For a clean showreel selection, prefer the accepted strongest interval and
+remove unnecessary story captions through the editable project or select a
+genuinely caption-free interval. Reinspect source frames before adopting a
+reviewer's shot description: labels such as "breath", "jump" or "rescue" can
+be wrong, and a coherent theme does not prove same-scene action continuity.
 
 ## Further reading
 
