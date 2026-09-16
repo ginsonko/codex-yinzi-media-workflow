@@ -2,7 +2,15 @@
   <div class="workbench-view">
     <div class="catalog-page">
       <div class="tool-actions"><el-button @click="experiencesOpen = true">制作经验</el-button><el-button @click="toolOptionsOpen = true">探索制作方案</el-button><el-button @click="transitionsOpen = true">转场预览</el-button></div>
-      <section class="catalog-hero"><div><span class="kicker">CODEX 可以自己选工具</span><h2>从目标出发，不用记工具名字</h2><p>你只需要说想完成什么。Codex 会先看任务和素材，再从这张目录里组合合适的能力；需要人工处理的模块会明确标出来。</p></div><div class="catalog-count"><strong>{{ filtered.length }}</strong><span>个可见模块</span></div></section>
+      <section class="catalog-hero"><div><span class="kicker">CODEX 可以自己选工具</span><h2>从目标出发，不用记工具名字</h2><p>你只需要说想完成什么。Codex 会先看任务和素材，再从这张目录里组合合适的能力；需要人工处理的模块会明确标出来。</p></div><div class="catalog-count" aria-live="polite"><strong>{{ inventory?.builtin_modules ?? items.length }}</strong><span>个内置能力模块</span><span v-if="query || track" class="filter-count">当前筛选 {{ filtered.length }} 项</span></div></section>
+      <dl v-if="inventory" class="inventory-strip" aria-label="完整能力目录统计">
+        <div><dt>本地执行合同</dt><dd>{{ inventory.local_operation_contracts }}</dd></div>
+        <div><dt>其他内置模块</dt><dd>{{ inventory.other_builtin_modules }}</dd></div>
+        <div><dt>研究候选</dt><dd>{{ inventory.research_candidates }}</dd></div>
+        <div><dt>转场选项</dt><dd>{{ inventory.transition_options }}</dd></div>
+        <div><dt>组件包</dt><dd>{{ inventory.component_packages }}</dd></div>
+        <div><dt>当前源码 Windows 小样</dt><dd>{{ inventory.windows_source_matching_fixtures }}</dd></div>
+      </dl>
       <section v-if="runtimeProfile" class="runtime-banner">
         <div><strong>本机运行环境：{{ runtimeProfile.machine?.platform }} / {{ runtimeProfile.machine?.arch }}</strong><p>CPU {{ runtimeProfile.machine?.cpu_count || '?' }} 核 · 内存 {{ runtimeProfile.machine?.memory_gib || '?' }} GiB</p><small v-if="profileUpdatedAt">最近同步 {{ profileUpdatedAt }}</small></div>
         <div class="component-list" aria-live="polite">
@@ -47,6 +55,7 @@ const transitionOptions = computed(() => items.value.find(item => item.module_id
 const toolOptionsOpen = ref(false)
 const experiencesOpen = ref(false)
 const items = ref([]); const query = ref(''); const track = ref(''); const loading = ref(false); const error = ref(''); const fileInput = ref(null); const runtimeProfile = ref(null)
+const inventory = ref(null)
 const editorVisible = ref(false); const editingId = ref('')
 const profileError = ref(''); const profileUpdatedAt = ref('')
 const runtimeComponents = computed(() => (runtimeProfile.value?.components || []).map(item => ({ ...item, display: componentStatus(item) })))
@@ -58,7 +67,7 @@ function phaseTone(value) { return value === 'qa' ? 'amber' : value === 'deliver
 function availabilityLabel(value) { return ({ integrated: '已接入', bridge: 'Codex 调用', advisory: '规划参考' })[value] || value || '未知' }
 function availabilityTone(value) { return value === 'integrated' ? 'ready' : value === 'advisory' ? 'advisory' : 'bridge' }
 function executorLabel(value) { return ({ local: '本机', provider: '模型服务', codex: 'Codex', manual: '你或 Codex' })[value] || value }
-function componentLabel(value) { return ({ 'media.ffmpeg':'FFmpeg 媒体处理', 'media.sharp':'Sharp 图像处理', 'vision.realesrgan':'Real-ESRGAN 图片超分', 'vision.ocr':'图片文字识别', 'document.pdf':'PDF 文档处理' })[value] || value }
+function componentLabel(value) { return ({ 'media.ffmpeg':'FFmpeg 媒体处理', 'media.sharp':'Sharp 图像处理', 'vision.realesrgan':'Real-ESRGAN 图片超分', 'vision.ocr':'图片文字识别', 'document.pdf':'PDF 文档处理', 'vision.sky-seg':'天空识别与换天', 'vision.face-detector':'人脸检测与局部处理', 'media.whisper':'离线语音识别与字幕', 'vision.foreground-seg':'主体识别与透明抠图', 'tool.yt-dlp':'素材下载与恢复' })[value] || value }
 async function refreshProfile() {
   try {
     const profile = await orchestrationAPI.componentProfile()
@@ -67,7 +76,7 @@ async function refreshProfile() {
   } catch (_) { profileError.value = runtimeProfile.value ? '组件状态暂时无法更新，当前显示上次同步结果' : '暂时无法读取本机组件状态，正在重试' }
 }
 const profileRefresh = useLiveRefresh(refreshProfile, { active: () => runtimeComponents.value.some(item => item.display.active), failed: () => Boolean(profileError.value), interval: 1500, idle: 8000 })
-async function loadModules() { loading.value = true; error.value = ''; try { const data = await orchestrationAPI.modules({ include_disabled: true }); items.value = data?.items || [] } catch (e) { error.value = e?.message || '暂时无法读取工具目录' } finally { loading.value = false } }
+async function loadModules() { loading.value = true; error.value = ''; try { const data = await orchestrationAPI.modules({ include_disabled: true }); items.value = data?.items || []; inventory.value = data?.inventory || null } catch (e) { error.value = e?.message || '暂时无法读取工具目录' } finally { loading.value = false } }
 async function load() { await Promise.all([loadModules(), profileRefresh.refresh()]) }
 function resetForm(item = null) { editingId.value = item?.module_id || ''; Object.assign(form, { module_id:item?.module_id || '', title:item?.title || '', description_zh:item?.description_zh || item?.description || '', version_track:item?.version_track || 'custom', phase:item?.phase || 'create', executor:item?.executor || 'codex', availability:item?.availability || 'bridge', inputs:(item?.inputs || []).join(', '), outputs:(item?.outputs || []).join(', '), example:item?.example || '', enabled:item?.enabled !== false }) }
 function openEditor(item = null) { resetForm(item); editorVisible.value = true }
@@ -96,10 +105,12 @@ onMounted(loadModules)
 useWorkbenchPage({ refresh: load, error: () => error.value, loading: () => loading.value })
 </script>
 <style scoped>
+.inventory-strip{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:16px;margin:0;padding:16px 0;border-block:1px solid var(--border-color)}.inventory-strip div{min-width:0}.inventory-strip dt{font-size:12px;line-height:1.5;color:var(--text-muted)}.inventory-strip dd{margin:6px 0 0;font-size:24px;color:var(--text-primary);font-variant-numeric:tabular-nums}@media(max-width:1050px){.inventory-strip{grid-template-columns:repeat(3,minmax(0,1fr))}}@media(max-width:650px){.inventory-strip{grid-template-columns:repeat(2,minmax(0,1fr))}}
 .catalog-page{display:grid;gap:18px}.catalog-hero{display:flex;justify-content:space-between;gap:24px;align-items:center;padding:25px 29px;border:1px solid var(--border-color);background:linear-gradient(110deg,var(--bg-card),var(--bg-card))}.kicker{color:var(--ui-accent);font-size:12px;letter-spacing:.12em}.catalog-hero h2{margin:9px 0 7px;font-size:28px}.catalog-hero p{max-width:760px;margin:0;color:var(--text-muted);font-size:13px;line-height:1.7}.catalog-count{min-width:130px;padding-left:17px;border-left:1px solid var(--border-color)}.catalog-count strong,.catalog-count span{display:block}.catalog-count strong{color:var(--ui-accent);font-size:32px}.catalog-count span{color:var(--text-muted);font-size:12px}.panel{padding:14px 16px;border:1px solid var(--border-color);background:var(--bg-card)}.runtime-banner{display:flex;justify-content:space-between;gap:18px;align-items:center}.runtime-banner p{margin:6px 0 0;color:var(--text-muted);font-size:12px}.runtime-stats{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;color:var(--text-muted);font-size:11px}.runtime-stats span{padding:5px 8px;border:1px solid var(--border-color)}.component-state.ready,.verified{color:var(--ui-accent)}.auto-install{color:var(--ui-info)}.filters{display:flex;align-items:center;gap:14px;flex-wrap:wrap}.search{max-width:370px}.catalog-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}.module-card{min-width:0;padding:16px;border:1px solid var(--border-color);background:var(--bg-card)}.module-card header,.module-card footer{display:flex;align-items:center;justify-content:space-between;gap:8px}.phase,.availability{padding:3px 7px;border-radius:99px;font-size:11px}.phase{color:var(--text-muted);background:var(--bg-card)}.phase.mint{color:var(--ui-accent);background:var(--bg-card)}.phase.amber{color:var(--ui-warning);background:var(--bg-card)}.phase.blue{color:var(--ui-info);background:var(--bg-card)}.availability.ready{color:var(--ui-accent)}.availability.bridge{color:var(--ui-info)}.availability.advisory{color:var(--ui-warning)}.module-card h3{margin:15px 0 3px;color:var(--text-primary);font-size:15px}.module-card code{color:var(--text-muted);font-size:11px}.module-card p{min-height:52px;margin:13px 0;color:var(--text-muted);font-size:14px;line-height:1.7}.io{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-top:12px}.io>div{padding:8px;border:1px solid var(--border-color);background:var(--bg-card)}.io small{display:block;margin-bottom:6px;color:var(--text-muted);font-size:11px}.io span{display:inline-block;margin:2px 3px 2px 0;padding:2px 5px;color:var(--text-muted);background:var(--bg-card);font-size:11px}.module-card footer{justify-content:flex-start;flex-wrap:wrap;margin-top:13px;color:var(--text-muted);font-size:11px}.module-card footer .paid{color:var(--ui-warning)}.empty{padding:60px;text-align:center;color:var(--text-muted);font-size:12px}@media(max-width:1050px){.catalog-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:650px){.catalog-hero{flex-direction:column;align-items:flex-start;padding:20px}.catalog-count{width:100%;padding:10px 0 0;border-left:0;border-top:1px solid var(--border-color)}.catalog-grid{grid-template-columns:1fr}.filters{align-items:stretch}.search{max-width:none;width:100%}.runtime-banner{align-items:flex-start;flex-direction:column}.runtime-stats{justify-content:flex-start}}
 .example{min-height:0!important;color:var(--text-primary)!important;font-size:12px!important}details summary{cursor:pointer;color:var(--text-muted);font-size:12px}details code{display:block;margin:10px 0;overflow-wrap:anywhere}
 .tool-form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 14px}.form-output{margin-top:8px}.catalog-error{margin-top:-6px}@media(max-width:650px){.tool-form-grid{grid-template-columns:1fr}}
 .runtime-banner{padding:14px 0;border-block:1px solid var(--border-color)}
+.filter-count{margin-top:6px;white-space:nowrap}
 .runtime-banner small{color:var(--text-muted);font-size:11px}
 .component-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;width:min(560px,100%)}
 .component-state{min-width:0;font-size:12px;overflow-wrap:anywhere}

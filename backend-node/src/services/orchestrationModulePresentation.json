@@ -1,4 +1,9 @@
 {
+  "prompt.adapt": {
+    "title": "分镜提示词适配",
+    "description_zh": "在可编辑分镜结构上转换模型提示词，保留动作、声音、负面约束和素材绑定，并指出合同差异。",
+    "example": "把 Seedance 分镜转成可配置的 H3 描述，保留全部镜头意图"
+  },
   "session.create": {
     "title": "创建任务",
     "description_zh": "把目标和素材保存为可恢复的任务。",

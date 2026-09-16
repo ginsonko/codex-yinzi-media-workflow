@@ -1,0 +1,722 @@
+{
+  "local.image.face-beauty": {
+    "type": "object",
+    "description": "本地保纹理人脸美颜：基于高低频分频分离与五官（眼、眉、唇）保护，针对检测人脸或指定区域进行磨皮软化、皮肤质感保持与肤色润饰，支持无脸安全退路与 EXIF 自动定向方向同步。",
+    "properties": {
+      "smooth_strength": {
+        "type": "number",
+        "description": "磨皮平滑强度，0 为不平滑，1 为最大平滑，默认 0.6",
+        "minimum": 0,
+        "maximum": 1,
+        "default": 0.6
+      },
+      "texture_retention": {
+        "type": "number",
+        "description": "高频皮肤毛孔纹理保留比例，0 为塑料感无纹理，1 为完全保留原纹理，默认 0.7",
+        "minimum": 0,
+        "maximum": 1,
+        "default": 0.7
+      },
+      "feature_protection": {
+        "type": "number",
+        "description": "五官（眼睛、睫毛、眉毛、唇部）保护力度，避免五官模糊失真，默认 0.85",
+        "minimum": 0,
+        "maximum": 1,
+        "default": 0.85
+      },
+      "skin_tone_warmth": {
+        "type": "number",
+        "description": "肤色暖度微调，正数为暖黄红润，负数为冷白，默认 0.05",
+        "minimum": -0.5,
+        "maximum": 0.5,
+        "default": 0.05
+      },
+      "skin_brighten": {
+        "type": "number",
+        "description": "肤色局部提亮微调，默认 0.08",
+        "minimum": -0.5,
+        "maximum": 0.5,
+        "default": 0.08
+      },
+      "skin_rosiness": {
+        "type": "number",
+        "description": "肤色局部红润气色微调，默认 0.04",
+        "minimum": -0.5,
+        "maximum": 0.5,
+        "default": 0.04
+      },
+      "feather_ratio": {
+        "type": "number",
+        "description": "美颜作用区域边缘羽化过渡带比例，防止生硬方形切边，默认 0.25",
+        "minimum": 0.05,
+        "maximum": 0.5,
+        "default": 0.25
+      },
+      "expand_ratio": {
+        "type": "number",
+        "description": "人脸检测框外扩比例，覆盖脸颊下巴边缘，默认 0.2",
+        "minimum": 0,
+        "maximum": 1,
+        "default": 0.2
+      },
+      "face_selection": {
+        "type": "string",
+        "description": "多脸选择策略：all(所有人脸), largest(面积最大), primary(居中主要), index(指定序号)",
+        "enum": [
+          "all",
+          "largest",
+          "primary",
+          "index"
+        ],
+        "default": "all"
+      },
+      "target_index": {
+        "type": "integer",
+        "description": "face_selection 为 index 时的人脸序号 (0 起始)",
+        "minimum": 0,
+        "maximum": 99,
+        "default": 0
+      },
+      "score_threshold": {
+        "type": "number",
+        "description": "YuNet 人脸检测置信度阈值",
+        "minimum": 0.1,
+        "maximum": 0.99,
+        "default": 0.6
+      },
+      "force_user_rect": {
+        "type": "boolean",
+        "description": "跳过自动检测，强制使用 user_rect 手动指定的美颜区域",
+        "default": false
+      },
+      "user_rect": {
+        "type": "object",
+        "description": "归一化矩形区域退路或手动指定框",
+        "required": [
+          "x",
+          "y",
+          "width",
+          "height"
+        ],
+        "properties": {
+          "x": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "y": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "width": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "height": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          }
+        }
+      },
+      "nms_threshold": {
+        "type": "number",
+        "minimum": 0,
+        "maximum": 1,
+        "default": 0.3
+      },
+      "top_k": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 5000,
+        "default": 500
+      },
+      "max_faces": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 100,
+        "default": 100
+      },
+      "max_pixels": {
+        "type": "integer",
+        "minimum": 1024,
+        "maximum": 40000000,
+        "default": 24000000
+      },
+      "detection_size": {
+        "type": "integer",
+        "enum": [
+          640
+        ],
+        "default": 640,
+        "description": "锁定ONNX模型的固定输入尺寸；原图按比例缩放并填充，定位映射回原尺寸"
+      }
+    }
+  },
+  "local.image.skin-tone": {
+    "type": "object",
+    "description": "局部肤色定向修饰：锁定人脸与皮肤色域，进行自然透亮白皙、温暖气色、冷白皮或红润微调，严格保护背景与非皮肤区域。",
+    "properties": {
+      "tone_mode": {
+        "type": "string",
+        "description": "肤色模式：natural_fair(自然透亮白皙), warm_glow(温暖阳光气色), cool_tone(冷白皮), rosy(红润粉嫩)",
+        "enum": [
+          "natural_fair",
+          "warm_glow",
+          "cool_tone",
+          "rosy"
+        ],
+        "default": "natural_fair"
+      },
+      "intensity": {
+        "type": "number",
+        "description": "肤色调整力度",
+        "minimum": 0,
+        "maximum": 1,
+        "default": 0.7
+      },
+      "brightness_boost": {
+        "type": "number",
+        "description": "局部肤色明度提升",
+        "minimum": -0.3,
+        "maximum": 0.3,
+        "default": 0.06
+      },
+      "preserve_background": {
+        "type": "boolean",
+        "description": "是否开启皮肤掩模探测，保护头发与背景不偏色",
+        "default": true
+      },
+      "feather_ratio": {
+        "type": "number",
+        "description": "边缘羽化比例",
+        "minimum": 0.05,
+        "maximum": 0.5,
+        "default": 0.3
+      },
+      "face_selection": {
+        "type": "string",
+        "enum": [
+          "all",
+          "largest",
+          "primary",
+          "index"
+        ],
+        "default": "all"
+      },
+      "force_user_rect": {
+        "type": "boolean",
+        "default": false
+      },
+      "user_rect": {
+        "type": "object",
+        "required": [
+          "x",
+          "y",
+          "width",
+          "height"
+        ],
+        "properties": {
+          "x": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "y": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "width": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "height": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          }
+        }
+      },
+      "score_threshold": {
+        "type": "number",
+        "minimum": 0.1,
+        "maximum": 0.99,
+        "default": 0.6
+      },
+      "nms_threshold": {
+        "type": "number",
+        "minimum": 0,
+        "maximum": 1,
+        "default": 0.3
+      },
+      "top_k": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 5000,
+        "default": 500
+      },
+      "max_faces": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 100,
+        "default": 100
+      },
+      "max_pixels": {
+        "type": "integer",
+        "minimum": 1024,
+        "maximum": 40000000,
+        "default": 24000000
+      },
+      "detection_size": {
+        "type": "integer",
+        "enum": [
+          640
+        ],
+        "default": 640,
+        "description": "锁定ONNX模型的固定输入尺寸；原图按比例缩放并填充，定位映射回原尺寸"
+      },
+      "target_index": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 99,
+        "default": 0
+      },
+      "expand_ratio": {
+        "type": "number",
+        "minimum": 0,
+        "maximum": 1,
+        "default": 0.35
+      }
+    }
+  },
+  "local.image.frequency-separation": {
+    "type": "object",
+    "description": "高低频分频分离与修饰：将图像分解为色彩基底（低频）与质感细节（高频），支持消除杂色色斑或增强锐利纹理。",
+    "properties": {
+      "radius": {
+        "type": "number",
+        "description": "分频分离高斯半宽",
+        "minimum": 1,
+        "maximum": 64,
+        "default": 4
+      },
+      "texture_gain": {
+        "type": "number",
+        "description": "高频质感增益系数，>1.0 为强化纹理锐利度",
+        "minimum": 0,
+        "maximum": 3,
+        "default": 1.2
+      },
+      "color_blur_blend": {
+        "type": "number",
+        "description": "基底色彩进一步平滑比例，消除杂色斑驳",
+        "minimum": 0,
+        "maximum": 1,
+        "default": 0.4
+      }
+    }
+  },
+  "local.image.bilateral-denoise": {
+    "type": "object",
+    "description": "根据原图与高斯引导层的亮度差异调整降噪权重，保留较强边缘。",
+    "properties": {
+      "spatial_sigma": {
+        "type": "number",
+        "description": "空间邻域半宽",
+        "minimum": 1,
+        "maximum": 20,
+        "default": 3
+      },
+      "edge_threshold": {
+        "type": "number",
+        "description": "边缘反差保护阈值，越小对微弱边缘越敏感保护",
+        "minimum": 5,
+        "maximum": 120,
+        "default": 30
+      },
+      "mix": {
+        "type": "number",
+        "description": "降噪平滑混合度",
+        "minimum": 0,
+        "maximum": 1,
+        "default": 0.75
+      }
+    }
+  },
+  "local.image.dodge-burn": {
+    "type": "object",
+    "description": "局部加光与减光立体塑造：针对高光、阴影与中间调重塑反差光影，增强人像面部立体感与质感。",
+    "properties": {
+      "dodge_highlights": {
+        "type": "number",
+        "description": "高光提亮增益",
+        "minimum": 0,
+        "maximum": 1,
+        "default": 0.25
+      },
+      "burn_shadows": {
+        "type": "number",
+        "description": "暗部加深增益",
+        "minimum": 0,
+        "maximum": 1,
+        "default": 0.2
+      },
+      "midtones_contrast": {
+        "type": "number",
+        "description": "中间调微反差微调",
+        "minimum": -0.5,
+        "maximum": 0.5,
+        "default": 0.15
+      }
+    }
+  },
+  "local.image.color-grade": {
+    "type": "object",
+    "description": "电影感色彩分级：提供经典青橙 (teal_orange)、暖色胶片 (warm_film)、冷酷黑白/冷调 (cool_noir)、金黄时刻 (golden_hour) 色彩平衡与三向色轮分离渲染。",
+    "properties": {
+      "preset": {
+        "type": "string",
+        "enum": [
+          "teal_orange",
+          "warm_film",
+          "cool_noir",
+          "golden_hour"
+        ],
+        "default": "teal_orange"
+      },
+      "strength": {
+        "type": "number",
+        "description": "分级色彩渲染强度",
+        "minimum": 0,
+        "maximum": 1,
+        "default": 0.65
+      },
+      "contrast": {
+        "type": "number",
+        "description": "微反差系数",
+        "minimum": 0.5,
+        "maximum": 2,
+        "default": 1.08
+      },
+      "saturation": {
+        "type": "number",
+        "description": "饱和度微调系数",
+        "minimum": 0,
+        "maximum": 2,
+        "default": 1.05
+      }
+    }
+  },
+  "local.image.vignette": {
+    "type": "object",
+    "description": "焦点引导光学暗角：自然平滑的椭圆渐晕衰减，压暗四周杂乱边缘，将视觉焦点引导至画面中央主体。",
+    "properties": {
+      "radius_ratio": {
+        "type": "number",
+        "description": "中央清晰圆半径比例",
+        "minimum": 0.2,
+        "maximum": 1.5,
+        "default": 0.85
+      },
+      "falloff_feather": {
+        "type": "number",
+        "description": "边缘衰减过渡带羽化度",
+        "minimum": 0.1,
+        "maximum": 0.9,
+        "default": 0.45
+      },
+      "darkness": {
+        "type": "number",
+        "description": "边缘压暗深度",
+        "minimum": 0,
+        "maximum": 1,
+        "default": 0.5
+      },
+      "tint_color": {
+        "type": "string",
+        "default": "#000000",
+        "description": "暗角色彩，使用CSS颜色名称或色值"
+      }
+    }
+  },
+  "local.image.film-grain": {
+    "type": "object",
+    "description": "拟真镜头胶片颗粒：模拟真实银盐有机颗粒，消除数字生硬感，增强电影质感，算法确定性可复核。",
+    "properties": {
+      "intensity": {
+        "type": "number",
+        "description": "颗粒强度",
+        "minimum": 0.01,
+        "maximum": 0.5,
+        "default": 0.12
+      },
+      "size": {
+        "type": "integer",
+        "description": "颗粒粗细 (1 或 2)",
+        "enum": [
+          1,
+          2
+        ],
+        "default": 1
+      },
+      "monochrome": {
+        "type": "boolean",
+        "description": "是否为单色明度颗粒",
+        "default": true
+      }
+    }
+  },
+  "local.video.face-beauty": {
+    "type": "object",
+    "description": "连续视频人脸保纹理美颜：跟踪视频中各镜头人脸运动轨迹，保持 ID 连贯性，分频保纹理磨皮与五官（眼、眉、唇）特征保护，支持手动归一化区域 target，时间基准重采样，音视频协同裁剪保持对齐。",
+    "properties": {
+      "smooth_strength": {
+        "type": "number",
+        "description": "磨皮平滑强度 (0~1)，默认 0.6",
+        "minimum": 0,
+        "maximum": 1,
+        "default": 0.6
+      },
+      "texture_retention": {
+        "type": "number",
+        "description": "皮肤纹理保留比例 (0~1)，默认 0.7",
+        "minimum": 0,
+        "maximum": 1,
+        "default": 0.7
+      },
+      "feature_protection": {
+        "type": "number",
+        "description": "五官保护力度 (0~1)，默认 0.85",
+        "minimum": 0,
+        "maximum": 1,
+        "default": 0.85
+      },
+      "skin_tone_warmth": {
+        "type": "number",
+        "description": "肤色暖度微调 (-0.5~0.5)，默认 0.05",
+        "minimum": -0.5,
+        "maximum": 0.5,
+        "default": 0.05
+      },
+      "skin_brighten": {
+        "type": "number",
+        "description": "肤色提亮微调 (-0.5~0.5)，默认 0.08",
+        "minimum": -0.5,
+        "maximum": 0.5,
+        "default": 0.08
+      },
+      "skin_rosiness": {
+        "type": "number",
+        "description": "肤色红润微调 (-0.5~0.5)，默认 0.04",
+        "minimum": -0.5,
+        "maximum": 0.5,
+        "default": 0.04
+      },
+      "feather_ratio": {
+        "type": "number",
+        "description": "边缘羽化比例 (0.05~0.5)，默认 0.25",
+        "minimum": 0.05,
+        "maximum": 0.5,
+        "default": 0.25
+      },
+      "expand_ratio": {
+        "type": "number",
+        "description": "人脸检测框外扩比例 (0~1)，默认 0.2",
+        "minimum": 0,
+        "maximum": 1,
+        "default": 0.2
+      },
+      "face_selection": {
+        "type": "string",
+        "description": "人脸选择策略：all, largest, primary, index",
+        "enum": [
+          "all",
+          "largest",
+          "primary",
+          "index"
+        ],
+        "default": "all"
+      },
+      "target_index": {
+        "type": "integer",
+        "description": "指定人脸序号 (0 起始)",
+        "minimum": 0,
+        "maximum": 99,
+        "default": 0
+      },
+      "max_duration": {
+        "type": "number",
+        "description": "视频最大处理时长（秒），超出严格截断并协同裁剪音轨，默认 30",
+        "minimum": 0.2,
+        "maximum": 120,
+        "default": 30
+      },
+      "max_frames": {
+        "type": "integer",
+        "description": "最大解码帧数，达到后严格截断并协同裁剪音轨，默认 900",
+        "minimum": 8,
+        "maximum": 3600,
+        "default": 900
+      },
+      "output_fps": {
+        "type": "number",
+        "description": "目标输出帧率，0 为保持源视频有界 CFR，1~120 严格时间基重采样（避免拉长或放慢）",
+        "minimum": 0,
+        "maximum": 120,
+        "default": 0
+      },
+      "scene_threshold": {
+        "type": "number",
+        "description": "场景切换 (shot_cut) 检出阈值，默认 0.28",
+        "minimum": 0.02,
+        "maximum": 0.9,
+        "default": 0.28
+      },
+      "min_shot_seconds": {
+        "type": "number",
+        "description": "相邻镜头切换最小间隔秒数，默认 0.2",
+        "minimum": 0.04,
+        "maximum": 30,
+        "default": 0.2
+      },
+      "analysis_width": {
+        "type": "integer",
+        "description": "场景分析小图宽度，需为偶数，默认 160",
+        "minimum": 32,
+        "maximum": 640,
+        "default": 160
+      },
+      "analysis_height": {
+        "type": "integer",
+        "description": "场景分析小图高度，需为偶数，默认 90",
+        "minimum": 18,
+        "maximum": 360,
+        "default": 90
+      },
+      "force_user_rect": {
+        "type": "boolean",
+        "description": "跳过自动检测，强制将 user_rect 作为每帧美颜目标",
+        "default": false
+      },
+      "user_rect": {
+        "type": "object",
+        "description": "归一化矩形区域退路或手动指定框",
+        "required": [
+          "x",
+          "y",
+          "width",
+          "height"
+        ],
+        "properties": {
+          "x": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "y": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "width": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "height": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          }
+        }
+      },
+      "tracks_path": {
+        "type": "string",
+        "description": "已有人脸跟踪轨迹文件路径 (JSON)，格式需为 yinzi.video-face-tracking/v1 且指纹匹配"
+      },
+      "hold_seconds": {
+        "type": "number",
+        "description": "人脸检测短暂丢失时轨迹保持秒数，默认 0.15",
+        "minimum": 0,
+        "maximum": 2,
+        "default": 0.15
+      },
+      "score_threshold": {
+        "type": "number",
+        "description": "YuNet 人脸检测置信度阈值，默认 0.6",
+        "minimum": 0.1,
+        "maximum": 0.99,
+        "default": 0.6
+      },
+      "nms_threshold": {
+        "type": "number",
+        "description": "YuNet NMS 重叠抑制阈值，默认 0.3",
+        "minimum": 0,
+        "maximum": 1,
+        "default": 0.3
+      },
+      "top_k": {
+        "type": "integer",
+        "description": "最多候选人脸框数，默认 500",
+        "minimum": 1,
+        "maximum": 5000,
+        "default": 500
+      },
+      "max_faces": {
+        "type": "integer",
+        "description": "每帧最多检测人脸数，默认 100",
+        "minimum": 1,
+        "maximum": 100,
+        "default": 100
+      },
+      "detection_size": {
+        "type": "integer",
+        "description": "YuNet 输入尺寸，固定 640",
+        "minimum": 640,
+        "maximum": 640,
+        "default": 640
+      },
+      "cache_gap_policy": {
+        "type": "string",
+        "enum": [
+          "skip",
+          "fail"
+        ],
+        "default": "skip",
+        "description": "轨迹缓存未覆盖实际帧时跳过处理或报告失败，不延用旧框。"
+      },
+      "predict_motion": {
+        "type": "boolean",
+        "default": false
+      },
+      "predict_max_seconds": {
+        "type": "number",
+        "minimum": 0,
+        "maximum": 2,
+        "default": 0.4
+      },
+      "match_min_score": {
+        "type": "number",
+        "minimum": 0.05,
+        "maximum": 0.99,
+        "default": 0.25
+      },
+      "match_iou": {
+        "type": "number",
+        "minimum": 0,
+        "maximum": 1,
+        "default": 0.1
+      },
+      "match_center_ratio": {
+        "type": "number",
+        "minimum": 0.1,
+        "maximum": 2,
+        "default": 1
+      }
+    }
+  }
+}

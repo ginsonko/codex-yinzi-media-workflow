@@ -66,6 +66,7 @@ function buildRuntimeIdentity(config, options = {}) {
     },
     orchestration_router: true,
     canonical: options.canonical === true || process.env.YINZI_WORKFLOW_CANONICAL === '1',
+    startup_recovery: require('./startupRecovery').startupRecoveryMode(config),
     capabilities: ['orchestration', 'production-bridge', 'asset-import', 'audit-export'],
     generated_at: new Date().toISOString(),
   };

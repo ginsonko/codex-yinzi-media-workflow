@@ -68,3 +68,33 @@ test('dynamic mask follows its own timestamps, moves the reveal, and ends withou
  assert.ok(pixel(out,1.5,60,40)[2]>235,'short mask disappears at its actual end');
  assert.deepEqual(await Promise.all(sources.map(s=>sha256(s.path))),before);
 });
+
+test('image position and opacity tracks use layer-relative time and preserve delayed source audio', {skip:!hasLocalFfmpeg()}, async t => {
+ const dir=temp(t),base=await color(path.join(dir,'base.mp4'),'blue',{offset:2,audio:true});
+ const layer=await image(path.join(dir,'red.png'),20,20,{r:255,g:0,b:0,alpha:1});
+ const out=path.join(dir,'animated.mp4');
+ await executeNative({inputPath:base,outputPath:out,sources:[{path:base},{path:layer}],components:components(),parameters:{layers:[{source:1,start:.5,end:2,y:40,animation:{
+   x:[{time:0,value:0},{time:1,value:80}],opacity:[{time:0,value:0},{time:1,value:1}]
+ }}]}});
+ assert.ok(pixel(out,.25,10,50)[2]>235);
+ const midway=pixel(out,1,50,50);assert.ok(midway[0]>100&&midway[0]<155&&midway[2]>100,JSON.stringify(midway));
+ assert.ok(pixel(out,1.5,90,50)[0]>235);assert.ok(pixel(out,1.5,10,50)[2]>235);
+ assert.ok(pixel(out,2,90,50)[2]>235,'end remains exclusive');
+ assert.ok(rms(out,.1)<.001);assert.ok(rms(out,.7)>.05);
+});
+
+test('scale and rotation retain center, transform the mask and do not clip the rotated layer', {skip:!hasLocalFfmpeg()}, async t => {
+ const dir=temp(t),base=await color(path.join(dir,'base.mp4'),'blue',{duration:2});
+ const layer=await image(path.join(dir,'red.png'),40,20,{r:255,g:0,b:0,alpha:1});
+ const mask=await image(path.join(dir,'mask.png'),40,20,{r:255,g:255,b:255,alpha:.5});
+ const out=path.join(dir,'rotate.mp4');
+ await executeNative({inputPath:base,outputPath:out,sources:[{path:base},{path:layer},{path:mask}],components:components(),parameters:{layers:[{source:1,x:60,y:50,mask_source:2,mask_mode:'alpha',animation:{
+   scale_x:[{time:0,value:1,easing:'hold'},{time:.5,value:2}],
+   scale_y:[{time:0,value:1,easing:'hold'},{time:.5,value:2}],
+   rotation:[{time:0,value:0,easing:'hold'},{time:1,value:90}],
+ }}]}});
+ assert.ok(pixel(out,.25,45,60)[2]>235);
+ const wide=pixel(out,.75,45,60);assert.ok(wide[0]>105&&wide[0]<150&&wide[2]>105,JSON.stringify(wide));
+ const tall=pixel(out,1.25,80,90);assert.ok(tall[0]>105&&tall[0]<150&&tall[2]>105,JSON.stringify(tall));
+ assert.ok(pixel(out,1.25,45,60)[2]>235);
+});

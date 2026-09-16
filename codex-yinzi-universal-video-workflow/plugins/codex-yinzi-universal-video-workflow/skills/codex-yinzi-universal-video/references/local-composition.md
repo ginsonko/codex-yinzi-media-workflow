@@ -68,6 +68,32 @@ music layer when the picture cuts should not also cut the music.
 
 ## Still-image layers and masks
 
+### Independent layer keyframes
+
+Use `local.video.composite-layers` with `layers[].animation` when individual
+layers need position, scale, rotation or opacity over time. Each property
+(`x`, `y`, `scale_x`, `scale_y`, `rotation`, `opacity`) is its own ordered array
+of `{time, value, easing}`. Read the current module parameter schema before
+building a request. Times are seconds relative to that layer's `start`, while
+`source_in` selects the input segment. Values replace the corresponding static
+property; opacity still multiplies source alpha and mask. Scale and rotation
+use the layer center, and rotation is in clockwise degrees.
+
+First/last values hold outside their key interval. Easing belongs to the
+outgoing key and supports linear, hold, ease-in, ease-out and ease-in-out.
+Hold changes exactly at the next key. Coordinates locate the untransformed
+layer's top-left corner. The mask is applied before geometry and follows the
+layer. Retain one continuous music layer for rhythm edits; the compositor
+preserves only the base video's audio, including its original delay.
+
+For frame-specific edits use `time = frame_index / fps`; split long sequences
+at meaningful boundaries (up to 100 keys per property). For camera-only motion
+use `local.video.camera-motion`. This compositor is local FFmpeg, not Adobe AE.
+Check pixels at key boundaries, intermediate motion, alpha edges and layer end,
+then review the whole shot's rhythm. Source-matching fixture badges are invalid
+after related source changes until current-code acceptance is rerun.
+
+
 `local.image.composite-layers` supports ordered layers with location, size,
 opacity, blend mode and an alpha/luminance mask. Read its parameter schema for
 the exact source indices. Use it for product layouts, overlays, compositing and

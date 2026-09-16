@@ -16,7 +16,7 @@ function createLocalMediaJobs(db,cfg={},orchestration,injected={}){
   db.exec(`CREATE TABLE IF NOT EXISTS local_media_jobs (id TEXT PRIMARY KEY,session_id TEXT NOT NULL,request_key TEXT NOT NULL,request_hash TEXT NOT NULL,status TEXT NOT NULL,owner_pid INTEGER,job_json TEXT NOT NULL,updated_at TEXT NOT NULL,UNIQUE(session_id,request_key))`);
   db.exec(`CREATE TABLE IF NOT EXISTS local_media_attempt_receipts (request_key TEXT PRIMARY KEY,job_id TEXT NOT NULL,attempt INTEGER NOT NULL,status TEXT NOT NULL,receipt_json TEXT NOT NULL)`);
   const storage=path.resolve(cfg.storage?.local_path||'./data/storage');
-  const manager=injected.manager||createComponentManager({root:path.resolve(cfg.media_components?.root||path.join(storage,'../media-components'))});
+  const manager=injected.manager||createComponentManager({root:path.resolve(cfg.media_components?.root||process.env.YINZI_WORKFLOW_COMPONENT_DIR||path.join(storage,'../media-components'))});
   const running=new Map();let closed=false,retryTimer,experienceRecovery;const limit=machineProfile().recommended_concurrency;
   function remember(job){
     try{
@@ -64,7 +64,9 @@ function createLocalMediaJobs(db,cfg={},orchestration,injected={}){
       if(orchestration)for(const item of attachments)orchestration.recordArtifact(job.session_id,{artifact_id:`local-media:${job.id}:${item.file}`,node_id:job.node_id||undefined,type:item.type||'document',title:item.title||item.file,path:item.path,url:item.url,bytes:item.bytes,status:'review_required',validation:{technical_status:'passed',output_sha256:item.sha256,role:item.role},source_refs:[{type:'local_media_job',id:job.id}]});
       // The registration bundle predates node completion; keep only the artifact receipt.
       job.result={...receipt,url,attachments,artifact:artifact?{reused:artifact.reused,artifact:artifact.artifact}:undefined};job.status='succeeded';job.error=null;save(job);
-      if(job.node_id)orchestration.updateNode(job.session_id,job.node_id,{status:'succeeded',output_refs:[{type:'artifact',id:'local-media:'+job.id}],actor:'system'});
+      if(job.node_id)orchestration.updateNode(job.session_id,job.node_id,{status:'succeeded',error:{},output_refs:[{type:'artifact',id:'local-media:'+job.id}],actor:'system',
+        receipt:{status:'success',source:'local-media-executor',message:receipt.details?.quality_status==='review_required'?'本地处理已完成并保存，内容仍待核对':'本地处理已完成，成果已保存并通过技术验证',
+          attempted:[job.request.module_id],retryable:'false',next_actions:receipt.details?.quality_status==='review_required'?['inspect_media']:['continue','inspect_media'],correlation_id:job.id}});
       emit(job,{stage:'succeeded',message:receipt.details?.quality_status==='review_required'?'处理结果已保存，内容待核对':'成果已保存并验证，可继续下一步'});
       })();
       remember(job);
@@ -103,6 +105,7 @@ function createLocalMediaJobs(db,cfg={},orchestration,injected={}){
       if(schema.enum&&!schema.enum.includes(value))throw fail('INVALID_PARAMETERS',`参数 ${key} 不支持该选项`);
     }
     if(op.build)op.build(parameters);
+    if(op.validateParameters)op.validateParameters({...op.defaults,...parameters});
     const input_identity={size:stat.size,mtime_ms:stat.mtimeMs,ctime_ms:stat.ctimeMs,ino:stat.ino};
     const legacyRequest={module_id:op.id,input_path:input,input_identity,parameters};
     const sources=snapshotSources({...legacyRequest,sources:body.sources});
@@ -114,7 +117,11 @@ function createLocalMediaJobs(db,cfg={},orchestration,injected={}){
         const legacyHash=!body.sources&&!old.request.sources?crypto.createHash('sha256').update(JSON.stringify(stable({...legacyRequest,node_key:body.node_key||null}))).digest('hex'):null;
         if(previous.request_hash!==hash&&previous.request_hash!==legacyHash)throw fail('REQUEST_HASH_CONFLICT','同一请求键的素材或参数已变化');return{...old,reused:true};
       }
-      let nodeId=null;if(body.node_key){const node=orchestration.getBundle(sessionId).nodes.find(n=>n.node_key===body.node_key||n.id===body.node_key);if(!node||node.module_id!==op.id)throw fail('NODE_MISMATCH','节点与所选操作不匹配');nodeId=node.id;}
+      let nodeId=null;if(body.node_key){const node=orchestration.getBundle(sessionId).nodes.find(n=>n.node_key===body.node_key||n.id===body.node_key);if(!node||node.module_id!==op.id)throw fail('NODE_MISMATCH','节点与所选操作不匹配');nodeId=node.id;
+        // A new local job is a new execution attempt. Keep the prior terminal
+        // receipt; the same request key already returned above without retrying.
+        if(['succeeded','partial','failed','skipped','cancelled'].includes(node.status))orchestration.retryNode(sessionId,nodeId,{actor:'system',force:true,note:'新本地作业已请求执行'});
+      }
       const job={id:crypto.randomUUID(),session_id:sessionId,request_key:requestKey,request_hash:hash,node_id:nodeId,operation_title:op.title,request,status:'queued',attempt:0,created_at:stamp(),updated_at:stamp(),events:[],progress:{stage:'queued',message:'已排队，组件就绪后自动处理'}};
       db.prepare('INSERT INTO local_media_jobs (id,session_id,request_key,request_hash,status,job_json,updated_at) VALUES (?,?,?,?,?,?,?)').run(job.id,sessionId,requestKey,hash,job.status,JSON.stringify(job),job.updated_at);
       if(!nodeId)orchestration.syncLocalJobStatus(sessionId);

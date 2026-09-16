@@ -5,6 +5,32 @@ const {createLocalMediaJobs}=require('../src/services/localMediaJobs');
 const {runMigrationsAndEnsure}=require('../src/db/migrate');
 function fixture(){const root=fs.mkdtempSync(path.join(os.tmpdir(),'yinzi-job-test-'));const db=new Database(':memory:');const log=console.log;console.log=()=>{};try{runMigrationsAndEnsure(db);}finally{console.log=log;}const service=createOrchestrationService(db);const id=service.createSession({user_goal:'本地媒体处理验收',idempotency_key:'local-test'}).session.id;const input=path.join(root,'input.png');fs.writeFileSync(input,'fixture');return{root,db,service,id,input};}
 
+test('component root environment reaches real jobs and explicit configuration takes precedence',async()=>{
+ const previous=process.env.YINZI_WORKFLOW_COMPONENT_DIR;
+ try{
+  for(const explicit of [false,true]){
+   const {root,db,service}=fixture();process.env.YINZI_WORKFLOW_COMPONENT_DIR=path.join(root,'short-components');
+   const configured=path.join(root,'configured-components');
+   const jobs=createLocalMediaJobs(db,{storage:{local_path:root},...(explicit?{media_components:{root:configured}}:{})},service);
+   try{assert.equal(jobs.manager.root,explicit?configured:process.env.YINZI_WORKFLOW_COMPONENT_DIR);}
+   finally{await jobs.close();db.close();fs.rmSync(root,{recursive:true,force:true});}
+  }
+ }finally{if(previous===undefined)delete process.env.YINZI_WORKFLOW_COMPONENT_DIR;else process.env.YINZI_WORKFLOW_COMPONENT_DIR=previous;}
+});
+
+test('invalid nested keyframes never queue a job or begin component preparation',async()=>{
+ const {root,db,service,id,input}=fixture();let executions=0,preparations=0;
+ const manager={ensureComponent:async()=>{preparations++;throw Error('unexpected preparation');}};
+ const jobs=createLocalMediaJobs(db,{storage:{local_path:root}},service,{manager,execute:async()=>{executions++;throw Error('unexpected execution');}});
+ const body={session_id:id,request_key:'bad-animation',module_id:'local.video.composite-layers',input_path:input,parameters:{layers:[{source:0,animation:{x:[{time:1,value:0},{time:1,value:20}]}}]}};
+ try{
+  assert.throws(()=>jobs.create(body),{code:'KEYFRAME_TRACK_INVALID'});
+  assert.equal(jobs.list(id).length,0);
+  await assert.rejects(require('../src/services/localMediaExecutor').execute(body,{manager,outputDir:path.join(root,'output')}),{code:'KEYFRAME_TRACK_INVALID'});
+  assert.equal(preparations,0);assert.equal(executions,0);
+ }finally{await jobs.close();db.close();fs.rmSync(root,{recursive:true,force:true});}
+});
+
 test('restart recovers earlier failed-attempt experiences without replaying media',async()=>{
  const {root,db,service,id,input}=fixture();let executions=0, reopened, recovered;
  const jobs=createLocalMediaJobs(db,{storage:{local_path:root}},service,{retryDelayMs:0,log:{warn(){}},experiences:{recordJob(){throw Error('temporary experience failure');}},execute:async(req,options)=>{

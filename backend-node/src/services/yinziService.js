@@ -288,6 +288,10 @@ function normalizeCapabilityProfile(contract, entry = {}) {
   setKnown(profile, 'provider_endpoint_types', providerEndpointTypes);
 
   setKnown(profile, 'duration_mode', firstText(duration.mode, contract.duration_mode));
+  const allowedDurations = duration.allowed_durations ?? duration.allowed_seconds ?? duration.values ?? contract.allowed_durations;
+  if (Array.isArray(allowedDurations) && allowedDurations.every(n => typeof n === 'number' && Number.isFinite(n) && n > 0)) {
+    profile.allowed_durations = [...new Set(allowedDurations)];
+  }
   setKnown(profile, 'duration_min', firstFiniteNumber(duration.min, duration.min_seconds, contract.duration_min));
   setKnown(profile, 'duration_max', firstFiniteNumber(duration.max, duration.max_seconds, contract.duration_max));
   setKnown(profile, 'duration_step', firstFiniteNumber(duration.step, duration.step_seconds, contract.duration_step));
@@ -306,9 +310,13 @@ function normalizeCapabilityProfile(contract, entry = {}) {
   setKnown(profile, 'max_video_bytes', firstFiniteNumber(referenceFiles.max_video_bytes, contract.max_video_bytes));
   setKnown(profile, 'max_audio_bytes', firstFiniteNumber(referenceFiles.max_audio_bytes, contract.max_audio_bytes));
 
-  const resolutions = stringList(generation.resolutions);
+  const resolutions = stringList(generation.resolutions) || stringList(contract.allowed_resolutions) || stringList(contract.resolutions);
   const qualities = stringList(generation.qualities);
-  setKnown(profile, 'resolution', resolutions?.[0] || firstText(contract.resolution));
+  setKnown(profile, 'allowed_resolutions', resolutions);
+  setKnown(profile, 'resolutions', resolutions);
+  const defaultResolution = firstText(generation.default_resolution, contract.default_resolution, contract.resolution);
+  setKnown(profile, 'default_resolution', defaultResolution);
+  setKnown(profile, 'resolution', defaultResolution || (resolutions?.length === 1 ? resolutions[0] : undefined));
   setKnown(profile, 'quality_tier', firstText(generation.quality, qualities?.[0], contract.quality_tier));
   const automaticEligible = typeof routing.automatic_eligible === 'boolean'
     ? routing.automatic_eligible : contract.automatic_eligible;

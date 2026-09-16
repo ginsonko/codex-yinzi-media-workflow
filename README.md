@@ -8,13 +8,15 @@
 
 安装海报：[下载带完整 Codex 安装指令的 PNG](docs/images/onboarding-install-poster-cross-platform.png)。
 
-[快速安装](#三步开始) · [配置 Key 图文说明](docs/BEGINNER-KEY-SETUP.md) · [安装与故障排查](docs/INSTALLATION.md) · [跨平台安装](docs/CROSS-PLATFORM-INSTALL.md) · [任务进度与自动更新](docs/WORKFLOW-UPDATES.md) · [分享 Skills](CONTRIBUTING.md) · [许可证](LICENSE)
+[快速安装](#三步开始) · [配置 Key 图文说明](docs/BEGINNER-KEY-SETUP.md) · [安装与故障排查](docs/INSTALLATION.md) · [跨平台安装](docs/CROSS-PLATFORM-INSTALL.md) · [接入其它 Agent 软件](docs/MULTI-HOST.md) · [任务进度与自动更新](docs/WORKFLOW-UPDATES.md) · [分享 Skills](CONTRIBUTING.md) · [许可证](LICENSE)
+
+本次更新：[Grok 接入、本地媒体能力与恢复修复](docs/RELEASE-2026-09-14.md)。
 
 ## 三步开始
 
 更新会保留原数据库和任务；Skills 使用稳定的本机安装副本，同一正式数据库只启动一个后台。遇到任务突然不见、Skills 未刷新或旧版多后台，请让 Codex 按[升级与任务恢复](docs/UPGRADE-RECOVERY.md)核对原数据，不要重新生成或清空目录。
 
-工具目录新增 **124 项本地图片、视频和音频处理**。Windows x64 上，任务需要的 FFmpeg、Sharp 组件会自动下载安装，然后继续原任务；无需额外 Key 或手动配置。处理进度和成果保留在“任务与计划”中。查看[完整操作清单、使用边界与下一批工具建议](docs/LOCAL-MEDIA-COMPONENTS.md)。
+工具目录包含本地图片、视频和音频执行合同，以及编排模块、研究候选和转场选项，各类数量分别展示。运行 `node backend-node/scripts/capability-inventory.cjs` 可读取当前源码的准确数量与实测范围。Windows x64 上，任务需要的 FFmpeg、Sharp 等已注册组件会自动准备，然后继续原任务；本地处理无需模型 Key。进度和成果保留在“任务与计划”中。查看[操作清单与组件说明](docs/LOCAL-MEDIA-COMPONENTS.md)和[图层关键帧](docs/LAYER-KEYFRAMES.md)。
 
 首页提供默认关闭的“挂机模式”。勾选后设置会自动记住，Codex 在当前任务和你的预算内自主生成、检查和修整作品，不再逐次询问视频生成确认。你也可以直接对 Codex 说“我去挂机了，按这个目标继续做”或明确授权自主花费，由它开启；随时可在首页关闭。已有任务继续查询原结果，避免重复生成。模型目录暂时失败或漏返回时，会保留你填写的模型，实际可用性以生成回执为准。
 

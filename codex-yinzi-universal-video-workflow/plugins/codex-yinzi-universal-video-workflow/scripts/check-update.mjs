@@ -5,6 +5,7 @@ import fs from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { readRegistry, stateRoot, localOrigin } from './runtime-state.mjs'
+import { interpretWorkStatus } from './runtime-work-idle.mjs'
 const execute = promisify(execFile)
 const official = /^(?:https:\/\/github\.com\/|git@github\.com:)ginsonko\/codex-yinzi-media-workflow(?:\.git)?\/?$/i
 async function git(root, args, timeout=6000) { return (await execute('git',args,{cwd:root,timeout,windowsHide:true,maxBuffer:1024*1024})).stdout.trim() }
@@ -15,8 +16,7 @@ async function busyRuntime(registry) {
   const read=async route=>{const r=await fetch(origin+route,{signal:AbortSignal.timeout(2000)});if(!r.ok)throw new Error('runtime read failed');const j=await r.json();return j.data??j}
   const [identity,work]=await Promise.all([read('/api/v1/runtime-identity'),read('/api/v1/runtime-work-status')])
   if (registry.database_fingerprint && registry.database_fingerprint!==identity.database?.fingerprint) return true
-  if (typeof work.busy!=='boolean') return true
-  return work.busy
+  return !interpretWorkStatus(work).idle
  } catch { // A listening but unreadable service must not be interrupted by an update.
   try { const r=await fetch(origin+'/health',{signal:AbortSignal.timeout(1000)});return r.ok } catch { return false }
  }

@@ -61,6 +61,8 @@ function resolveWebDist(options = {}) {
 
 function createApp(options = {}) {
   const config = applyLocalRuntimeOrigin(loadConfig(), options.localOrigin || process.env.LOCAL_APP_ORIGIN);
+  const { startupRecoveryMode } = require('./services/startupRecovery');
+  const startupRecovery = startupRecoveryMode(config);
   const db = getDb(config.database);
   const { runMigrationsAndEnsure } = require('./db/migrate.js');
   runMigrationsAndEnsure(db);
@@ -71,7 +73,7 @@ function createApp(options = {}) {
   const log = logger;
 
   const taskService = require('./services/taskService');
-  taskService.failOrphanedAsyncTasksOnStartup(db, log);
+  if (startupRecovery === 'auto') taskService.failOrphanedAsyncTasksOnStartup(db, log);
 
   // Staged browser uploads are recoverable for a bounded period. Startup
   // cleanup is best-effort and can never block the local application.
@@ -84,7 +86,8 @@ function createApp(options = {}) {
   }
 
   const { resumeProcessingVideoGenerations } = require('./services/videoService');
-  resumeProcessingVideoGenerations(db, log);
+  if (startupRecovery === 'auto') resumeProcessingVideoGenerations(db, log);
+  else log.info('Startup recovery is manual; historical work remains available for explicit recovery');
 
   const app = express();
   app.use(express.json({ limit: '10mb' }));
@@ -127,6 +130,8 @@ function createApp(options = {}) {
   const apiRouter = setupRouter(config, db, log);
   app.use('/api/v1', apiRouter);
   app.locals.blenderService = apiRouter.blenderService;
+  app.locals.mediaBatchService = apiRouter.mediaBatchService;
+  app.locals.startupRecovery = startupRecovery;
 
   // 前端静态资源（sxy：web/dist）；Electron 打包时可设 WEB_DIST_PATH
   const webDist = resolveWebDist(options);
@@ -161,7 +166,8 @@ function createApp(options = {}) {
 
   let productionAutonomyRunner = null;
   const autonomyDisabled = options.startProductionAutonomy === false
-    || process.env.PRODUCTION_AUTONOMY_DISABLED === '1';
+    || process.env.PRODUCTION_AUTONOMY_DISABLED === '1'
+    || startupRecovery === 'manual';
   if (!autonomyDisabled) {
     const { createProductionAutonomyRunner } = require('./services/productionAutonomyRunner');
     productionAutonomyRunner = createProductionAutonomyRunner(db, config, log, options.productionAutonomy || {});

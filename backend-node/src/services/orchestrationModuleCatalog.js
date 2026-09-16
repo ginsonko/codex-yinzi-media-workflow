@@ -67,6 +67,7 @@ const MODULES = Object.freeze([
   moduleContract('video.beauty-local', 'V3', 'edit', 'local', 'advisory', 'Apply bounded face and skin retouching with reversible parameters and temporal consistency; a verified local component is required before execution.', ['video_asset', 'beauty_settings'], ['video_asset', 'quality_receipt'], { filesystem_write: true }),
   moduleContract('image.batch-generate-fast', 'V3', 'create', 'provider', 'bridge', 'Submit a bounded batch of independent image jobs with concurrency, retry and per-item receipts.', ['prompts', 'reference_assets', 'concurrency'], ['image_assets', 'batch_receipt'], { network: true, external_write: true, paid: true }),
 
+  moduleContract('prompt.adapt', 'V3', 'plan', 'local', 'integrated', 'Compile editable model-neutral shots into configurable model prompts, preserving constraints and reporting reference or contract differences. Local only; no generation.', ['text_or_shot_ir', 'target_profile'], ['shot_ir', 'prompt', 'reference_manifest', 'loss_report'], {database_write:false}),
   // V3 - maps onto existing workflow/media capabilities. Codex chooses and
   // calls the concrete existing API, then records the returned artifact.
   moduleContract('video.import', 'V3', 'create', 'local', 'bridge', 'Import a user-owned video as a direct timeline clip.', ['video_asset', 'timeline_target'], ['direct_clip'], { filesystem_write: true }),
@@ -188,7 +189,8 @@ function listModules(query = {}) {
   const q = String(query.q || '').trim().toLowerCase();
   const track = String(query.version_track || '').trim().toUpperCase();
   const availability = String(query.availability || '').trim().toLowerCase();
-  const items = [...MODULES, ...readRegistered()].filter((item) => {
+  const registered = readRegistered();
+  const items = [...MODULES, ...registered].filter((item) => {
     if (track && item.version_track !== track) return false;
     if (availability && item.availability !== availability) return false;
     if (q && !`${item.module_id} ${item.title} ${item.description_zh} ${item.description} ${item.phase}`.toLowerCase().includes(q)) return false;
@@ -196,11 +198,30 @@ function listModules(query = {}) {
   });
   const includeDisabled = String(query.include_disabled || '').toLowerCase() === 'true' || query.include_disabled === true;
   const visible = includeDisabled ? items : items.filter((item) => item.enabled !== false);
-  return { schema_version: 1, open_world: true, items: clone(visible), total: visible.length, disabled_count: items.filter((item) => item.enabled === false).length };
+  return { schema_version: 1, open_world: true, items: clone(visible), total: visible.length, disabled_count: items.filter((item) => item.enabled === false).length, inventory: inventorySummary(registered) };
+}
+
+function inventorySummary(registered = readRegistered()) {
+  const { createMediaToolOptions } = require('./mediaToolOptions');
+  const components = require('./componentRuntime').registry();
+  const options = createMediaToolOptions({ getOperation: require('./localMediaOperations').getOperation }).catalog();
+  return {
+    schema: 'yinzi.capability-inventory/v1',
+    builtin_modules: MODULES.length,
+    registered_modules: registered.length,
+    local_operation_contracts: LOCAL_MEDIA_MODULES.length,
+    windows_source_matching_fixtures: LOCAL_MEDIA_MODULES.filter(item => item.validation_status === 'verified_windows_fixture').length,
+    other_builtin_modules: MODULES.length - LOCAL_MEDIA_MODULES.length,
+    research_candidates: options.options_count,
+    candidates_reusing_operations: options.options_reusing_existing_operations,
+    transition_options: MODULES.find(item => item.module_id === 'local.video.compose-clips')?.transition_options?.length || 0,
+    component_packages: components.length,
+    component_platforms: [...new Set(components.flatMap(item => item.platforms || []))].sort(),
+  };
 }
 
 function getModule(moduleId) {
   return clone([...MODULES, ...readRegistered()].find((item) => item.module_id === String(moduleId || '').trim()) || null);
 }
 
-module.exports = { MODULES, getModule, listModules, registerModule, importModules, exportModules, updateModule, deleteModule };
+module.exports = { MODULES, getModule, listModules, inventorySummary, registerModule, importModules, exportModules, updateModule, deleteModule };

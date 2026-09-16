@@ -1,12 +1,13 @@
 import crypto from 'node:crypto'
 import {execFile} from 'node:child_process'
 import {promisify} from 'node:util'
+import {assertIdleWorkStatus} from './runtime-work-idle.mjs'
 const execute=promisify(execFile)
 const alive=pid=>{try{process.kill(pid,0);return true}catch(error){return error.code!=='ESRCH'}}
 export async function requireIdle(origin) {
   const response=await fetch(origin+'/api/v1/runtime-work-status',{signal:AbortSignal.timeout(4000)})
   if(!response.ok) throw new Error('无法核对正在执行的任务，原后台保持运行；稍后重试更新')
-  const result=await response.json();if((result.data??result).busy!==false) throw new Error('工作流仍有运行或待核对任务，保留原后台与记录，稍后继续更新')
+  assertIdleWorkStatus(await response.json())
 }
 async function nodePids() {
   if(process.platform==='win32') {

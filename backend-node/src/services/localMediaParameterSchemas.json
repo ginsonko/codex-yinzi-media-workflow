@@ -1194,5 +1194,109 @@
   "local.audio.aresample-48k": {
     "type": "object",
     "properties": {}
+  },
+  "local.video.interpolate": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "engine": {
+        "type": "string",
+        "enum": [
+          "auto",
+          "rife",
+          "minterpolate"
+        ],
+        "default": "auto",
+        "description": "插帧引擎选择：auto（优先RIFE光流加速，失败或无GPU自动回退FFmpeg）、rife（仅RIFE ncnn Vulkan，不可用时报错）、minterpolate（纯FFmpeg运动估计与补偿备用，不触发GPU下载）"
+      },
+      "multiplier": {
+        "type": "number",
+        "minimum": 1.01,
+        "maximum": 16,
+        "description": "输出帧率倍数，与目标帧率二选一；两者都未指定时默认补到原帧率的两倍。"
+      },
+      "target_fps": {
+        "type": "number",
+        "minimum": 1,
+        "maximum": 120,
+        "description": "目标输出帧率。若设置则覆盖内部默认倍率。不能与用户显式 multiplier 同时指定。"
+      },
+      "rife_model": {
+        "type": "string",
+        "enum": [
+          "rife",
+          "rife-anime",
+          "rife-HD",
+          "rife-UHD",
+          "rife-v2",
+          "rife-v2.3",
+          "rife-v2.4",
+          "rife-v3.0",
+          "rife-v3.1",
+          "rife-v4",
+          "rife-v4.6"
+        ],
+        "default": "rife-v4.6",
+        "description": "本组件随附的 RIFE 模型版本；默认 rife-v4.6，可按素材选择动画模型。"
+      },
+      "gpu_id": {
+        "type": "integer",
+        "default": 0,
+        "minimum": -1,
+        "maximum": 16,
+        "description": "Vulkan 设备编号；0 使用第一个可用设备，-1 使用 CPU。"
+      },
+      "threads": {
+        "type": "string",
+        "default": "1:2:2",
+        "pattern": "^\\d+:\\d+:\\d+$",
+        "description": "RIFE 线程分配 load:proc:save，格式如 1:2:2，每个通道在 1 到 32 之间，避免打满系统核心"
+      },
+      "uhd": {
+        "type": "boolean",
+        "default": false,
+        "description": "是否开启 UHD 超高分辨率优化处理模式"
+      },
+      "scene_detection": {
+        "type": "boolean",
+        "default": true,
+        "description": "是否开启场景硬切保护。在 RIFE 路径下进行切点识别与分段插值；在 minterpolate 路径下触发 scd 场景跳过，避免镜头突变产生混合伪影与撕裂"
+      },
+      "scene_threshold": {
+        "type": "number",
+        "default": 12,
+        "minimum": 1,
+        "maximum": 100,
+        "description": "场景切换检测敏感度阈值 (1.0 ~ 100.0)"
+      },
+      "minterpolate_mi_mode": {
+        "type": "string",
+        "enum": [
+          "mci",
+          "blend",
+          "dup"
+        ],
+        "default": "mci",
+        "description": "FFmpeg 插值模式：mci 为运动补偿插值（真正补帧），blend 为轻量帧混合，dup 为复制帧"
+      },
+      "minterpolate_mc_mode": {
+        "type": "string",
+        "enum": [
+          "aobmc",
+          "obmc"
+        ],
+        "default": "aobmc",
+        "description": "运动补偿模式：aobmc 自适应重叠块运动补偿，obmc 标准重叠块运动补偿"
+      },
+      "minterpolate_me_mode": {
+        "type": "string",
+        "enum": [
+          "bidir",
+          "bilat"
+        ],
+        "default": "bidir",
+        "description": "运动估计模式：bidir 双向运动估计，bilat 双侧估计"
+      }
+    }
   }
 }

@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 
 import fs from 'node:fs/promises'
+import { compactModuleIndex } from './module-index.mjs'
+import { activityResponse } from './activity-response.mjs'
 import { readRegistry, localOrigin } from '../../../scripts/runtime-state.mjs'
 
 const explicitBase = String(process.env.YINZI_WORKFLOW_URL || '').trim().replace(/\/+$/, '')
@@ -148,7 +150,29 @@ async function request(method, path, body) {
 }
 
 const pos = positional()
+if (command === 'ae') {
+  const { createRequire } = await import('node:module')
+  const nodePath = await import('node:path')
+  const registry = await readRegistry()
+  const sourceRoot = option('--project-root') || registry?.source_root
+  if (!sourceRoot) fail('AE requires the installed source root or --project-root')
+  const bridge = createRequire(import.meta.url)(nodePath.join(sourceRoot, 'backend-node/src/services/afterEffectsJob.js'))
+  try {
+    let result
+    if (pos[0] === 'discover') result = { executable: bridge.discover(), platform: process.platform }
+    else if (pos[0] === 'read') result = bridge.read(nodePath.resolve(option('--output')))
+    else if (pos[0] === 'run' || pos[0] === 'prepare') {
+      if (!option('--input') || !option('--output')) fail('AE run/prepare needs --input job.json --output directory')
+      result = pos[0] === 'run' ? await bridge.execute(await input(), option('--output')) : bridge.prepare(await input(), option('--output'))
+    } else fail('AE: ae discover | ae run/prepare --input job.json --output DIR | ae read --output DIR')
+    const summary = result?.status ? {status:result.status,error:result.error,project:result.project,outputs:result.outputs,reused:result.reused,layer_count:result.layer_count,keyframe_count:result.keyframe_count,elapsed_seconds:result.elapsed_seconds,receipt:nodePath.join(nodePath.resolve(option('--output')),'ae-receipt.json')} : result
+    process.stdout.write(JSON.stringify(summary) + '\n')
+    process.exit(result?.status === 'failed' ? 2 : 0)
+  } catch (error) { fail(JSON.stringify({ code:error.code, message:error.message }), 2) }
+}
 const routes = {
+  'prompt-profiles': ['GET', '/api/v1/prompt-adapter/profiles'],
+  'prompt-adapt': ['POST', '/api/v1/prompt-adapter'],
   components: ['GET', '/api/v1/media-components/profile'],
   'local-run': ['POST', '/api/v1/local-media/jobs'],
   'local-job': ['GET', `/api/v1/local-media/jobs/${encodeURIComponent(pos[0] || '')}`],
@@ -166,6 +190,8 @@ const routes = {
   health: ['GET', '/health'],
   onboarding: ['GET', '/api/v1/orchestration-onboarding'],
   modules: ['GET', `/api/v1/orchestration-modules${option('--query') ? '?q=' + encodeURIComponent(option('--query')) : ''}`],
+  'module-index': ['GET', '/api/v1/orchestration-modules?include_disabled=true'],
+  module: ['GET', `/api/v1/orchestration-modules/${encodeURIComponent(pos[0] || '')}`],
   sessions: ['GET', '/api/v1/orchestration-sessions?limit=50'],
   get: ['GET', `/api/v1/orchestration-sessions/${encodeURIComponent(pos[0] || '')}?include_inactive=true&event_limit=500`],
   export: ['GET', `/api/v1/orchestration-sessions/${encodeURIComponent(pos[0] || '')}/export`],
@@ -182,12 +208,16 @@ const routes = {
 }
 
 if (command === 'help' || !routes[command]) {
+  process.stdout.write('Prompts: prompt-profiles; prompt-adapt --input request.json (editable IR, references and constraints; no generation)\n')
+  process.stdout.write('Catalog: module-index [--limit 60] [--offset 0] (all registered tools, compact pages); module MODULE_ID (one full contract)\n')
+  process.stdout.write('AE: ae discover; ae run --input job.json --output DIR; ae read --output DIR (local visible editor)\n')
   process.stdout.write(`Usage: node scripts/orchestration-cli.mjs <command> [session-id] [node-key] [--input file]\nCommands: preferences set-preferences begin activity event health modules sessions get export create plan confirm start node retry pause resume checkpoint components local-run local-job local-resume experiences experience record-experience tool-options tool-option\nLocal: local-run --input request.json; local-job JOB_ID; local-resume JOB_ID; modules --query SEARCH\nOptions: tool-options [--query TEXT] [--category CATEGORY] [--limit 20]; tool-option ID\nExperiences: experiences [--query TEXT] [--module MODULE_ID] [--session SESSION_ID] [--limit 20] [--offset 0]; experience ID; record-experience --input note.json\n`)
   process.exit(command === 'help' ? 0 : 1)
 }
 
 if (['activity', 'get', 'export', 'plan', 'confirm', 'start', 'pause', 'resume', 'checkpoint'].includes(command) && !pos[0]) fail(`${command} 需要 session-id`)
 if (['node', 'retry'].includes(command) && (!pos[0] || !pos[1])) fail(`${command} 需要 session-id 和 node-key/node-id`)
+if (command === 'module' && !pos[0]) fail('module requires a module ID')
 
 if (command === 'begin') {
   const {ensure} = await import('../../../scripts/runtime-core.mjs')
@@ -196,9 +226,16 @@ if (command === 'begin') {
 }
 const [method, path] = routes[command]
 const body = method === 'GET' ? undefined : await input()
+if (command === 'activity') body.response_detail ||= 'summary'
 const result = await request(method, path, body)
 if (command === 'begin' && result?.session?.id) {
   result.frontend_url = `${base}/codex-console/${encodeURIComponent(result.session.id)}`
   if (!args.includes('--no-browser')) { const {openBrowser} = await import('../../../scripts/runtime-state.mjs'); result.browser = await openBrowser(result.frontend_url) }
 }
-process.stdout.write(`${JSON.stringify(result, null, 2)}\n`)
+let output = result
+if (command === 'activity') output = activityResponse(result, body.response_detail)
+if (command === 'module-index') {
+  try { output = compactModuleIndex(result, {limit: option('--limit'), offset: option('--offset')}) }
+  catch (error) { fail(error.message, 2) }
+}
+process.stdout.write(`${JSON.stringify(output, null, command === 'module-index' ? 0 : 2)}\n`)

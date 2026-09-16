@@ -10,6 +10,7 @@ async function execute(request, options = {}) {
   fs.accessSync(input, fs.constants.R_OK);
   const dir = path.resolve(options.outputDir); fs.mkdirSync(dir, { recursive: true });
   const params = { ...op.defaults, ...(request.parameters || {}) };
+  if (op.validateParameters) op.validateParameters(params);
   // Old jobs may predate auxiliary-source snapshots. Capture their current
   // files before component preparation; this cannot prove historical identity.
   const sources = sourcesFor(request).map(source => ({...source,
@@ -36,19 +37,32 @@ async function execute(request, options = {}) {
     : op.id.endsWith('.webp-quality') ? 'webp'
     : op.id.endsWith('.convert') ? (params.format || 'webp')
     : 'png';
-  const ext = op.output_extension || (op.kind === 'audio' ? 'wav' : op.kind === 'video' ? 'mp4' : imageExt);
+  const ext = op.outputExtension?.(params) || op.output_extension || (op.kind === 'audio' ? 'wav' : op.kind === 'video' ? 'mp4' : imageExt);
   const output = path.join(dir, 'result.' + ext); let details;
   if (op.executeNative) {
-    const perform = () => op.executeNative({ inputPath: input, outputPath: output, parameters: params, components, report, sources, integrityManaged: true });
+    const ensureComponent = async id => {
+      if (!components[id]) components[id] = await manager.ensureComponent(id, report);
+      return components[id];
+    };
+    const perform = () => op.executeNative({ inputPath: input, outputPath: output, parameters: params, components, report, sources, integrityManaged: true, ensureComponent });
     details = op.resource_group ? await manager.withResource(op.resource_group, perform) : await perform();
   } else if (op.kind === 'image' || op.processFile) {
     const workerInput = path.join(dir, 'image-job.json');
     writeJson(workerInput, { module_id: op.id, input_path: input, output_path: output, component_dir: component.directory,
-      component_dirs: Object.fromEntries(Object.entries(components).map(([id, value]) => [id, value.directory])), parameters: params });
-    const result = await run(process.execPath, [path.join(__dirname, 'localMediaWorker.js'), workerInput], { timeout: 120000 });
+      component_dirs: Object.fromEntries(Object.entries(components).map(([id, value]) => [id, value.directory])), parameters: params, sources });
+    const result = await run(process.execPath, [path.join(__dirname, 'localMediaWorker.js'), workerInput], { timeout: op.worker_timeout_ms || 120000 });
     details = JSON.parse(result.stdout);
   } else {
     const binaries = component.executables;
+    if (op.prepare) {
+      await op.prepare({
+        ffmpeg: binaries?.ffmpeg,
+        ffprobe: binaries?.ffprobe,
+        component,
+        parameters: params,
+        timeoutMs: options.probeTimeoutMs,
+      });
+    }
     const probe = async file => JSON.parse((await run(binaries.ffprobe, ['-v','error','-show_streams','-show_format','-of','json',file])).stdout);
     const before = await probe(input), filter = op.build(params);
     if(op.id.endsWith('.reverse') && Number(before.format?.duration)>120) throw Object.assign(Error('倒放会缓存帧；请先将素材分为不超过 120 秒的片段，处理后拼接'),{code:'INPUT_SEGMENT_REQUIRED'});

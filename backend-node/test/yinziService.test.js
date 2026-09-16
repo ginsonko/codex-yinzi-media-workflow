@@ -152,6 +152,24 @@ describe('normalizeYinziBaseUrl', () => {
 });
 
 describe('fetchYinziCatalogForConfig', () => {
+  it('preserves resolution choices and enumerated durations without inventing a multi-resolution default', async () => {
+    const fixtures = [
+      {id:'Seedance 2.5', generation:{duration:{mode:'range',min:4,max:30},resolutions:['480p','720p','1080p']}},
+      {id:'explicit-default', generation:{duration:{mode:'enumerated',allowed_durations:[4,8,12]},resolutions:['480p','720p'],default_resolution:'720p'}},
+      {id:'legacy-fixed', generation:{duration:{mode:'fixed',fixed:30},resolutions:['720p']}}
+    ];
+    const catalog=await fetchYinziCatalogForConfig({base_url:'https://resolution-fixture.example/v1',api_key:'fixture'}, async()=>({ok:true,status:200,headers:{get:()=>null},json:async()=>({data:fixtures.map(({id,generation})=>({id,endpoint_types:['openai-video'],capabilities:{generation}}))})}));
+    const modern=catalog.video.find(i=>i.model==='Seedance 2.5').capabilities;
+    assert.deepEqual(modern.allowed_resolutions,['480p','720p','1080p']);
+    assert.equal(modern.resolution,undefined);
+    assert.equal(modern.duration_min,4);
+    const explicit=catalog.video.find(i=>i.model==='explicit-default').capabilities;
+    assert.equal(explicit.resolution,'720p');
+    assert.deepEqual(explicit.allowed_durations,[4,8,12]);
+    const legacy=catalog.video.find(i=>i.model==='legacy-fixed').capabilities;
+    assert.equal(legacy.resolution,'720p');
+    assert.equal(legacy.fixed_duration_seconds,30);
+  });
   it('parses the standard data capability contract and preserves unknown limits', async () => {
     const headersSeen = [];
     const fetchImpl = async (_url, options) => {

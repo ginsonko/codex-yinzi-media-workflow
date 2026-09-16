@@ -23,6 +23,7 @@ test('missing or failed current details never borrow another task nodes', () => 
 test('a newer active batch keeps dashboard focus and paused copy preserves existing jobs', () => {
   assert.equal(selectDashboardSession([{ id: 'a', status: 'running', created_at: '2026-01-01' }], [{ status: 'paused', created_at: '2026-01-02' }]), null)
   assert.match(dashboardBatchMessage({ status: 'paused' }), /后续提交已暂停/)
+  assert.match(dashboardBatchMessage({ status: 'paused' }), /可恢复批次/)
   assert.match(dashboardBatchMessage({ status: 'paused' }), /已提交的任务保留/)
   assert.match(dashboardBatchMessage({ status: 'queued' }), /等待后台/)
   assert.match(dashboardBatchMessage({ status: 'needs_review' }), /核对/)

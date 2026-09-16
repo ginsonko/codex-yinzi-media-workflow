@@ -25,7 +25,7 @@ export function dashboardBundle(session, bundles = []) {
 }
 
 export function dashboardBatchMessage(batch = {}) {
-  if (batch.status === 'paused') return '后续提交已暂停，已提交的任务保留原有查询和结果记录。'
+  if (batch.status === 'paused') return '后续提交已暂停，这是可恢复批次；已提交的任务保留原有查询和结果记录，不会当作后台正在计算。'
   if (batch.status === 'needs_review') return '有结果需要核对，请打开批次查看原因和恢复操作。'
   if (batch.status === 'queued') return '任务已进入队列，等待后台开始处理。'
   if (batch.status === 'running') return '后台正在处理，可离开本页；进度和结果会保留。'

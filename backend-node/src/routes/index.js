@@ -32,6 +32,8 @@ const mediaBatchRoutes = require('./mediaBatch');
 const { createMediaBatchService } = require('../services/mediaBatchService');
 
 function setupRouter(cfg, db, log, injected = {}) {
+  const { startupRecoveryMode } = require('../services/startupRecovery');
+  const startupRecovery = startupRecoveryMode(cfg);
   const r = express.Router();
   const { buildRuntimeIdentity } = require('../services/runtimeIdentity');
   const desktopShortcut = require('../services/desktopShortcutService');
@@ -73,7 +75,7 @@ function setupRouter(cfg, db, log, injected = {}) {
       return createGeneration(db, log, body, { entry: 'media_batch_video' });
     },
   });
-  mediaBatch.resumeAll();
+  if (startupRecovery === 'auto') mediaBatch.resumeAll();
   r.mediaBatchService = mediaBatch;
 
   // Read-only process/database identity used by the UI and Codex adapters to
@@ -94,6 +96,7 @@ function setupRouter(cfg, db, log, injected = {}) {
   // These endpoints describe and record dynamic plans. They do not replace
   // the existing production workflow or silently execute paid providers.
   r.get('/orchestration-modules', orchestration.listModules);
+  r.use('/prompt-adapter', require('./promptAdapter')());
   r.post('/orchestration-modules', orchestration.registerModule);
   r.post('/orchestration-modules/import', orchestration.importModules);
   r.get('/orchestration-modules/export', orchestration.exportModules);
@@ -112,17 +115,23 @@ function setupRouter(cfg, db, log, injected = {}) {
   r.post('/local-media/jobs', orchestration.createLocalMediaJob);
   r.get('/local-media/jobs/:jobId', orchestration.getLocalMediaJob);
   r.post('/local-media/jobs/:jobId/resume', orchestration.resumeLocalMediaJob);
-  orchestration.localMediaService.recover();
+  if (startupRecovery === 'auto') orchestration.localMediaService.recover();
   r.get('/orchestration-onboarding', orchestration.onboarding);
   r.get('/runtime-work-status', (req, res) => {
-    const sources = { async_tasks:['pending','processing','running'], media_batches:['queued','running','paused'], production_runs:['running'], orchestration_blender_jobs:['queued','running'], local_media_jobs:['queued','running'] };
-    const counts = {};
-    for (const [table, statuses] of Object.entries(sources)) {
-      if (!db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(table)) continue;
-      counts[table] = db.prepare(`SELECT COUNT(*) n FROM ${table} WHERE status IN (${statuses.map(() => '?').join(',')})`).get(...statuses).n;
+    try {
+      const { collectRuntimeWorkStatus } = require('../services/runtimeWorkStatus');
+      const status = collectRuntimeWorkStatus(db);
+      if (!status || status.readable === false || (Array.isArray(status.blocking) && status.blocking.includes('unreadable'))) {
+        status.busy = true;
+        if (!Array.isArray(status.blocking) || !status.blocking.includes('unreadable')) {
+          status.blocking = [...(Array.isArray(status.blocking) ? status.blocking : []), 'unreadable'];
+        }
+      }
+      response.success(res, status);
+    } catch (error) {
+      log.error('runtime-work-status unreadable', { error: error && error.message });
+      response.error(res, 503, 'WORK_STATUS_UNREADABLE', '无法完整读取运行状态，保持保护不放行升级');
     }
-    counts.analysis = db.prepare("SELECT COUNT(*) n FROM orchestration_sessions WHERE deleted_at IS NULL AND (status='running' OR (status='draft' AND json_extract(source_context_json,'$.activity.state')='working'))").get().n;
-    response.success(res, { busy: Object.values(counts).some(n => n > 0), counts });
   });
   r.get('/orchestration-sessions', orchestration.listSessions);
   r.get('/orchestration-artifacts', orchestration.searchArtifacts);

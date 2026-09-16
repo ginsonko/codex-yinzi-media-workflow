@@ -37,3 +37,17 @@ test('catalog exposes local-first character, animation, beauty and fast batch ch
   ]) assert.ok(ids.includes(id), `missing ${id}`);
   assert.equal(catalog.getModule('video.character-replace-local').side_effects.paid, false);
 });
+
+test('inventory keeps executable contracts separate from candidates, presets and component packages', () => {
+  const all = catalog.listModules({ include_disabled: true });
+  const filtered = catalog.listModules({ q: 'camera-motion' });
+  assert.deepEqual(filtered.inventory, all.inventory);
+  assert.ok(filtered.total < all.total);
+  assert.equal(all.inventory.builtin_modules, all.inventory.local_operation_contracts + all.inventory.other_builtin_modules);
+  const runtime = require('../src/services/componentRuntime');
+  assert.equal(all.inventory.component_packages, runtime.registry().length);
+  assert.ok(all.inventory.component_packages > require('../components/registry.json').length, 'include built-in FFmpeg and Sharp');
+  assert.ok(all.inventory.candidates_reusing_operations > 0);
+  assert.ok(all.inventory.transition_options > 0);
+  assert.ok(all.inventory.windows_source_matching_fixtures <= all.inventory.local_operation_contracts);
+});

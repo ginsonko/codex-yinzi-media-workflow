@@ -47,6 +47,25 @@ A supplied portrait named `.jpg` was actually PNG: infer known formats from byte
 preserve unknown-format compatibility, and do not diagnose model failure from
 the extension alone. No new paid trial is required just to validate upload encoding.
 
+On 2026-09-15 the user provided the source, two complete replacement outputs,
+and their corresponding character images, and explicitly approved the results.
+Their exact successful prompt was:
+
+```text
+将 @图片1的角色替换 @视频1的视频中的角色，除了角色替换外，其他几乎不变
+```
+
+The same study-room source produced an anime woman and a green stylized
+character. Both outputs were approximately 21 seconds; local full decoding and
+eight same-time frame comparisons confirmed the mapping and recognizable scene
+retention. The source was 30 fps and the outputs 24 fps, with local framing and
+gesture-timing differences. Keep the approval attributed to the user; this was
+not a new generation by the reviewing Agent or a claim of pixel-identical editing.
+This strengthens the default short route for ordinary replacement, including
+different character styles. The sample duration is not an endpoint constraint.
+Preserve the source audio separately when exact audio retention matters, and
+escalate preparation only in response to a specific observed defect.
+
 | Target | Candidate route | Evidence needed |
 | --- | --- | --- |
 | Replace the full character while retaining performance and recognizable surroundings | Reference-driven video editing/generation, including the user's selected Seedance model when its actual adapter can send video and image references | Same-source sample preserves character identity, action timing, camera, scene and occlusions |
