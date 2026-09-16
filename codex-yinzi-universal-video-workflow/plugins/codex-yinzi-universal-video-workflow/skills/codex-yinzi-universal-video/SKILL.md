@@ -186,6 +186,8 @@ For a CLI-only environment run `node <plugin>/scripts/runtime-launcher.mjs ensur
 
 When a saved external text model should handle a script, narration, storyboard or creative review, use the adjacent [yinzi-text-model skill](../yinzi-text-model/SKILL.md). It selects the exact configuration ID, keeps credentials local, and records an idempotent output receipt. External text models remain optional.
 
+For photographed questions, lesson videos, mathematical diagrams or classroom material, read the adjacent [yinzi-educational-video skill](../yinzi-educational-video/SKILL.md). Independently solve and verify the question before animation, derive motion and labels from one model, and choose video, worked-solution images or interactive parameter exploration according to what helps the learner. Reuse the current media session; the teaching Skill does not require a second workbench.
+
 Read `planning_guidance` from `open_workflow.onboarding` or `get_session`. The front-end preference defaults to **quality** and is captured when a task is created. Apply the selected profile throughout planning, execution and review:
 
 - **quality / 质量优先**: invest in research, creative alternatives, visual consistency, composition, pacing, typography, voice and music; inspect the complete result and refine weak parts within the authorized budget.

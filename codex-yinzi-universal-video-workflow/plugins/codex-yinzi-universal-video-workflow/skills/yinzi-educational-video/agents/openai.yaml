@@ -1,0 +1,6 @@
+interface:
+  display_name: "银子 · 拍题与教学视频"
+  short_description: "把题目照片变成模型动画、逐步讲解、完整变式和精美复习长图"
+  default_prompt: "请使用 $yinzi-educational-video，把这道题做成清晰精致的讲解视频和长图，附一道完整变式。"
+policy:
+  allow_implicit_invocation: true
