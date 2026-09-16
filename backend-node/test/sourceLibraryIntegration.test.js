@@ -5,7 +5,11 @@ const sharp=require('sharp');
 const download=require('../src/services/mediaDownload');
 const index=require('../src/services/mediaIndex');
 const {operations}=require('../src/services/sourceLibraryOperations');
-const component=require('../src/services/componentRuntime').readState('media.ffmpeg');
+const installed=require('../src/services/componentRuntime').readState('media.ffmpeg');
+const {getFfmpegPath,getFfprobePath}=require('../src/utils/ffmpegPath');
+const component={...installed,executables:{...installed?.executables,
+ ffmpeg:process.env.YINZI_TEST_FFMPEG||installed?.executables?.ffmpeg||getFfmpegPath(),
+ ffprobe:process.env.YINZI_TEST_FFPROBE||installed?.executables?.ffprobe||getFfprobePath()}};
 const root=fs.mkdtempSync(path.join(os.tmpdir(),'yinzi-source-integration-'));
 test.after(()=>fs.rmSync(root,{recursive:true,force:true}));
 let sequence=0;
