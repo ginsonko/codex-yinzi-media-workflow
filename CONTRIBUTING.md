@@ -29,8 +29,12 @@ node --test backend-node/test/*.test.js
 node --test frontweb/test/*.test.js
 node --test codex-yinzi-universal-video-workflow/plugins/codex-yinzi-universal-video-workflow/mcp/server.test.mjs
 node --test codex-yinzi-universal-video-workflow/plugins/codex-yinzi-universal-video-workflow/scripts/runtime-launcher.test.mjs
+node codex-yinzi-universal-video-workflow/plugins/codex-yinzi-universal-video-workflow/scripts/host-adapters/ensure-deps.mjs
+node --test codex-yinzi-universal-video-workflow/plugins/codex-yinzi-universal-video-workflow/scripts/host-adapters/*.test.mjs codex-yinzi-universal-video-workflow/plugins/codex-yinzi-universal-video-workflow/scripts/skill-installation-registry.test.mjs
 node scripts/audit-public.mjs
 ```
+
+宿主适配器是独立依赖包；直接运行其测试前，先执行上面的 `ensure-deps.mjs`，按锁文件准备 TOML/JSONC 解析器。面向用户的 `install-host.mjs` 和 `host-adapters/install-adapter.mjs` 已包含按需准备步骤。配置适配测试通过不等于所有宿主或操作系统已经完成实机验证。
 
 在安装器给出的本地工作台验收变更的真实行为。需要调用云端模型时使用自己的 Key 和明确预算，不能让 CI 发起付费请求。
 报告问题只附脱敏错误、必要截图和步骤；不要附 runtime 数据目录。
