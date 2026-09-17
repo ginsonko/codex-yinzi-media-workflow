@@ -6,6 +6,10 @@
 
 - [四种教学示例](https://workflow.yinziapi.top/learn/)：物理运动、数学坐标、诗词赏析与截图题。
 - [截图题完整讲解与实验](https://workflow.yinziapi.top/learn/table/)：两问推导、八个章节、完整变式、解答长图，以及入口和半径可调的第一次出界演示。
+- [教学创作工坊](https://workflow.yinziapi.top/learn/studio/)：配乐试听、参考声音制作方法与可下载课件。
+- [诗词独立朗诵](https://workflow.yinziapi.top/poetry-recital/)：43.6 秒意境演绎，可单独分享。
+
+新增本地配乐、参考条件声音合成及可编辑 PPTX 工具，详见[安装和使用范围](LOCAL-AUDIO-AND-SLIDES.md)。
 
 ```text
 请把这道题讲明白。先识别题目条件并独立核验，再按我的基础设计讲解，制作视频和便于复习的步骤配图。适合动手理解的部分，请做可交互演示，让我调参数验证；最后用一道完整变式检查我是否学会。保留可修改工程。

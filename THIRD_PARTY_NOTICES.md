@@ -14,3 +14,10 @@
 
 发布自行打包的二进制时，应同时提供依赖对应版本的许可证、版权、源码提供义务及构建信息；
 本仓库的源码安装说明不构成所有二进制组合已完成分发合规审查的证明。
+
+## Optional educational creation tools
+
+- PptxGenJS 4.0.1: MIT, https://github.com/gitbrent/PptxGenJS. Downloaded by the optional PPTX component; original license retained in the installed dependency.
+- MusicGen-small: https://huggingface.co/facebook/musicgen-small. Pretrained weights CC-BY-NC-4.0; not bundled with this repository.
+- F5-TTS: https://github.com/SWivid/F5-TTS. Source MIT, pretrained F5 weights CC-BY-NC-4.0; downloaded separately. Reference voice permissions are separate from model licensing.
+- Vocos: https://huggingface.co/charactr/vocos-mel-24khz. Model card declares MIT. Downloaded only when preparing the optional voice backend.

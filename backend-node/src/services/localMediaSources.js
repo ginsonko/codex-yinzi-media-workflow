@@ -21,6 +21,8 @@ function sourcesFor(request) {
   if (!sources.some(item => item.path === input)) sources.push({ role:'primary', path:input, identity:request.input_identity });
   const narration = request.module_id === 'local.video.edit-timeline' ? request.parameters?.narration_path : null;
   if (narration && !sources.some(item => item.path === path.resolve(narration))) sources.push({ role:'narration', path:path.resolve(narration) });
+  const reference = request.module_id === 'local.audio.clone-voice' ? request.parameters?.reference_path : null;
+  if (reference && !sources.some(item => item.path === path.resolve(reference))) sources.push({role:'voice_reference',path:path.resolve(reference)});
   const tracks = ['local.video.track-faces', 'local.video.face-mask', 'local.video.face-beauty'].includes(request.module_id) ? request.parameters?.tracks_path : null;
   if (tracks && !sources.some(item => item.path === path.resolve(tracks))) sources.push({ role:'tracks', path:path.resolve(tracks) });
   const indexCache = request.module_id === 'local.media.index' ? request.parameters?.cache_path : null;

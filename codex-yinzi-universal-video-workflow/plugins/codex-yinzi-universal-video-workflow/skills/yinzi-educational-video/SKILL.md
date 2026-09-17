@@ -24,6 +24,7 @@ Use the question as the content authority and the learner's level as the design 
 - `scripts/tex_to_png.py`: Render a real LaTeX formula to a transparent image with Manim. Use for long images when a plotting library has incompatible native dependencies.
 - `scripts/check_media.py`: Probe streams, decode all frames, measure audio and save a bounded evidence report. Does not judge subject accuracy or aesthetic quality.
 - [Validated examples and limitations](references/validated-examples.md): Read when adapting the tested workflow, not as a universal solver.
+- [Local music, reference voice and editable slides](references/audio-and-slides.md): Read for optional neural audio or PPTX, model setup, queue recovery, licensing and actual rendering/listening checks.
 
 ## Outcome boundaries
 

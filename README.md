@@ -14,6 +14,8 @@
 
 [作品官网](https://workflow.yinziapi.top/) · [教学样片](https://workflow.yinziapi.top/learn/) · [拍题讲解与交互实验](https://workflow.yinziapi.top/learn/table/)
 
+[配乐、声音与课件工坊](https://workflow.yinziapi.top/learn/studio/) · [诗词独立朗诵](https://workflow.yinziapi.top/poetry-recital/)。新增可按需安装的本地音乐、参考声音及原生可编辑 PPTX 工具，复用工作台任务与恢复记录；[查看安装方法和实测范围](docs/LOCAL-AUDIO-AND-SLIDES.md)。
+
 新增教学 Skill 随安装器一并安装：学生可以发题目照片，老师可以给出知识点，制作讲解视频、步骤长图与适合该题的交互演示。先独立解题核验，再用精确模型呈现公式和运动；当前示例覆盖磁场运动、导数几何意义、诗词赏析与一道完整截图题。[制作方法与实测范围](docs/EDUCATIONAL-CREATION.md)。
 
 这是独立运行的本地媒体工作台，可通过 Skills / MCP 接入你常用的 Agent。安装后，Agent 继续理解需求、规划制作和迭代；你也可以直接在工作台看进度、调参数和手动操作。软件个人非商业使用免费，Agent、模型服务与可选商业软件按各自方案计费。云端生成与本地处理可以按任务选择，硬件需求取决于实际素材、工具和效果。

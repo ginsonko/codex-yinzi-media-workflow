@@ -36,3 +36,5 @@ desktop/release/
 desktop/release-*/
 desktop/*.asar
 .DS_Store
+**/__pycache__/
+*.pyc

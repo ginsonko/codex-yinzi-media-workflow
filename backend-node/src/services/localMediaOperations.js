@@ -242,6 +242,8 @@ operations.push(require('./skyReplaceImage'), require('./skyReplaceVideo'));
 operations.push(require('./faceImageOperations').faceDetectOperation, require('./faceImageOperations').faceMaskOperation);
 operations.push(require('./videoFaceTracking').trackFacesOperation, require('./videoFaceTracking').faceMaskOperation);
 operations.push(require('./localSystemSpeech'));
+operations.push(...require('./localNeuralAudio').operations);
+operations.push(require('./editablePresentation').operation);
 operations.push(require('./foregroundImageOperations').foregroundMaskOperation, require('./foregroundImageOperations').removeBackgroundOperation);
 operations.push(require('./videoForegroundOperations').videoForegroundMaskOperation, require('./videoForegroundOperations').videoForegroundReplaceOperation);
 operations.push(...require('./sourceLibraryOperations').operations);
