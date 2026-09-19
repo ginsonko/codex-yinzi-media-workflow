@@ -615,6 +615,20 @@ describe('YinziAPI asynchronous lifecycle', () => {
     }
   });
 
+  for (const [message, expected] of [
+    ['上游当前模型渠道暂不可用，本次未创建视频，请稍后再试', 'rejected'],
+    ['上游当前模型渠道暂不可用', 'ambiguous'],
+  ]) it(`classifies explicit noncreation with a trace request id as ${expected}`, async () => {
+    const originalFetch = global.fetch;
+    global.fetch = async () => new Response(JSON.stringify({error_code:'upstream_submission_unavailable',message,request_id:'trace-not-job'}), {status:503,headers:{'Content-Type':'application/json'}});
+    try {
+      const result = await callYinziVideoApi(null, {base_url:'https://api.yinziapi.top/v1',api_key:'fixture',endpoint:'/videos'}, log, {model:'Seedance 2.5',prompt:'test',duration:4,aspect_ratio:'16:9',video_gen_id:240});
+      assert.equal(result.submission_status, expected);
+      assert.equal(result.submission_receipt.request_id, 'trace-not-job');
+      assert.equal(result.task_id, undefined);
+    } finally { global.fetch = originalFetch; }
+  });
+
   it('keeps a provider 5xx as ambiguous', async () => {
     const originalFetch = global.fetch;
     global.fetch = async () => new Response(JSON.stringify({ message: 'temporary upstream error' }), {
@@ -1252,10 +1266,11 @@ describe('YinziAPI asynchronous lifecycle', () => {
       assert.deepEqual(submittedBody.references.map((ref) => ref.type), [
         'image', 'image', 'image', 'video', 'video',
       ]);
-      assert.deepEqual(uploads.map((file) => file.type), ['video/mp4', 'video/mp4']);
-      assert.ok(uploads.every((file) => file.name.endsWith('.mp4')));
-      assert.match(uploads[0].name, /^reference-[0-9a-f]{20}\.mp4$/);
-      assert.match(uploads[1].name, /^reference-[0-9a-f]{20}\.mp4$/);
+      assert.deepEqual(uploads.map((file) => file.type), ['image/png', 'image/png', 'image/png', 'video/mp4', 'video/mp4']);
+      const uploadedVideos = uploads.filter((file) => file.type === 'video/mp4');
+      assert.ok(uploadedVideos.every((file) => file.name.endsWith('.mp4')));
+      assert.match(uploadedVideos[0].name, /^reference-[0-9a-f]{20}\.mp4$/);
+      assert.match(uploadedVideos[1].name, /^reference-[0-9a-f]{20}\.mp4$/);
     } finally {
       global.fetch = originalFetch;
       db.close();

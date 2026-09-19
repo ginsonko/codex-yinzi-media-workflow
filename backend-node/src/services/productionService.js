@@ -3617,44 +3617,16 @@ function createProductionService(db, cfg, log, injected = {}) {
         ...(input.scope_id != null ? { scope_id: input.scope_id } : {}),
       });
     if (!action || action.run_id !== run.id || action.stage !== run.current_stage) throw new Error('找不到当前阶段可重试的失败任务');
-    if (action.status === 'ambiguous') {
-      if (input.ambiguous_resolution !== 'no_result_after_wait') {
-        const error = new Error('创建结果不明确，必须先核对上游任务，不能直接重试');
-        error.code = 'AMBIGUOUS_ACTION';
-        throw error;
-      }
-      const reconciled = repo.reconcileAmbiguousAction(db, action.id, {
-        // Preserve the historical machine value for callers that still use
-        // authorizeRetry.  The new reconcile endpoint uses the clearer
-        // confirmed_not_created_by_user value and both remain auditable.
-        resolution: input.ambiguous_resolution,
-        external_outcome: 'confirmed_not_created',
-        retry_authorized: true,
-        retry_reason: reason,
-        result: { normalized_resolution: 'confirmed_not_created_by_user' },
-      });
-      const resolvedRuntime = resolvedAutonomyRuntime(run, { action });
+
+    const started = repo.requestAmbiguousRetryStart(db, action.id, {reason});
+    if (!started.newer_action && !['paused','cancelled'].includes(run.status)) {
+      const resolvedRuntime = resolvedAutonomyRuntime(run, {action});
       repo.updateRun(db, run.id, {
-        ...(resolvedRuntime ? { runtime: resolvedRuntime } : {}),
-        status: 'running', waiting_reason: null, error_code: null, error_message: null,
+        ...(resolvedRuntime ? {runtime:resolvedRuntime} : {}),
+        status:'running', waiting_reason:null, error_code:null, error_message:null,
       });
-      return { action: reconciled.action, reused: reconciled.reused, summary: repo.getRunSummary(db, run.id) };
     }
-    if (action.status !== 'failed') throw new Error('只有已明确失败的任务可以重试');
-    const updatedAction = repo.updateAction(db, action.id, {
-      status: 'cancelled',
-      result: { ...(action.result || {}), retry_authorized: true, retry_reason: reason },
-    });
-    repo.appendEvent(db, run.id, 'action.retry_authorized', {
-      stage: action.stage, scope_type: action.scope_type, scope_id: action.scope_id,
-      payload: { action_id: action.id, reason },
-    });
-    const resolvedRuntime = resolvedAutonomyRuntime(run, { action });
-    repo.updateRun(db, run.id, {
-      ...(resolvedRuntime ? { runtime: resolvedRuntime } : {}),
-      status: 'running', waiting_reason: null, error_code: null, error_message: null,
-    });
-    return { action: updatedAction, summary: repo.getRunSummary(db, run.id) };
+    return {action:started.newer_action || started.action,reused:started.reused,summary:repo.getRunSummary(db,run.id)};
   }
 
   function ambiguousRecoveryState(action, generation) {
@@ -3670,9 +3642,9 @@ function createProductionService(db, cfg, log, injected = {}) {
       status = 'confirmed_not_created'; nextAction = 'retry_or_switch_model';
     }
     const allowedActions = status === 'still_ambiguous'
-      ? ['check_existing', 'attach_provider_task', 'confirm_not_created', 'edit_model', 'edit_reference_bundle', 'skip_shot', 'keep_pending']
+      ? ['retry_same_model', 'check_existing', 'attach_provider_task', 'confirm_not_created', 'edit_model', 'edit_reference_bundle', 'skip_shot', 'keep_pending']
       : status === 'processing'
-        ? ['check_existing', 'skip_shot', 'keep_pending']
+        ? ['retry_same_model', 'check_existing', 'skip_shot', 'keep_pending']
         : ['retry_same_model', 'switch_model', 'edit_reference_bundle', 'skip_shot'];
     return {
       status,
@@ -3706,8 +3678,13 @@ function createProductionService(db, cfg, log, injected = {}) {
     if (!['check_existing', 'attach_provider_task', 'confirm_not_created', 'start_retry', 'keep_pending'].includes(mode)) {
       const error = new Error('不支持的核对方式'); error.code = 'AMBIGUOUS_RECONCILE_MODE_INVALID'; throw error;
     }
+    if (mode !== 'start_retry' && action.result?.retry_start_requested_at) {
+      return {status:'retry_started',action,reused:true,paid_submission:false,
+        message:'此历史尝试已被新尝试替代，保留原记录；继续查看当前任务。',
+        summary:repo.getRunSummary(db,run.id)};
+    }
     let generation = action.generation_id ? videoService.getById(db, action.generation_id) : null;
-    if (action.status !== 'ambiguous' && action.result?.ambiguous_reconciled !== true
+    if (mode !== 'start_retry' && !action.result?.retry_start_requested_at && action.status !== 'ambiguous' && action.result?.ambiguous_reconciled !== true
       && !['waiting', 'failed', 'completed'].includes(action.status)) {
       const error = new Error('这条视频任务当前不需要执行不明确提交核对');
       error.code = 'AMBIGUOUS_ACTION_REQUIRED';
@@ -3715,14 +3692,14 @@ function createProductionService(db, cfg, log, injected = {}) {
     }
     if (mode === 'start_retry') {
       const started = repo.requestAmbiguousRetryStart(db, action.id, {
-        reason: input.reason || '用户在费用与执行信息确认后创建一次新尝试',
+        reason: input.reason || '用户请求创建一次新尝试；旧结果与费用保留',
       });
       if (!started) {
         const error = new Error('找不到要重试的原任务');
         error.code = 'AMBIGUOUS_ACTION_NOT_FOUND';
         throw error;
       }
-      if (!started.newer_action) {
+      if (!started.newer_action && !['paused','cancelled'].includes(run.status)) {
         repo.updateRun(db, run.id, {
           status: 'running', waiting_reason: null, error_code: null, error_message: null,
         });

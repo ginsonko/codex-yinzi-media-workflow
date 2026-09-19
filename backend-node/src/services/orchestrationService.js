@@ -795,6 +795,13 @@ function createOrchestrationService(db) {
       const row = getNodeRow(db, sessionId, nodeIdOrKey);
       if (!row) throw makeError('ORCHESTRATION_NODE_NOT_FOUND', '编排节点不存在');
       if (input.expected_version != null && Number(input.expected_version) !== row.version) throw makeError('VERSION_CONFLICT', '节点已更新，请刷新后重试', { current_version: row.version });
+      // A deliberately retried attempt owns its own progress. Late callbacks
+      // from an archived attempt remain in generation history, not this node.
+      const retiredRequest = input.request_hash && input.request_hash !== row.request_hash
+        && db.prepare("SELECT 1 FROM orchestration_events WHERE node_id=? AND event_type='node.attempt_archived' AND json_extract(payload_json,'$.request_hash')=? LIMIT 1").get(row.id, input.request_hash);
+      if (retiredRequest || (input.expected_attempt != null && Number(input.expected_attempt) !== row.attempt)) {
+        return { ignored: true, reason: 'superseded_attempt', node: publicNode(row), bundle: getBundle(sessionId) };
+      }
       const status = input.status == null ? row.status : String(input.status);
       if (session.status === 'paused' && status === 'running' && row.status !== 'running') throw makeError('SESSION_PAUSED', '任务已暂停，请先继续任务再开始新步骤');
       if (!NODE_STATUSES.has(status)) throw makeError('NODE_STATUS_INVALID', '不支持的节点状态');
@@ -890,7 +897,7 @@ function createOrchestrationService(db) {
 
   function assertExternalAttemptResolved(row) {
     const evidence = externalAttemptEvidence(row);
-    if (evidence?.state === 'unresolved') throw makeError('EXTERNAL_REQUEST_UNRESOLVED', '原外部请求仍在提交、已受理或结果未知；请查询并对账原请求，不能通过重试或重开再次提交', { request_hash: row.request_hash, next_actions: ['reconcile', 'inspect'] });
+    if (evidence?.state === 'unresolved') throw makeError('EXTERNAL_REQUEST_UNRESOLVED', '当前节点仍关联原外部尝试；可查询原请求，或调用 retry 开启新尝试后修改计划并提交', { request_hash: row.request_hash, next_actions: ['reconcile', 'retry', 'inspect'] });
     return evidence;
   }
 
@@ -924,16 +931,16 @@ function createOrchestrationService(db) {
       const row = getNodeRow(db, sessionId, nodeIdOrKey);
       if (!row) throw makeError('ORCHESTRATION_NODE_NOT_FOUND', '编排节点不存在');
       if (input.expected_version != null && Number(input.expected_version) !== row.version) throw makeError('VERSION_CONFLICT', '节点已更新，请刷新后重试', { current_version: row.version });
-      if (row.status === 'running') throw makeError('NODE_RUNNING', '节点仍在运行；请先停止本地观察或等待真实结果');
-      if (row.status === 'succeeded' && input.force !== true) throw makeError('NODE_ALREADY_SUCCEEDED', '节点已经成功；如需重新执行，请明确 force=true');
-      const evidence = assertExternalAttemptResolved(row);
+      // Calling retry/reopen is the explicit decision to create another
+      // attempt. Prior state informs history; it must not veto that decision.
+      const evidence = externalAttemptEvidence(row);
       archiveNodeAttempt(row, 'retry', input.actor || 'user');
       const stamp = nowIso();
       db.prepare(`UPDATE orchestration_nodes SET status='ready',attempt=attempt+1,progress_json='{}',error_json='{}',output_refs_json='[]',request_hash=NULL,config_revision=NULL,cost_ledger_id=NULL,decision_json=?,started_at=NULL,completed_at=NULL,updated_at=?,version=version+1,active=1 WHERE id=?`)
         .run(json(nextAttemptDecision(row, evidence), {}), stamp, row.id);
       db.prepare(`UPDATE orchestration_sessions SET status='running',last_error_json='{}',updated_at=?,completed_at=NULL,version=version+1 WHERE id=?`).run(stamp, sessionId);
       const node = publicNode(db.prepare('SELECT * FROM orchestration_nodes WHERE id=?').get(row.id));
-      appendEvent(db, sessionId, 'node.retry_authorized', { node_key: node.node_key, attempt: node.attempt, previous_request_hash: row.request_hash, note: input.note || null }, { node_id: node.id, actor: input.actor || 'user' });
+      appendEvent(db, sessionId, 'node.retry_authorized', { node_key: node.node_key, attempt: node.attempt, previous_request_hash: row.request_hash, previous_external_state: evidence?.state || null, note: input.note || input.message || null }, { node_id: node.id, actor: input.actor || 'user' });
       return { node, bundle: getBundle(sessionId) };
     }).immediate();
   }

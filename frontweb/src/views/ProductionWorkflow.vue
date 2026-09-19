@@ -459,9 +459,9 @@
         <section v-if="ambiguousProviderAction" class="ambiguous-recovery-card" aria-live="polite" aria-label="视频提交结果核对">
           <div class="ambiguous-recovery-heading">
             <div>
-              <span class="section-kicker">这次提交需要你确认一下</span>
-              <h2>上游没有明确返回任务号，不能直接重复生成</h2>
-              <p>视频可能已经在云端创建，也可能根本没有创建。系统已停在这里防止重复扣费，你的镜头、参考包和失败记录都还在。</p>
+              <span class="section-kicker">原请求已保留，可以继续处理</span>
+              <h2>继续找回原结果，或重新生成一次</h2>
+              <p>视频可能已经在云端创建，也可能根本没有创建。你可以查询原任务，也可以直接开启新尝试；原费用仍按实际记录保留，已有预算上限继续生效。</p>
             </div>
             <el-tag type="warning" effect="plain">费用待核对</el-tag>
           </div>
@@ -478,27 +478,9 @@
             :title="ambiguousRecoveryResult.message"
           />
           <div class="ambiguous-primary-action">
-            <el-button
-              v-if="ambiguousRecoveryStage === 'retry_ready'"
-              type="primary"
-              :loading="ambiguousRecoveryBusy"
-              @click="startAmbiguousRetry"
-            >创建一次新尝试</el-button>
-            <el-button
-              v-else-if="ambiguousRecoveryStage === 'checked_unresolved'"
-              type="primary"
-              :loading="ambiguousRecoveryBusy"
-              @click="confirmAmbiguousNotCreated"
-            >确认上游无任务，解锁一次重试</el-button>
-            <el-button
-              v-else
-              type="primary"
-              :loading="ambiguousRecoveryBusy"
-              @click="reconcileAmbiguousAction('check_existing')"
-            >重新核对原任务</el-button>
-            <span v-if="ambiguousRecoveryStage === 'retry_ready'">将先展示最新模型、执行时长、执行单元和预计费用；你再次确认后才会继续。</span>
-            <span v-else-if="ambiguousRecoveryStage === 'checked_unresolved'">核对仍没有找到任务。只有你确认已检查上游记录后，系统才会解锁；这一步仍不会创建视频。</span>
-            <span v-else>只查询现有记录，不会创建新视频，也不会再次扣费。</span>
+            <el-button type="primary" :loading="ambiguousRecoveryBusy" @click="startAmbiguousRetry">重新生成一次</el-button>
+            <el-button :disabled="ambiguousRecoveryBusy" @click="reconcileAmbiguousAction('check_existing')">查询原任务</el-button>
+            <span>重试会创建新尝试；查询只读取原记录。原任务和待核对费用不会被抹除。</span>
           </div>
           <details class="ambiguous-other-actions">
             <summary>其它解决办法</summary>
@@ -1785,8 +1767,14 @@ const ambiguousProviderAction = computed(() => selectAmbiguousRecoveryAction(
 const ambiguousRecoveryStage = computed(() => {
   const action = ambiguousProviderAction.value
   if (!action) return 'none'
+  // Updated: Allow direct retry from ambiguous/failed states without requiring
+  // prior reconciliation. User can retry immediately after checking status.
   if (action.status === 'cancelled' && action.result?.ambiguous_reconciled === true
     && action.result?.retry_authorized === true) return 'retry_ready'
+  if (action.status === 'failed' || action.status === 'ambiguous') {
+    // Direct retry is now available - will show cost confirmation
+    return 'retry_ready'
+  }
   if (ambiguousRecoveryResult.value?.status === 'still_ambiguous'
     || action.result?.ambiguous_last_check_outcome === 'still_ambiguous') return 'checked_unresolved'
   return 'needs_check'
@@ -3079,59 +3067,14 @@ async function attachAmbiguousProviderTask() {
   } catch (_) {}
 }
 
-async function confirmAmbiguousNotCreated() {
-  try {
-    await ElMessageBox.confirm(
-      '如果你已确认上游没有对应任务，点击后将只开放一次新的重试。旧费用仍显示“待对账”，不代表已退款。',
-      '确认上游没有创建任务',
-      { type: 'warning', confirmButtonText: '确认并开放一次重试', cancelButtonText: '返回继续核对' },
-    )
-    await reconcileAmbiguousAction('confirm_not_created', { confirmed: true, reason: '用户确认上游无任务并请求重试' })
-  } catch (_) {}
-}
-
-function retryConfirmationValue(value, fallback = '待实时读取') {
-  return value == null || value === '' ? fallback : String(value)
-}
-
 async function startAmbiguousRetry() {
   const action = ambiguousProviderAction.value
   if (!activeRun.value || !action || ambiguousRecoveryBusy.value) return
   ambiguousRecoveryBusy.value = true
   try {
-    const routing = await productionAPI.getVideoRouting(activeRun.value.id, {
-      shot_id: String(action.scope_id || activeRun.value.current_scope_id || ''),
-    })
-    const latestRoute = routing?.effective_route || {}
-    const model = latestRoute.model || currentRoute.value.model || '提交前自动选择'
-    const plannedDuration = latestRoute.planned_duration ?? currentRoute.value.planned_duration
-      ?? currentShotArtifact.value?.content?.duration
-    const providerDuration = latestRoute.provider_duration ?? latestRoute.duration
-      ?? currentRoute.value.provider_duration ?? currentRoute.value.duration
-    const units = Math.max(1, Number(latestRoute.execution_unit_count ?? currentRoute.value.execution_unit_count) || 1)
-    const currency = String(latestRoute.currency || '').toUpperCase()
-    const currencyPrefix = currency === 'CNY' ? '¥' : currency === 'USD' ? '$' : currency ? `${currency} ` : ''
-    const estimatedValue = latestRoute.estimated_price
-    const estimated = estimatedValue == null || estimatedValue === '' ? Number.NaN : Number(estimatedValue)
-    const priceText = Number.isFinite(estimated) ? `${currencyPrefix}${estimated.toFixed(4)}` : '价格待实时目录确认'
-    await ElMessageBox.confirm(
-      h('div', { class: 'retry-confirm-details' }, [
-        h('p', `即将为镜头 ${action.scope_id || '当前镜头'} 创建一次新的付费尝试。旧任务 #${action.id} 的费用仍为“待对账”，不会伪装成退款。`),
-        h('ul', [
-          h('li', `最新模型：${retryConfirmationValue(model)}`),
-          h('li', `创作目标时长：${retryConfirmationValue(plannedDuration, '未知')} 秒`),
-          h('li', `供应商单次执行时长：${retryConfirmationValue(providerDuration, '未知')} 秒`),
-          h('li', `执行单元数：${units}`),
-          h('li', `本次预计费用：${priceText}`),
-        ]),
-        h('p', '确认后，系统才会实时读取最新模型、Key、能力和参考包并继续。'),
-      ]),
-      '确认创建一次新尝试',
-      { confirmButtonText: '确认并重试', cancelButtonText: '先不创建', type: 'warning' },
-    )
     const result = await productionAPI.reconcileAction(activeRun.value.id, action.id, {
       mode: 'start_retry',
-      reason: '用户查看最新模型、时长、执行单元和费用后明确确认',
+      reason: '用户点击重新生成一次；保留原记录与未知费用',
     })
     ambiguousRecoveryResult.value = result
     await loadRun(activeRun.value.id, { loadEvidence: true })

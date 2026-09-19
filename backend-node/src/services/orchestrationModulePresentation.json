@@ -40,9 +40,9 @@
     "example": "开始渲染一个镜头"
   },
   "node.retry": {
-    "title": "恢复失败步骤",
-    "description_zh": "读取错误与已有成果后恢复确定可重试的步骤。",
-    "example": "只补失败的下载"
+    "title": "重新尝试当前步骤",
+    "description_zh": "在已有授权内开启新尝试，保留旧结果与费用记录；所有旧状态均可重试。",
+    "example": "修改提示词后重做这一镜，保留上一版"
   },
   "manual.override": {
     "title": "手动接管",

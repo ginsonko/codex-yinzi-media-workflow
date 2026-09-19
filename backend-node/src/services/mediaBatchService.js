@@ -129,7 +129,7 @@ function createMediaBatchService(db, log = console, injected = {}) {
     throw error;
   });
   const timers = new Map();
-  const pumping = new Set();
+  const pumping = new Map();
 
   function readBatch(id, query = {}, reused = false) {
     const row = db.prepare('SELECT * FROM media_batches WHERE id = ?').get(String(id));
@@ -140,6 +140,8 @@ function createMediaBatchService(db, log = console, injected = {}) {
       .all(String(id), meta.pageSize, meta.offset);
     const result = publicBatch(row, items, { ...meta, total: Number(count.total) || 0, reused });
     result.items = result.items.map(item => {
+      item.previous_attempts = db.prepare('SELECT attempt,snapshot_json,archived_at FROM media_batch_attempt_history WHERE item_id=? ORDER BY id').all(item.id)
+        .map(row => ({ ...parseJson(row.snapshot_json, {}), archived_at: row.archived_at }));
       const media = item.kind === 'video' && item.video_id ? videoService.getById(db, item.video_id) : item.image_id ? imageService.getById(db, item.image_id) : null;
       if (!media) return item;
       const key = item.kind === 'video' ? 'video_gen_id' : 'image_gen_id';
@@ -212,8 +214,19 @@ function createMediaBatchService(db, log = console, injected = {}) {
   }
 
   function attachGeneration(item, generation) {
-    db.prepare("UPDATE media_batch_items SET status = 'processing', image_id = ?, video_id = ?, task_id = ?, error_code = NULL, error_message = NULL, updated_at = ? WHERE id = ? AND status = 'submitting'")
-      .run(item.kind === 'image' ? Number(generation.id) : null, item.kind === 'video' ? Number(generation.id) : null, generation.task_id || null, now(), item.id);
+    const attached = db.prepare("UPDATE media_batch_items SET status = 'processing', image_id = ?, video_id = ?, task_id = ?, error_code = NULL, error_message = NULL, updated_at = ? WHERE id = ? AND status = 'submitting' AND attempt = ?")
+      .run(item.kind === 'image' ? Number(generation.id) : null, item.kind === 'video' ? Number(generation.id) : null, generation.task_id || null, now(), item.id, item.attempt);
+    if (!attached.changes) {
+      // A response may arrive after retry archived a submitting item. Keep its
+      // real generation reachable from history without touching the new attempt.
+      const old = db.prepare('SELECT id,snapshot_json FROM media_batch_attempt_history WHERE item_id=? AND attempt=? ORDER BY id DESC LIMIT 1').get(item.id, item.attempt);
+      if (old) db.prepare('UPDATE media_batch_attempt_history SET snapshot_json=? WHERE id=?').run(JSON.stringify({
+        ...parseJson(old.snapshot_json, {}),
+        image_id:item.kind === 'image' ? Number(generation.id) : null,
+        video_id:item.kind === 'video' ? Number(generation.id) : null,
+        task_id:generation.task_id || null, late_receipt_at:now(),
+      }),old.id);
+    }
   }
 
   function recoverSubmitting() {
@@ -252,7 +265,11 @@ function createMediaBatchService(db, log = console, injected = {}) {
       if (media.download_status === 'failed') db.prepare("UPDATE media_batch_items SET status='needs_review',error_code='DOWNLOAD_FAILED',error_message=?,retryable=0,updated_at=? WHERE id=?").run(media.download_error || '生成已完成，下载失败；可以重试原文件', now(), item.id);
       return;
     }
-    const ambiguous = generationStatus === 'ambiguous' || submissionStatus === 'ambiguous';
+    const task = item.task_id ? db.prepare('SELECT status, error FROM async_tasks WHERE id = ?').get(item.task_id) : null;
+    // post_started is durably recorded as ambiguous before the HTTP request
+    // returns. A live submission still owns its concurrency slot.
+    const submitting = status === 'processing' && generationStatus === 'processing' && task?.status !== 'failed';
+    const ambiguous = generationStatus === 'ambiguous' || (submissionStatus === 'ambiguous' && !submitting);
     const failed = status === 'failed' || generationStatus === 'failed';
     if (!finished && !failed && !ambiguous) {
       if (item.task_id) {
@@ -260,7 +277,6 @@ function createMediaBatchService(db, log = console, injected = {}) {
         // runtime. Keep the ambiguity check on the same durable task table
         // used by taskService so a long-running provider call does not stop
         // the batch pump with a missing-table error.
-        const task = db.prepare('SELECT status, error FROM async_tasks WHERE id = ?').get(item.task_id);
         if (task?.status === 'failed') {
           db.prepare("UPDATE media_batch_items SET status = 'needs_review', error_code = 'INTERRUPTED_RESULT_UNKNOWN', error_message = ?, retryable = 0, completed_at = ?, updated_at = ? WHERE id = ? AND status IN ('submitting','processing')")
             .run(String(task.error || '服务中断后无法确认上游结果，请先核对任务和账单').slice(0, 500), now(), now(), item.id);
@@ -284,12 +300,17 @@ function createMediaBatchService(db, log = console, injected = {}) {
   async function pump(id) {
     const key = String(id);
     if (pumping.has(key)) return;
-    pumping.add(key);
+    const pumpToken = Symbol(key);
+    pumping.set(key, pumpToken);
     try {
       let batch = db.prepare('SELECT * FROM media_batches WHERE id = ?').get(key);
       if (!batch || TERMINAL_BATCH_STATUSES.has(batch.status)) return;
       const activeItems = db.prepare("SELECT * FROM media_batch_items WHERE batch_id = ? AND status IN ('submitting','processing') ORDER BY ordinal ASC").all(key);
-      for (const item of activeItems) await settleItem(item);
+      for (const item of activeItems) {
+        if (pumping.get(key) !== pumpToken) return;
+        await settleItem(item);
+      }
+      if (pumping.get(key) !== pumpToken) return;
       batch = recalc(key) || batch;
       if (batch.status === 'paused') {
         if (Number(batch.running) > 0) schedule(key, 1000);
@@ -305,6 +326,7 @@ function createMediaBatchService(db, log = console, injected = {}) {
       const queued = db.prepare("SELECT * FROM media_batch_items WHERE batch_id = ? AND status = 'queued' ORDER BY ordinal ASC LIMIT ?").all(key, slots);
       if (JSON.stringify(exploration) !== batch.exploration_json) db.prepare('UPDATE media_batches SET exploration_json = ? WHERE id = ?').run(JSON.stringify(exploration), key);
       for (const item of queued) {
+        if (pumping.get(key) !== pumpToken) return;
         // Awaiting a provider can yield while the user pauses this batch.
         if (db.prepare('SELECT status FROM media_batches WHERE id = ?').get(key)?.status === 'paused') break;
         const claimed = db.prepare("UPDATE media_batch_items SET status = 'submitting', attempt = attempt + 1, submitted_at = ?, updated_at = ? WHERE id = ? AND status = 'queued'")
@@ -323,16 +345,17 @@ function createMediaBatchService(db, log = console, injected = {}) {
         } catch (error) {
           const definitelyNotSubmitted = Boolean(error?.definitely_not_submitted || ['MEDIA_BATCH_VIDEO_EXECUTOR_UNAVAILABLE', 'PROVIDER_UNAVAILABLE', 'VALIDATION_ERROR'].includes(error?.code));
           const nextStatus = definitelyNotSubmitted ? 'failed' : 'needs_review';
-          db.prepare('UPDATE media_batch_items SET status = ?, error_code = ?, error_message = ?, retryable = ?, completed_at = ?, updated_at = ? WHERE id = ?')
-            .run(nextStatus, error.code || 'SUBMIT_OUTCOME_UNKNOWN', String(error.message || '提交结果不明确').slice(0, 500), definitelyNotSubmitted && error?.retryable ? 1 : 0, now(), now(), item.id);
+          db.prepare("UPDATE media_batch_items SET status = ?, error_code = ?, error_message = ?, retryable = ?, completed_at = ?, updated_at = ? WHERE id = ? AND attempt = ? AND status = 'submitting'")
+            .run(nextStatus, error.code || 'SUBMIT_OUTCOME_UNKNOWN', String(error.message || '提交结果不明确').slice(0, 500), definitelyNotSubmitted && error?.retryable ? 1 : 0, now(), now(), item.id, claimedItem.attempt);
           log.error?.('media batch submit failed', { batch_id: key, item_id: item.id, error: error.message, status: nextStatus });
           if (exploring) break;
         }
       }
+      if (pumping.get(key) !== pumpToken) return;
       batch = recalc(key) || batch;
       if (batch.status === 'running' || batch.status === 'queued') schedule(key, 500);
     } finally {
-      pumping.delete(key);
+      if (pumping.get(key) === pumpToken) pumping.delete(key);
     }
   }
 
@@ -408,7 +431,20 @@ function createMediaBatchService(db, log = console, injected = {}) {
   function resume(id) {
     const row = db.prepare('SELECT * FROM media_batches WHERE id = ?').get(String(id));
     if (!row) return null;
-    if (TERMINAL_BATCH_STATUSES.has(row.status)) return readBatch(id);
+    // Resume inspection of the original generation when a late receipt resolves
+    // a review item. Never dispatch a replacement or change its attempt here.
+    const reviewItems = db.prepare("SELECT * FROM media_batch_items WHERE batch_id = ? AND status = 'needs_review'").all(String(id));
+    let recovered = 0;
+    for (const item of reviewItems) {
+      const media = item.kind === 'video' && item.video_id ? videoService.getById(db, item.video_id)
+        : item.kind === 'image' && item.image_id ? imageService.getById(db, item.image_id) : null;
+      if (!media) continue;
+      const settled = media.status === 'completed' || ['accepted', 'rejected', 'not_sent'].includes(media.submission_status);
+      if (!settled) continue;
+      recovered += db.prepare("UPDATE media_batch_items SET status='processing',error_code=NULL,error_message=NULL,completed_at=NULL,updated_at=? WHERE id=? AND status='needs_review' AND attempt=?")
+        .run(now(), item.id, item.attempt).changes;
+    }
+    if (!recovered && TERMINAL_BATCH_STATUSES.has(row.status)) return readBatch(id);
     db.prepare("UPDATE media_batches SET status = 'running', paused_at = NULL, completed_at = NULL, updated_at = ? WHERE id = ?").run(now(), String(id));
     schedule(id, 0);
     return readBatch(id);
@@ -427,23 +463,29 @@ function createMediaBatchService(db, log = console, injected = {}) {
     return readBatch(batchId);
   }
 
-  function retryItem(batchId, itemId) {
-    const item = db.prepare('SELECT * FROM media_batch_items WHERE id = ? AND batch_id = ?').get(String(itemId), String(batchId));
-    if (!item) return null;
-    if (item.status === 'needs_review') {
-      const error = new Error('该项目的上游结果尚不明确，请先核对任务和账单，不能直接重试');
-      error.code = 'MEDIA_BATCH_ITEM_AMBIGUOUS';
-      throw error;
+  function retryItem(batchId, itemId, input = {}) {
+    const requestKey = String(input.request_key || input.idempotency_key || '').trim();
+    if (requestKey.length > 240 || (input.expected_attempt != null && (!Number.isInteger(input.expected_attempt) || input.expected_attempt < 0))) {
+      throw Object.assign(new Error('重试请求标识或 attempt 无效'), {code:'VALIDATION_ERROR'});
     }
-    if (item.status !== 'failed' || !item.retryable) {
-      const error = new Error('只有确定失败的项目可以重试');
-      error.code = 'MEDIA_BATCH_ITEM_NOT_RETRYABLE';
-      throw error;
-    }
-    db.prepare("UPDATE media_batch_items SET status = 'queued', error_code = NULL, error_message = NULL, retryable = 0, completed_at = NULL, updated_at = ? WHERE id = ?")
-      .run(now(), item.id);
-    db.prepare("UPDATE media_batches SET status = 'running', paused_at = NULL, completed_at = NULL, updated_at = ? WHERE id = ?")
-      .run(now(), String(batchId));
+    const found = db.transaction(() => {
+      const item = db.prepare('SELECT * FROM media_batch_items WHERE id = ? AND batch_id = ?').get(String(itemId), String(batchId));
+      if (!item) return false;
+      if ((input.expected_attempt != null && input.expected_attempt !== item.attempt)
+        || (requestKey && db.prepare("SELECT id FROM media_batch_attempt_history WHERE item_id=? AND json_extract(snapshot_json,'$.retry_request_key')=? LIMIT 1").get(item.id,requestKey))) return 'reused';
+      db.prepare('INSERT INTO media_batch_attempt_history(item_id,batch_id,attempt,snapshot_json,archived_at) VALUES(?,?,?,?,?)')
+        .run(item.id, item.batch_id, item.attempt, JSON.stringify({...publicItem(item),retry_request_key:requestKey || null}), now());
+      db.prepare("UPDATE media_batch_items SET status = 'queued', image_id=NULL,video_id=NULL,task_id=NULL,media_url=NULL,submitted_at=NULL,error_code = NULL, error_message = NULL, retryable = 0, completed_at = NULL, updated_at = ? WHERE id = ?")
+        .run(now(), item.id);
+      db.prepare("UPDATE media_batches SET status = 'running', paused_at = NULL, completed_at = NULL, updated_at = ? WHERE id = ?")
+        .run(now(), String(batchId));
+      recalc(batchId);
+      return true;
+    }).immediate();
+    if (!found) return null;
+    if (found === 'reused') return readBatch(batchId, {}, true);
+    // A slow callback from an earlier attempt must not lock the retry queue.
+    pumping.delete(String(batchId));
     schedule(batchId, 0);
     return readBatch(batchId);
   }

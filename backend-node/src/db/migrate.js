@@ -957,6 +957,16 @@ function ensureAllColumns(database) {
       updated_at TEXT NOT NULL,
       UNIQUE(batch_id, ordinal)
     );
+    CREATE TABLE IF NOT EXISTS media_batch_attempt_history (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      item_id TEXT NOT NULL,
+      batch_id TEXT NOT NULL,
+      attempt INTEGER NOT NULL,
+      snapshot_json TEXT NOT NULL,
+      archived_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_media_batch_attempt_history_item
+      ON media_batch_attempt_history(item_id, id);
     CREATE INDEX IF NOT EXISTS idx_media_batch_items_queue
       ON media_batch_items(batch_id, status, ordinal);
   `);

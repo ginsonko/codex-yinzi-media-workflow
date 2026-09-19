@@ -1355,6 +1355,16 @@ async function processVideoGeneration(db, log, videoGenId) {
       } catch (_) {}
     }
     const rowForAspect = { ...row, aspect_ratio: aspectForVideo || row.aspect_ratio };
+    const promptContract = parseObject(row.prompt_contract_json) || {};
+    // Seedance 2.5 rejects local image data URLs at the provider boundary.
+    // Keep the transport explicit in the persisted request contract so a
+    // future request can override it, while defaulting only this model family
+    // to the provider's file upload route. Other providers retain their
+    // previous behavior.
+    const referenceTransportMode = String(
+      promptContract.media_reference_transport
+        || (String(row.model || '').trim().toLowerCase() === 'seedance 2.5' ? 'file_id' : '')
+    ).trim().toLowerCase() || undefined;
     const referenceTransport = buildReferenceTransport(row, {
       images: reference_urls, videos: reference_video_urls, audios: reference_audio_urls,
     });
@@ -1394,6 +1404,7 @@ async function processVideoGeneration(db, log, videoGenId) {
       reference_urls: referenceTransport.reference_urls,
       reference_video_urls: referenceTransport.reference_video_urls,
       reference_audio_urls: referenceTransport.reference_audio_urls,
+      reference_transport: referenceTransportMode,
       contract_validation_mode: videoClient.normalizeContractValidationMode(row.contract_validation_mode),
       files_base_url: filesBaseUrl,
       storage_local_path: storageLocalPath,

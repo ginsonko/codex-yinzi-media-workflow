@@ -23,6 +23,8 @@ function sourcesFor(request) {
   if (narration && !sources.some(item => item.path === path.resolve(narration))) sources.push({ role:'narration', path:path.resolve(narration) });
   const reference = request.module_id === 'local.audio.clone-voice' ? request.parameters?.reference_path : null;
   if (reference && !sources.some(item => item.path === path.resolve(reference))) sources.push({role:'voice_reference',path:path.resolve(reference)});
+  const score = request.module_id === 'local.audio.neural-song' ? request.parameters?.score_file : null;
+  if (score && !sources.some(item => item.path === path.resolve(score))) sources.push({role:'song_score',path:path.resolve(score)});
   const tracks = ['local.video.track-faces', 'local.video.face-mask', 'local.video.face-beauty'].includes(request.module_id) ? request.parameters?.tracks_path : null;
   if (tracks && !sources.some(item => item.path === path.resolve(tracks))) sources.push({ role:'tracks', path:path.resolve(tracks) });
   const indexCache = request.module_id === 'local.media.index' ? request.parameters?.cache_path : null;

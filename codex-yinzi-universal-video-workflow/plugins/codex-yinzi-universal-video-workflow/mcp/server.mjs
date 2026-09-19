@@ -370,7 +370,7 @@ async function workflowBridge(args) {
     await api('PATCH', `/api/v1/orchestration-sessions/${encodeURIComponent(args.session_id)}/nodes/${encodeURIComponent(node.id)}`, {
       actor: 'codex', request_hash: requestHash,
       progress: { state: 'provider_unknown', submission_state: 'uncertain', message: '调用未得到可确认结果；先查询恢复，不要直接重发' },
-      error: { code: 'BRIDGE_RESULT_UNCERTAIN', message: error.message, retryable: 'unknown', next_actions: ['reconcile', 'inspect', 'manual'] },
+      error: { code: 'BRIDGE_RESULT_UNCERTAIN', message: error.message, retryable: 'unknown', next_actions: ['reconcile_image', 'retry', 'inspect', 'manual'] },
     })
     throw error
   }
@@ -604,11 +604,11 @@ async function generateVideo(args) {
       ...(providerTaskId ? [{ type: 'provider_video_task', id: String(providerTaskId), role: 'provider_task' }] : []),
     ])
     const updated = await api('PATCH', `/api/v1/orchestration-sessions/${encodeURIComponent(args.session_id)}/nodes/${encodeURIComponent(args.node_key)}`, {
-      actor: 'codex', request_hash: requestHash, output_refs: outputRefs,
+      actor: 'codex', expected_attempt: reserve.node?.attempt, request_hash: requestHash, output_refs: outputRefs,
       progress: {
         state: 'local_task_created', submission_state: submissionState, message: generationId
           ? '本地视频任务已创建；供应商是否受理、生成和下载状态将分别对账'
-          : '本地创建响应缺少 generation_id；按请求哈希查询对账，禁止重发',
+          : '本地创建响应缺少 generation_id；可按请求哈希查询，也可明确重试并保留原记录',
         correlation_id: taskId, generation_id: generationId, provider_task_id: providerTaskId,
         provider_submission_status: providerSubmissionStatus,
       },
@@ -627,9 +627,9 @@ async function generateVideo(args) {
     }
   } catch (error) {
     await api('PATCH', `/api/v1/orchestration-sessions/${encodeURIComponent(args.session_id)}/nodes/${encodeURIComponent(args.node_key)}`, {
-      actor: 'codex', request_hash: requestHash,
-      progress: { state: 'provider_unknown', submission_state: 'uncertain', message: '视频创建响应不明确；只按请求哈希查询现有记录，禁止直接重发' },
-      error: { code: 'VIDEO_CREATE_AMBIGUOUS', message: error.message, retryable: 'unknown', next_actions: ['reconcile_video', 'inspect', 'manual'] },
+      actor: 'codex', expected_attempt: reserve.node?.attempt, request_hash: requestHash,
+      progress: { state: 'provider_unknown', submission_state: 'uncertain', message: '视频创建响应不明确；可按请求哈希查询现有记录，也可明确重试并保留原记录' },
+      error: { code: 'VIDEO_CREATE_AMBIGUOUS', message: error.message, retryable: 'unknown', next_actions: ['reconcile_video', 'retry', 'inspect', 'manual'] },
     })
     throw error
   }
@@ -669,6 +669,17 @@ async function probeLocalVideoArtifact(generation) {
   }
 }
 
+function generationBelongsToAttempt(node, generation, taskId, kind) {
+  const hash = parseSettings(generation?.prompt_contract).orchestration_request_hash
+  if (hash) return hash === node.request_hash
+  const refs = node.output_refs || []
+  const generationRefs = refs.filter(ref => ref.type === `${kind}_generation`)
+  if (generation?.id != null && generationRefs.length) return generationRefs.some(ref => String(ref.id) === String(generation.id))
+  if (!generation && taskId && refs.some(ref => ref.type === 'async_task' && String(ref.id) === String(taskId))) return true
+  // Legacy first attempts have no correlation metadata. After retry, require a current reference.
+  return Number(node.attempt || 1) === 1
+}
+
 async function reconcileVideo(args) {
   if (!args.session_id || !args.node_key) throw new Error('视频对账必须绑定 session_id 和 node_key')
   const bundle = await api('GET', `/api/v1/orchestration-sessions/${encodeURIComponent(args.session_id)}?include_inactive=true&event_limit=200`)
@@ -679,9 +690,10 @@ async function reconcileVideo(args) {
   let generation = generationId ? await api('GET', `/api/v1/videos/${encodeURIComponent(generationId)}`) : await findVideoByRequestHash(node.request_hash)
   if (generation && !generationId) generationId = generation.id
   if (generation && !taskId) taskId = generation.task_id || null
-  if (!generation && !taskId) return { outcome: 'unresolved', message: '没有找到 generation_id、task_id 或同 request_hash 的视频记录；保持 uncertain，不重发', node }
+  if (!generation && !taskId) return { outcome: 'unresolved', message: '没有找到关联的视频记录；可继续查询，也可明确重试，原结果仍记为未知', node }
   let task = taskId ? await api('GET', `/api/v1/tasks/${encodeURIComponent(taskId)}`) : null
   if (!generation && generationId) generation = await api('GET', `/api/v1/videos/${encodeURIComponent(generationId)}`)
+  if (!generationBelongsToAttempt(node, generation, taskId, 'video')) return { outcome: 'historical_attempt', generation, task, node, ignored: true }
   let outputRefs = mergeOutputRefs(node.output_refs || [], [
     ...(generationId ? [{ type: 'video_generation', id: String(generationId), role: 'generation_record' }] : []),
     ...(taskId ? [{ type: 'async_task', id: String(taskId), role: 'local_task' }] : []),
@@ -697,15 +709,16 @@ async function reconcileVideo(args) {
       message = '已按 request_hash 找回原视频记录和供应商受理证据，继续对账而不重发'
     } else if (providerSubmission === 'ambiguous') {
       submissionState = 'uncertain'
-      message = '已找回本地视频记录，但供应商是否受理仍不明确；只继续查询，禁止重发'
+      message = '已找回本地视频记录，但供应商是否受理仍不明确；可以继续查询或明确重试，原记录会保留'
     } else if (providerSubmission === 'rejected') {
       submissionState = 'rejected'
       message = '已找回本地视频记录，并确认供应商未受理；保留失败证据，不自动重发'
     }
     const linked = await api('PATCH', `/api/v1/orchestration-sessions/${encodeURIComponent(args.session_id)}/nodes/${encodeURIComponent(args.node_key)}`, {
-      actor: 'codex', request_hash: node.request_hash, output_refs: outputRefs,
+      actor: 'codex', expected_attempt: node.attempt, request_hash: node.request_hash, output_refs: outputRefs,
       progress: { ...(node.progress || {}), state: 'reconciled_record', submission_state: submissionState, message, generation_id: generationId, correlation_id: taskId, provider_task_id: generation?.provider_task_id || null, provider_submission_status: providerSubmission || null },
     })
+    if (linked.ignored) return { outcome: 'historical_attempt', generation, task, node: linked.node, ignored: true }
     Object.assign(node, linked.node)
   }
 
@@ -723,69 +736,69 @@ async function reconcileVideo(args) {
     if (downloadStatus === 'waiting_provider') {
       const message = generation?.download_error || '服务端成片尚未就绪，原任务已保留，正在恢复取回'
       const updated = await api('PATCH', `/api/v1/orchestration-sessions/${encodeURIComponent(args.session_id)}/nodes/${encodeURIComponent(args.node_key)}`, {
-        actor: 'codex', request_hash: node.request_hash, output_refs: outputRefs,
+        actor: 'codex', expected_attempt: node.attempt, request_hash: node.request_hash, output_refs: outputRefs,
         progress: { state: 'provider_finalizing', submission_state: 'accepted', message, generation_id: generationId, correlation_id: taskId, provider_task_id: generation?.provider_task_id || null },
         error: null,
         decision: { ...(node.decision || {}), provider_result: sanitize({ generation, task }), cost_outcome: 'provider_artifact_pending_billing_unverified' },
       })
-      return { outcome: 'provider_finalizing', generation, task, node: updated.node }
+      return { outcome: updated.ignored ? 'historical_attempt' : ('provider_finalizing'), generation, task, node: updated.node, ...(updated.ignored ? { ignored: true } : {}) }
     }
     if (downloadStatus === 'failed') {
       const message = generation?.download_error || generation?.error_msg || '上游视频已完成，但本地下载失败'
       const updated = await api('PATCH', `/api/v1/orchestration-sessions/${encodeURIComponent(args.session_id)}/nodes/${encodeURIComponent(args.node_key)}`, {
-        actor: 'codex', request_hash: node.request_hash, output_refs: outputRefs,
+        actor: 'codex', expected_attempt: node.attempt, request_hash: node.request_hash, output_refs: outputRefs,
         progress: { state: 'download_failed', submission_state: 'accepted', message, generation_id: generationId, correlation_id: taskId, provider_task_id: generation?.provider_task_id || null },
         error: { code: 'VIDEO_DOWNLOAD_FAILED', message, retryable: true, next_actions: ['reconcile_video retry_download=true', 'inspect', 'manual'] },
         decision: { ...(node.decision || {}), provider_result: sanitize({ generation, task }), cost_outcome: 'provider_completed_billing_expected_download_recoverable' },
       })
-      return { outcome: 'download_failed', generation, task, node: updated.node }
+      return { outcome: updated.ignored ? 'historical_attempt' : ('download_failed'), generation, task, node: updated.node, ...(updated.ignored ? { ignored: true } : {}) }
     }
     const mediaProbe = await probeLocalVideoArtifact(generation)
     if (!mediaProbe.ok) {
       const updated = await api('PATCH', `/api/v1/orchestration-sessions/${encodeURIComponent(args.session_id)}/nodes/${encodeURIComponent(args.node_key)}`, {
-        actor: 'codex', request_hash: node.request_hash, output_refs: outputRefs,
+        actor: 'codex', expected_attempt: node.attempt, request_hash: node.request_hash, output_refs: outputRefs,
         progress: { state: 'provider_completed_downloading', submission_state: 'accepted', message: '上游生成已完成，但本地媒体尚未取得可读字节', generation_id: generationId, correlation_id: taskId, provider_task_id: generation?.provider_task_id || null, media_probe: mediaProbe },
         decision: { ...(node.decision || {}), provider_result: sanitize({ generation, task }), cost_outcome: 'provider_completed_billing_expected_local_artifact_pending' },
       })
-      return { outcome: 'provider_completed_downloading', generation, task, media_probe: mediaProbe, node: updated.node }
+      return { outcome: updated.ignored ? 'historical_attempt' : ('provider_completed_downloading'), generation, task, media_probe: mediaProbe, node: updated.node, ...(updated.ignored ? { ignored: true } : {}) }
     }
     const acceptedMedia = { type: 'generated_video', id: String(generationId || generation?.provider_task_id || taskId), role: 'accepted_media', path: generation?.local_path || null, task_id: taskId || null, provider_task_id: generation?.provider_task_id || null }
     outputRefs = mergeOutputRefs(outputRefs, [acceptedMedia])
     const completed = await api('POST', `/api/v1/orchestration-sessions/${encodeURIComponent(args.session_id)}/nodes/${encodeURIComponent(args.node_key)}/actions/complete`, {
-      actor: 'codex', message: '视频生成、下载和本地可读性验证均已完成', output_refs: outputRefs,
+      actor: 'codex', expected_attempt: node.attempt, request_hash: node.request_hash, message: '视频生成、下载和本地可读性验证均已完成', output_refs: outputRefs,
       progress: { state: 'completed', submission_state: 'settled', message: '视频已生成并保存为本地可读产物', generation_id: generationId, correlation_id: taskId, provider_task_id: generation?.provider_task_id || null, media_probe: mediaProbe },
       decision: { ...(node.decision || {}), provider_result: sanitize({ generation, task }), media_probe: mediaProbe, cost_outcome: 'estimated_from_live_catalog_billing_receipt_not_available' },
       receipt: { status: 'success', source: 'video-provider-and-local-storage', message: '视频生成、下载和本地可读性验证均已完成', retryable: 'false', next_actions: ['continue', 'inspect_media'], correlation_id: generation?.provider_task_id || taskId || null },
     })
-    return { outcome: 'succeeded', generation, task, media_probe: mediaProbe, node: completed.node }
+    return { outcome: completed.ignored ? 'historical_attempt' : ('succeeded'), generation, task, media_probe: mediaProbe, node: completed.node, ...(completed.ignored ? { ignored: true } : {}) }
   }
   if (generationStatus === 'failed') {
     const message = generation?.error_msg || task?.error || task?.message || '视频生成失败'
     const definitelyNotAccepted = ['not_sent', 'rejected'].includes(providerSubmission) && !generation?.provider_task_id
     const failed = await api('POST', `/api/v1/orchestration-sessions/${encodeURIComponent(args.session_id)}/nodes/${encodeURIComponent(args.node_key)}/actions/fail`, {
-      actor: 'codex', message, original_code: 'VIDEO_GENERATION_FAILED', retryable: definitelyNotAccepted ? 'true' : 'unknown', correlation_id: generation?.provider_task_id || taskId || null,
-      next_actions: definitelyNotAccepted ? ['reopen_after_user_confirmation', 'edit_plan', 'skip'] : ['inspect_provider_task', 'manual_billing_reconcile', 'skip'],
+      actor: 'codex', expected_attempt: node.attempt, request_hash: node.request_hash, message, original_code: 'VIDEO_GENERATION_FAILED', retryable: definitelyNotAccepted ? 'true' : 'unknown', correlation_id: generation?.provider_task_id || taskId || null,
+      next_actions: definitelyNotAccepted ? ['retry', 'edit_plan', 'skip'] : ['retry', 'inspect_provider_task', 'manual_billing_reconcile', 'skip'],
       progress: { state: 'failed', submission_state: definitelyNotAccepted ? 'rejected' : 'settled', message, generation_id: generationId, correlation_id: taskId, provider_task_id: generation?.provider_task_id || null },
       decision: { ...(node.decision || {}), provider_result: sanitize({ generation, task }), cost_outcome: definitelyNotAccepted ? 'billing_not_expected_provider_receipt_unavailable' : 'billing_unknown_pending_provider_receipt' },
     })
-    return { outcome: 'failed', generation, task, node: failed.node }
+    return { outcome: failed.ignored ? 'historical_attempt' : ('failed'), generation, task, node: failed.node, ...(failed.ignored ? { ignored: true } : {}) }
   }
   if (generationStatus === 'ambiguous' || providerSubmission === 'ambiguous') {
-    const message = generation?.error_msg || '供应商是否受理仍不明确；保持原请求锁定并继续查询，禁止重发'
+    const message = generation?.error_msg || '供应商是否受理仍不明确；可以查询原请求，也可以明确重试并保留原记录'
     const updated = await api('PATCH', `/api/v1/orchestration-sessions/${encodeURIComponent(args.session_id)}/nodes/${encodeURIComponent(args.node_key)}`, {
-      actor: 'codex', request_hash: node.request_hash, output_refs: outputRefs,
+      actor: 'codex', expected_attempt: node.attempt, request_hash: node.request_hash, output_refs: outputRefs,
       progress: { state: 'provider_unknown', submission_state: 'uncertain', message, generation_id: generationId, correlation_id: taskId, provider_task_id: generation?.provider_task_id || null },
-      error: { code: 'VIDEO_PROVIDER_RESULT_UNCERTAIN', message, retryable: 'unknown', next_actions: ['reconcile_video', 'inspect', 'manual_billing_reconcile'] },
+      error: { code: 'VIDEO_PROVIDER_RESULT_UNCERTAIN', message, retryable: 'unknown', next_actions: ['reconcile_video', 'retry', 'inspect', 'manual_billing_reconcile'] },
       decision: { ...(node.decision || {}), provider_result: sanitize({ generation, task }), cost_outcome: 'billing_unknown_pending_provider_receipt' },
     })
-    return { outcome: 'unresolved', generation, task, node: updated.node }
+    return { outcome: updated.ignored ? 'historical_attempt' : ('unresolved'), generation, task, node: updated.node, ...(updated.ignored ? { ignored: true } : {}) }
   }
   const updated = await api('PATCH', `/api/v1/orchestration-sessions/${encodeURIComponent(args.session_id)}/nodes/${encodeURIComponent(args.node_key)}`, {
-    actor: 'codex', request_hash: node.request_hash, output_refs: outputRefs,
+    actor: 'codex', expected_attempt: node.attempt, request_hash: node.request_hash, output_refs: outputRefs,
     progress: { state: 'provider_processing', submission_state: providerSubmission === 'accepted' || generation?.provider_task_id ? 'accepted' : 'submitting', message: '视频任务仍在生成或下载中；继续查询同一任务', generation_id: generationId, correlation_id: taskId, provider_task_id: generation?.provider_task_id || null, generation_status: generationStatus || null, download_status: downloadStatus || null },
     decision: { ...(node.decision || {}), provider_result: sanitize({ generation, task }), cost_outcome: 'pending_provider_completion_and_billing_receipt' },
   })
-  return { outcome: 'pending', generation, task, node: updated.node }
+  return { outcome: updated.ignored ? 'historical_attempt' : ('pending'), generation, task, node: updated.node, ...(updated.ignored ? { ignored: true } : {}) }
 }
 
 async function generateImage(args) {
@@ -903,7 +916,7 @@ async function generateImage(args) {
     const result = await api('POST', '/api/v1/images', image, Number(args.timeout_ms) || 30000)
     const taskId = result?.task_id || null; const generationId = result?.id || null
     const updated = await api('PATCH', `/api/v1/orchestration-sessions/${encodeURIComponent(args.session_id)}/nodes/${encodeURIComponent(args.node_key)}`, {
-      actor: 'codex', request_hash: requestHash,
+      actor: 'codex', expected_attempt: reserve.node?.attempt, request_hash: requestHash,
       progress: { state: 'provider_ack', submission_state: taskId ? 'accepted' : 'uncertain', message: taskId ? '图片执行器已受理，等待真实结果' : '返回中缺少 task_id，需要查询记录对账', correlation_id: taskId },
       output_refs: [...(taskId ? [{ type: 'async_task', id: String(taskId), role: 'provider_task' }] : []), ...(generationId ? [{ type: 'image_generation', id: String(generationId), role: 'generation_record' }] : [])],
       decision: { paid: true, idempotency_key: args.idempotency_key, provider: image.provider, model: image.model, image_config_id: image.image_config_id, configured_group: configuredGroup || null, requested_group: args.group_name || null, pricing_basis: pricingBasis, price_snapshot: sanitize(selectedPrice), native_currency: nativeCurrency, estimated_cost_native: selectedNativePrice, price_ceiling_basis: ceilingBasis, request: sanitize(image) },
@@ -911,8 +924,8 @@ async function generateImage(args) {
     return { submitted: true, request_hash: requestHash, task_id: taskId, generation_id: generationId, estimated_cost_usd: unitPriceUsd, estimated_cost_native: selectedNativePrice, native_currency: nativeCurrency, pricing_basis: pricingBasis, configured_group: configuredGroup || null, requested_group: args.group_name || null, pricing_source: selectedPrice.source, pricing_version: selectedPrice.source_version, node: updated.node }
   } catch (error) {
     await api('PATCH', `/api/v1/orchestration-sessions/${encodeURIComponent(args.session_id)}/nodes/${encodeURIComponent(args.node_key)}`, {
-      actor: 'codex', request_hash: requestHash, progress: { state: 'provider_unknown', submission_state: 'uncertain', message: '图片创建结果不明确；先按 request_hash 查询对账，禁止直接重发' },
-      error: { code: 'IMAGE_CREATE_AMBIGUOUS', message: error.message, retryable: 'unknown', next_actions: ['reconcile', 'inspect', 'manual'] },
+      actor: 'codex', expected_attempt: reserve.node?.attempt, request_hash: requestHash, progress: { state: 'provider_unknown', submission_state: 'uncertain', message: '图片创建结果不明确；可以查询原请求，也可以明确重试，原记录会保留' },
+      error: { code: 'IMAGE_CREATE_AMBIGUOUS', message: error.message, retryable: 'unknown', next_actions: ['reconcile_image', 'retry', 'inspect', 'manual'] },
     })
     throw error
   }
@@ -925,18 +938,19 @@ async function reconcileImage(args) {
   if (!node) throw new Error('找不到图片生成编排节点')
   const generationId = args.generation_id || (node.output_refs || []).find((item) => item.type === 'image_generation')?.id
   const taskId = args.task_id || (node.output_refs || []).find((item) => item.type === 'async_task')?.id
-  if (!generationId && !taskId) return { outcome: 'unresolved', message: '没有 generation_id 或 task_id，无法证明是否受理；保持 uncertain，不重发', node }
+  if (!generationId && !taskId) return { outcome: 'unresolved', message: '没有 generation_id 或 task_id，尚不确定是否受理；可继续查询，也可明确重试并保留原记录', node }
   const generation = generationId ? await api('GET', `/api/v1/images/${encodeURIComponent(generationId)}`) : null
   const task = taskId ? await api('GET', `/api/v1/tasks/${encodeURIComponent(taskId)}`) : null
+  if (!generationBelongsToAttempt(node, generation, taskId, 'image')) return { outcome: 'historical_attempt', generation, task, node, ignored: true }
   const status = String(generation?.status || task?.status || '').toLowerCase()
   if (['completed', 'succeeded', 'success'].includes(status)) {
     const output = { type: 'generated_image', id: String(generation?.id || generationId || taskId), role: 'accepted_media', path: generation?.local_path || generation?.image_url || null, task_id: taskId || null }
     const completed = await api('POST', `/api/v1/orchestration-sessions/${encodeURIComponent(args.session_id)}/nodes/${encodeURIComponent(args.node_key)}/actions/complete`, {
-      actor: 'codex', message: '图片生成已完成并取得可读取产物', output_refs: [...(node.output_refs || []), output],
+      actor: 'codex', expected_attempt: node.attempt, request_hash: node.request_hash, message: '图片生成已完成并取得可读取产物', output_refs: [...(node.output_refs || []), output],
       progress: { state: 'completed', submission_state: 'settled', message: '图片生成完成', correlation_id: taskId || null },
       decision: { ...(node.decision || {}), provider_result: sanitize({ generation, task }), cost_outcome: 'estimated_from_live_catalog_pending_provider_billing_receipt' },
     })
-    return { outcome: 'succeeded', generation, task, node: completed.node }
+    return { outcome: completed.ignored ? 'historical_attempt' : ('succeeded'), generation, task, node: completed.node, ...(completed.ignored ? { ignored: true } : {}) }
   }
   const submission = String(generation?.submission_status || generation?.provider_submission_status || '').toLowerCase()
   const generationStatus = String(generation?.generation_status || '').toLowerCase()
@@ -952,12 +966,12 @@ async function reconcileImage(args) {
       ? `${message}；本地未取得结果，上游结果及扣费待核实。保留原请求，不自动重发。`
       : message
     const failed = await api('POST', `/api/v1/orchestration-sessions/${encodeURIComponent(args.session_id)}/nodes/${encodeURIComponent(args.node_key)}/actions/fail`, {
-      actor: 'codex', message, original_code: unresolved ? 'IMAGE_PROVIDER_RESULT_UNCERTAIN' : 'IMAGE_GENERATION_FAILED', retryable: 'unknown', correlation_id: taskId || null,
-      next_actions: submissionState === 'uncertain' ? ['reconcile_image', 'inspect_provider_task'] : ['inspect', 'edit_plan'],
+      actor: 'codex', expected_attempt: node.attempt, request_hash: node.request_hash, message, original_code: unresolved ? 'IMAGE_PROVIDER_RESULT_UNCERTAIN' : 'IMAGE_GENERATION_FAILED', retryable: 'unknown', correlation_id: taskId || null,
+      next_actions: submissionState === 'uncertain' ? ['reconcile_image', 'retry', 'inspect_provider_task'] : ['retry', 'inspect', 'edit_plan'],
       progress: { ...(node.progress || {}), state: submissionState === 'uncertain' ? 'provider_unknown' : 'failed', submission_state: submissionState, message: progressMessage, correlation_id: taskId || null, generation_id: generation?.id || generationId || null },
       decision: { ...(node.decision || {}), provider_result: sanitize({ generation, task }), cost_outcome: definitelyRejected ? 'billing_not_expected_provider_receipt_unavailable' : 'billing_unknown_pending_provider_receipt' },
     })
-    return { outcome: unresolved ? 'unresolved' : 'failed', reconciliation_required: submissionState === 'uncertain', message: progressMessage, generation, task, node: failed.node }
+    return { outcome: failed.ignored ? 'historical_attempt' : (unresolved ? 'unresolved' : 'failed'), reconciliation_required: submissionState === 'uncertain', message: progressMessage, generation, task, node: failed.node, ...(failed.ignored ? { ignored: true } : {}) }
   }
   return { outcome: 'pending', generation, task, node }
 }
@@ -998,9 +1012,9 @@ const tools = [
   { name: 'update_node', description: '更新节点输入输出、进度、决策、请求哈希或配置版本，不需要伪造终态。', inputSchema: { type: 'object', required: ['session_id', 'node_key', 'patch'], properties: { session_id: { type: 'string' }, node_key: { type: 'string' }, patch: { type: 'object' } } } },
   { name: 'scan_assets', description: '有界扫描用户明确授权的文件/文件夹，生成哈希化素材清单；可自动写回 asset.scan 节点。', inputSchema: { type: 'object', properties: { path: { type: 'string' }, paths: { type: 'array', items: { type: 'string' } }, session_id: { type: 'string' }, node_key: { type: 'string' }, max_files: { type: 'integer' }, max_bytes: { type: 'integer' }, max_depth: { type: 'integer' }, hash_max_bytes: { type: 'integer' }, include_absolute_paths: { type: 'boolean' }, force: { type: 'boolean' } } } },
   { name: 'workflow_bridge', description: '受审计地调用既有 production-run/asset-import 执行器。写操作必须绑定节点；付费操作使用已有授权或挂机模式，并保留幂等键。', inputSchema: { type: 'object', required: ['method', 'path'], properties: { method: { enum: ['GET', 'POST', 'PATCH'] }, path: { type: 'string' }, body: { type: 'object' }, session_id: { type: 'string' }, node_key: { type: 'string' }, paid: { type: 'boolean' }, confirmed_paid_action: { type: 'boolean' }, idempotency_key: { type: 'string' }, reconcile: { type: 'boolean' }, force: { type: 'boolean' }, timeout_ms: { type: 'integer' } } } },
-  { name: 'generate_image_once', description: '按锁定配置和当前实时目录价格只提交一次图片任务；Yinzi 目录优先使用原生 CNY 价格，重复调用只返回恢复要求，不会重复生成。请提供 max_unit_price_cny；旧 max_unit_price_usd 仅作为不汇率换算的兼容数值上限。', inputSchema: { type: 'object', required: ['session_id', 'node_key', 'idempotency_key', 'image_config_id', 'provider', 'model', 'group_name', 'prompt'], properties: { session_id: { type: 'string' }, node_key: { type: 'string' }, idempotency_key: { type: 'string' }, confirmed_paid_action: { type: 'boolean' }, image_config_id: { type: 'integer' }, provider: { type: 'string' }, model: { type: 'string' }, group_name: { type: 'string' }, prompt: { type: 'string' }, size: { type: 'string' }, aspect_ratio: { type: 'string' }, drama_id: { type: 'integer' }, image_service_type: { enum: ['image', 'storyboard_image'] }, reference_images: { type: 'array', items: { type: 'string' } }, negative_prompt: { type: 'string' }, frame_type: { type: 'string' }, max_unit_price_usd: { type: 'number' }, max_unit_price_cny: { type: 'number' }, timeout_ms: { type: 'integer' } } } },
+  { name: 'generate_image_once', description: '按锁定配置和当前实时目录价格只提交一次图片任务；Yinzi 目录优先使用原生 CNY 价格，同一请求保持幂等；明确重试可在原节点开启新尝试。请提供 max_unit_price_cny；旧 max_unit_price_usd 仅作为不汇率换算的兼容数值上限。', inputSchema: { type: 'object', required: ['session_id', 'node_key', 'idempotency_key', 'image_config_id', 'provider', 'model', 'group_name', 'prompt'], properties: { session_id: { type: 'string' }, node_key: { type: 'string' }, idempotency_key: { type: 'string' }, confirmed_paid_action: { type: 'boolean' }, image_config_id: { type: 'integer' }, provider: { type: 'string' }, model: { type: 'string' }, group_name: { type: 'string' }, prompt: { type: 'string' }, size: { type: 'string' }, aspect_ratio: { type: 'string' }, drama_id: { type: 'integer' }, image_service_type: { enum: ['image', 'storyboard_image'] }, reference_images: { type: 'array', items: { type: 'string' } }, negative_prompt: { type: 'string' }, frame_type: { type: 'string' }, max_unit_price_usd: { type: 'number' }, max_unit_price_cny: { type: 'number' }, timeout_ms: { type: 'integer' } } } },
   { name: 'reconcile_image', description: '查询同一图片 generation/task 并将真实终态写回编排节点；没有关联 ID 时保持 uncertain。', inputSchema: { type: 'object', required: ['session_id', 'node_key'], properties: { session_id: { type: 'string' }, node_key: { type: 'string' }, generation_id: { type: ['string', 'integer'] }, task_id: { type: 'string' } } } },
-  { name: 'generate_video_once', description: '按用户指定配置只提交一次视频。目录不作为鉴权门槛；已有授权或挂机模式下执行，重复或未知结果只对账。max_cost_cny沿用用户预算；挂机且用户未设限时可省略。', inputSchema: { type: 'object', required: ['session_id', 'node_key', 'idempotency_key', 'video_config_id', 'provider', 'model', 'group_name', 'prompt', 'duration'], properties: { session_id: { type: 'string' }, node_key: { type: 'string' }, idempotency_key: { type: 'string' }, confirmed_paid_action: { type: 'boolean' }, video_config_id: { type: 'integer' }, provider: { type: 'string' }, model: { type: 'string' }, group_name: { type: 'string' }, prompt: { type: 'string' }, duration: { type: 'number' }, aspect_ratio: { type: 'string' }, resolution: { type: 'string' }, drama_id: { type: 'integer' }, storyboard_id: { type: 'integer' }, image_url: { type: 'string' }, first_frame_url: { type: 'string' }, last_frame_url: { type: 'string' }, reference_image_urls: { type: 'array', items: { type: 'string' } }, reference_video_urls: { type: 'array', items: { type: 'string' } }, reference_audio_urls: { type: 'array', items: { type: 'string' } }, camera_fixed: { type: 'boolean' }, watermark: { type: 'boolean' }, prompt_contract: { type: 'object' }, contract_validation_mode: { enum: ['advisory', 'strict'] }, max_cost_cny: { type: 'number' }, timeout_ms: { type: 'integer' }, catalog_timeout_ms: { type: 'integer' } } } },
+  { name: 'generate_video_once', description: '按用户指定配置只提交一次视频。目录不作为鉴权门槛；已有授权或挂机模式下执行，同一次请求保持幂等；明确重试可在原节点开启新尝试。max_cost_cny沿用用户预算；挂机且用户未设限时可省略。', inputSchema: { type: 'object', required: ['session_id', 'node_key', 'idempotency_key', 'video_config_id', 'provider', 'model', 'group_name', 'prompt', 'duration'], properties: { session_id: { type: 'string' }, node_key: { type: 'string' }, idempotency_key: { type: 'string' }, confirmed_paid_action: { type: 'boolean' }, video_config_id: { type: 'integer' }, provider: { type: 'string' }, model: { type: 'string' }, group_name: { type: 'string' }, prompt: { type: 'string' }, duration: { type: 'number' }, aspect_ratio: { type: 'string' }, resolution: { type: 'string' }, drama_id: { type: 'integer' }, storyboard_id: { type: 'integer' }, image_url: { type: 'string' }, first_frame_url: { type: 'string' }, last_frame_url: { type: 'string' }, reference_image_urls: { type: 'array', items: { type: 'string' } }, reference_video_urls: { type: 'array', items: { type: 'string' } }, reference_audio_urls: { type: 'array', items: { type: 'string' } }, camera_fixed: { type: 'boolean' }, watermark: { type: 'boolean' }, prompt_contract: { type: 'object' }, contract_validation_mode: { enum: ['advisory', 'strict'] }, max_cost_cny: { type: 'number' }, timeout_ms: { type: 'integer' }, catalog_timeout_ms: { type: 'integer' } } } },
   { name: 'reconcile_video', description: '查询同一视频 generation/task，区分上游生成与本地下载，并在需要时只恢复下载、绝不重提视频。', inputSchema: { type: 'object', required: ['session_id', 'node_key'], properties: { session_id: { type: 'string' }, node_key: { type: 'string' }, generation_id: { type: ['string', 'integer'] }, task_id: { type: 'string' }, retry_download: { type: 'boolean' }, timeout_ms: { type: 'integer' } } } },
   { name: 'export_audit', description: '导出完整编排任务审计包。', inputSchema: { type: 'object', required: ['session_id'], properties: { session_id: { type: 'string' } } } },
 ]

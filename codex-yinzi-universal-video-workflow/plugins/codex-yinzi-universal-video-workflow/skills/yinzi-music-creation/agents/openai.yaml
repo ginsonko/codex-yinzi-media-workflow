@@ -1,0 +1,4 @@
+interface:
+  display_name: "银子歌曲创作"
+  short_description: "检查电脑配置，写歌词并制作有歌声的音乐、说唱与双语歌曲，核对唱词和情绪"
+  default_prompt: "使用 $yinzi-music-creation，先检查电脑配置，根据我的故事和心情写歌词，制作有真实歌唱的音乐小样，再根据听感完善。"

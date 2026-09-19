@@ -3740,7 +3740,10 @@ async function callYinziVideoApi(db, config, log, opts) {
     const deterministicNoEligibleRoute = !requestId
       && (errorCode === 'get_channel_failed' || errorCode === 'model_not_found')
       && noChannelMessage;
-    const rejected = (res.status >= 400 && res.status < 500) || deterministicNoEligibleRoute;
+    const explicitlyNotCreated = res.status === 503
+      && errorCode === 'upstream_submission_unavailable'
+      && /本次未创建视频/.test(message);
+    const rejected = (res.status >= 400 && res.status < 500) || deterministicNoEligibleRoute || explicitlyNotCreated;
     return publishSubmission(rejected ? 'rejected' : 'ambiguous', {
       error: message,
       ambiguous_submission: !rejected,
@@ -4846,6 +4849,7 @@ async function callVideoApi(db, log, opts) {
       reference_urls: opts.reference_urls,
       reference_video_urls: opts.reference_video_urls,
       reference_audio_urls: opts.reference_audio_urls,
+      reference_transport: opts.reference_transport,
       files_base_url: opts.files_base_url,
       storage_local_path: opts.storage_local_path,
       video_gen_id: opts.video_gen_id,

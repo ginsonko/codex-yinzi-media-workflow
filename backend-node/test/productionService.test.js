@@ -1432,7 +1432,7 @@ describe('production executor text stages', () => {
     assert.equal(repo.getRun(db, run.id).waiting_reason, 'image_generation');
   });
 
-  it('requires explicit feedback for failures and explicit reconciliation for ambiguity', () => {
+  it('permits explicit failed and ambiguous retries while retaining original uncertainty', () => {
     const run = createRun('human');
     repo.updateRun(db, run.id, { current_stage: 'asset_images', status: 'waiting_review' });
     const failed = repo.reserveAction(db, {
@@ -1452,24 +1452,19 @@ describe('production executor text stages', () => {
       scope_type: 'scene', scope_id: 'scene-1', kind: 'image_generate', request: {},
     }).action;
     repo.updateAction(db, ambiguous.id, { status: 'ambiguous', error_code: 'AMBIGUOUS_ACTION' });
-    assert.throws(
-      () => service.authorizeRetry(run.id, { action_id: ambiguous.id, reason: '重试' }),
-      /必须先核对上游任务/
-    );
-    const reconciled = service.authorizeRetry(run.id, {
-      action_id: ambiguous.id,
-      reason: '等待九小时仍无上游任务号、图片地址或本地文件',
-      ambiguous_resolution: 'no_result_after_wait',
-    });
-    assert.equal(reconciled.action.status, 'cancelled');
-    assert.equal(reconciled.action.result.retry_authorized, true);
-    assert.equal(reconciled.action.result.ambiguous_reconciled, true);
-    assert.equal(reconciled.action.result.ambiguous_resolution, 'no_result_after_wait');
-    const event = db.prepare("SELECT payload_json FROM production_events WHERE run_id = ? AND event_type = 'action.ambiguous_reconciled' ORDER BY id DESC LIMIT 1").get(run.id);
-    assert.equal(JSON.parse(event.payload_json).action_id, ambiguous.id);
+    const retried = service.authorizeRetry(run.id, {action_id:ambiguous.id, reason:'重试'});
+    assert.equal(retried.action.status,'cancelled');
+    assert.equal(retried.action.result.retry_authorized,true);
+    assert.equal(retried.action.result.previous_status,'ambiguous');
+    assert.equal(retried.action.result.ambiguous_reconciled,undefined);
+    assert.equal(retried.action.result.ambiguous_resolution,undefined);
+    const repeated = service.authorizeRetry(run.id, {action_id:ambiguous.id});
+    assert.equal(repeated.reused,true);
+    assert.equal(repo.listActions(db,run.id).items.length,2);
+
   });
 
-  it('separates ambiguous checking, unlock, and retry start without a provider submission', async () => {
+  it('keeps status checking read-only and starts an explicit retry without prior unlock', async () => {
     let run = createRun('human');
     run = repo.updateRun(db, run.id, {
       current_stage: 'shot_video', current_scope_type: 'shot', current_scope_id: '1',
@@ -1492,24 +1487,6 @@ describe('production executor text stages', () => {
     assert.equal(checked.summary.run.status, 'waiting_review');
     assert.equal(checked.summary.run.waiting_reason, 'ambiguous_video_create');
     assert.equal(providerCreates, 0);
-    await assert.rejects(
-      service.reconcileAction(run.id, action.id, { mode: 'start_retry' }),
-      (error) => error.code === 'AMBIGUOUS_RETRY_NOT_AUTHORIZED',
-    );
-
-    const unlocked = await service.reconcileAction(run.id, action.id, {
-      mode: 'confirm_not_created', confirmed: true,
-    });
-    assert.equal(unlocked.status, 'confirmed_not_created');
-    assert.equal(unlocked.summary.run.status, 'waiting_review');
-    assert.equal(unlocked.summary.run.waiting_reason, 'ambiguous_retry_ready');
-    assert.equal(unlocked.summary.recovery_action.id, action.id);
-    assert.equal(providerCreates, 0);
-    const held = await service.advance(run.id, { lease_owner: 'ambiguous-retry-hold-test' });
-    assert.equal(held.state, 'waiting_review');
-    assert.equal(held.reason, 'ambiguous_retry_ready');
-    assert.equal(providerCreates, 0);
-
     const started = await service.reconcileAction(run.id, action.id, { mode: 'start_retry' });
     const repeated = await service.reconcileAction(run.id, action.id, { mode: 'start_retry' });
     assert.equal(started.status, 'retry_started');
@@ -1526,6 +1503,32 @@ describe('production executor text stages', () => {
     assert.equal(repo.getRun(db, run.id).status, 'running');
     assert.equal(providerCreates, 0);
   });
+
+  for (const state of ['reserved','submitted','waiting','completed','ambiguous','failed']) {
+    it(`explicit retry from ${state} preserves charge evidence and quarantines late output`, () => {
+      const run=createRun('human');
+      repo.updateRun(db,run.id,{current_stage:'asset_images',status:'waiting_review'});
+      const original=repo.reserveAction(db,{run_id:run.id,action_key:'retry-'+state,stage:'asset_images',scope_type:'character',scope_id:'1',kind:'image_generate',request:{prompt:'keep me'}}).action;
+      repo.updateAction(db,original.id,{status:state,cost_status:'uncertain',cost:{estimated_amount:2.5},generation_id:31});
+      const service=createProductionService(db,{},log);
+      const costLedger=require('../src/services/productionCostLedger');
+      const costBefore=costLedger.getByAction(db,original.id);
+      const first=service.authorizeRetry(run.id,{action_id:original.id});
+      assert.equal(first.reused,false);
+      const repeated=service.authorizeRetry(run.id,{action_id:original.id});
+      assert.equal(repeated.reused,true);
+      repo.updateAction(db,original.id,{status:'completed',cost_status:'charged',cost:4,result:{old_provider_result:'arrived'}});
+      const saved=repo.getAction(db,original.id);
+      assert.equal(saved.status,'cancelled');
+      assert.equal(saved.result.previous_status,state);
+      assert.equal(saved.result.late_status,'completed');
+      assert.equal(saved.result.old_provider_result,'arrived');
+      assert.deepEqual(costLedger.getByAction(db,original.id),costBefore);
+      assert.equal(saved.generation_id,31);
+      assert.throws(()=>repo.createArtifact(db,{run_id:run.id,stage:'asset_images',scope_type:'character',scope_id:'1',title:'stale',source_action_id:original.id,content:{}}),{code:'ACTION_SUPERSEDED'});
+      assert.equal(repo.listActions(db,run.id).items.length,1);
+    });
+  }
 
   it('converges a running run with an ambiguous current video action before polling can spin', async () => {
     let run = createRun('human');

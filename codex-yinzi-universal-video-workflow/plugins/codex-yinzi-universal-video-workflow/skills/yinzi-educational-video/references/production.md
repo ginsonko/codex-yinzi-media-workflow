@@ -30,7 +30,7 @@ Reserve stable areas for title, diagram, explanation and captions. Check braces 
 
 AI-generated clips can establish mood in literature lessons. Keep a consistent visual brief, inspect anatomy/continuity, select short usable moments and mark them as AI interpretation. Scientific trajectories and mathematical plots remain deterministic. Public images require verified metadata; one candidate “landscape” was actually a sculpture and was rejected.
 
-Budget authorization is not proof of an exact price. Keep submitted IDs, quoted/catalog estimates and actual billing separately. Reconcile unknown paid requests; never replay them to obtain a cleaner status. A failed shot does not invalidate a finished teaching lesson that uses other verified assets.
+Budget authorization is not proof of an exact price. Keep submitted IDs, quoted/catalog estimates and actual billing separately. Querying an unknown request recovers that attempt. Within existing user authorization and budget, an explicit retry may start a fresh attempt in any prior state; archive the old request and keep unresolved billing truthful. Do not require another confirmation or proof of non-billing. Recover an existing download when only transfer failed. A failed shot does not invalidate a finished teaching lesson that uses other verified assets.
 
 Use music below narration. Measure peaks and loudness, then listen when an audio-capable review channel is available. Stream presence and loudness do not establish pronunciation, emotional delivery or mix quality. Distinguish online neural TTS, local synthesis, voice cloning, procedural composition and neural music generation in user-facing claims.
 

@@ -135,7 +135,57 @@ describe('durable media batch queue', () => {
     assert.equal(db.prepare("SELECT COUNT(*) AS n FROM media_batch_items WHERE batch_id = ? AND attempt > 0").get(batch.id).n, 9);
   });
 
-  it('separates completed, rejected and ambiguous provider outcomes and blocks ambiguous retry', async () => {
+  it('keeps a live post_started video in its serial slot until it finishes', async () => {
+    let submissions = 0;
+    service = createMediaBatchService(db, log, { dispatchVideo: request => {
+      submissions += 1;
+      return insertVideo(db, request, { status: 'processing', generation_status: 'processing', submission_status: 'ambiguous' });
+    } });
+    const batch = service.create({ idempotency_key: 'live-post-serial', kind: 'video', concurrency: 1, items: [{ prompt: 'A' }, { prompt: 'B' }] });
+    service.stop();
+    await service.pump(batch.id); service.stop();
+    await service.pump(batch.id); service.stop();
+    let current = service.get(batch.id);
+    assert.equal(submissions, 1);
+    assert.equal(current.running, 1);
+    assert.equal(current.queued, 1);
+    assert.equal(current.needs_review, 0);
+    db.prepare("UPDATE video_generations SET submission_status='accepted' WHERE id=?").run(current.items[0].video_id);
+    await service.pump(batch.id); service.stop();
+    assert.equal(submissions, 1);
+    db.prepare("UPDATE video_generations SET status='completed',generation_status='completed',local_path='batch/a.mp4' WHERE id=?").run(current.items[0].video_id);
+    await service.pump(batch.id); service.stop();
+    current = service.get(batch.id);
+    assert.equal(submissions, 2);
+    assert.equal(current.completed, 1);
+    assert.equal(current.running, 1);
+  });
+
+  it('resume recovers a late accepted receipt without changing attempt or generating again', async () => {
+    let submissions = 0;
+    service = createMediaBatchService(db, log, { dispatchVideo: request => {
+      submissions += 1;
+      return insertVideo(db, request, { status: 'failed', generation_status: 'ambiguous', submission_status: 'ambiguous' });
+    } });
+    const batch = service.create({ idempotency_key: 'late-receipt-resume', kind: 'video', concurrency: 1, items: [{ prompt: 'A' }] });
+    service.stop();
+    await service.pump(batch.id); service.stop();
+    await service.pump(batch.id); service.stop();
+    const item = service.get(batch.id).items[0];
+    assert.equal(item.status, 'needs_review');
+    service.resume(batch.id); service.stop();
+    assert.equal(service.get(batch.id).items[0].status, 'needs_review');
+    db.prepare("UPDATE video_generations SET status='completed',generation_status='completed',submission_status='accepted',local_path='batch/late.mp4' WHERE id=?").run(item.video_id);
+    service.resume(batch.id); service.stop();
+    await service.pump(batch.id); service.stop();
+    const recovered = service.get(batch.id).items[0];
+    assert.equal(recovered.status, 'completed');
+    assert.equal(recovered.attempt, item.attempt);
+    assert.equal(recovered.video_id, item.video_id);
+    assert.equal(submissions, 1);
+  });
+
+  it('preserves ambiguous outcomes while allowing an explicit new attempt', async () => {
     service = createMediaBatchService(db, log, {
       dispatchVideo: (request) => {
         if (request.prompt === '完成') return insertVideo(db, request, { status: 'completed', generation_status: 'completed', submission_status: 'accepted', local_path: 'batch/done.mp4' });
@@ -155,7 +205,13 @@ describe('durable media batch queue', () => {
     assert.equal(current.needs_review, 1);
     assert.equal(current.status, 'needs_review');
     const ambiguous = current.items.find((item) => item.status === 'needs_review');
-    assert.throws(() => service.retryItem(batch.id, ambiguous.id), { code: 'MEDIA_BATCH_ITEM_AMBIGUOUS' });
+    const retried = service.retryItem(batch.id, ambiguous.id).items.find(item => item.id === ambiguous.id);
+    service.stop();
+    assert.equal(retried.status, 'queued');
+    assert.equal(retried.video_id, null);
+    assert.equal(retried.previous_attempts[0].video_id, ambiguous.video_id);
+    assert.equal(retried.previous_attempts[0].status, 'needs_review');
+    assert.equal(db.prepare('SELECT submission_status FROM video_generations WHERE id=?').get(ambiguous.video_id).submission_status, 'ambiguous');
   });
 
   it('keeps polling a pending provider task through async_tasks', async () => {
@@ -216,10 +272,74 @@ describe('durable media batch queue', () => {
     assert.equal(service.get(batch.id).status,'paused');assert.equal(service.get(batch.id).queued,1);
     assert.equal(db.prepare('SELECT COUNT(*) AS n FROM image_generations').get().n,1);
   });
-  it('rejects retry when the stored receipt does not authorize safe retry', () => {
+  it('allows explicit retry regardless of historical retryable classification', () => {
     service=createMediaBatchService(db,log,{});const batch=service.create({kind:'image',items:[{prompt:'A'}]});service.stop();
     const item=batch.items[0];db.prepare("UPDATE media_batch_items SET status='failed',retryable=0 WHERE id=?").run(item.id);
-    assert.throws(()=>service.retryItem(batch.id,item.id),{code:'MEDIA_BATCH_ITEM_NOT_RETRYABLE'});
+    assert.equal(service.retryItem(batch.id,item.id).items[0].status, 'queued');
+    service.stop();
   });
 
+  for (const outcome of ['success', 'failure']) it(`ignores late ${outcome} after an explicit retry while preserving generations`, async () => {
+    let release;
+    let dispatches = 0;
+    service = createMediaBatchService(db, log, { dispatchImage(request) {
+      dispatches++;
+      if (dispatches === 1) return new Promise((resolve, reject) => {
+        release = () => outcome === 'success' ? resolve(insertImage(db, request)) : reject(new Error('old failure'));
+      });
+      return insertImage(db, request, 'completed', { local_path: 'current.png' });
+    }});
+    const batch = service.create({ kind: 'image', concurrency: 1, items: [{ prompt: 'A' }, { prompt: 'B' }] });
+    service.stop();
+    const oldPump = service.pump(batch.id);
+    await new Promise(resolve => setImmediate(resolve));
+    service.retryItem(batch.id, batch.items[0].id); service.stop();
+    await service.pump(batch.id); service.stop();
+    const current = service.get(batch.id).items[0];
+    assert.equal(current.attempt, 2);
+    release(); await oldPump; service.stop();
+    assert.equal(dispatches, 2, 'superseded pump cannot claim more work');
+    const after = service.get(batch.id).items[0];
+    assert.equal(after.image_id, current.image_id);
+    assert.equal(after.status, 'processing');
+    assert.equal(after.error_message, null);
+    assert.equal(after.previous_attempts[0].attempt, 1);
+    if (outcome === 'success') {
+      assert.ok(after.previous_attempts[0].image_id);
+      assert.notEqual(after.previous_attempts[0].image_id, after.image_id);
+      assert.ok(after.previous_attempts[0].late_receipt_at);
+    }
+    assert.equal(db.prepare('SELECT COUNT(*) AS n FROM image_generations').get().n, outcome === 'success' ? 2 : 1);
+  });
+
+  it('archives all statuses and rolls back the retry if history persistence fails', () => {
+    service = createMediaBatchService(db, log, {});
+    const batch = service.create({ kind: 'image', items: [{ prompt: 'A' }] }); service.stop();
+    for (const status of ['queued','submitting','processing','completed','failed','needs_review','paused']) {
+      db.prepare('UPDATE media_batch_items SET status=? WHERE id=?').run(status, batch.items[0].id);
+      const item = service.retryItem(batch.id,batch.items[0].id).items[0]; service.stop();
+      assert.equal(item.status, 'queued');
+      assert.equal(item.previous_attempts.at(-1).status, status);
+    }
+    db.exec("CREATE TRIGGER fail_history BEFORE INSERT ON media_batch_attempt_history BEGIN SELECT RAISE(ABORT,'history unavailable'); END");
+    db.prepare("UPDATE media_batch_items SET status='completed' WHERE id=?").run(batch.items[0].id);
+    assert.throws(() => service.retryItem(batch.id,batch.items[0].id), /history unavailable/);
+    assert.equal(service.get(batch.id).items[0].status, 'completed');
+  });
+
+  it('independent review: duplicate retry delivery should not launch two replacement generations', async()=>{
+    let dispatches=0;
+    service=createMediaBatchService(db,log,{dispatchImage(request){dispatches++;return insertImage(db,request);}});
+    const batch=service.create({kind:'image',items:[{prompt:'A'}]});service.stop();
+    await service.pump(batch.id);service.stop();
+    service.retryItem(batch.id,batch.items[0].id,{request_key:'retry-click-1',expected_attempt:1});service.stop();
+    await service.pump(batch.id);service.stop();
+    service.retryItem(batch.id,batch.items[0].id,{request_key:'retry-click-1',expected_attempt:1});service.stop();
+    await service.pump(batch.id);service.stop();
+
+    assert.equal(dispatches,2,'same logical retry delivery should not start attempt 3');
+    service.retryItem(batch.id,batch.items[0].id,{request_key:'deliberate-retry-2',expected_attempt:2});service.stop();
+    await service.pump(batch.id);service.stop();
+    assert.equal(dispatches,3,'fresh deliberate retry is allowed');
+  });
 });

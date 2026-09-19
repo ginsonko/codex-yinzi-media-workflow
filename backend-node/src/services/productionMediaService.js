@@ -2467,6 +2467,7 @@ function createProductionMediaService(db, cfg, log, injected = {}) {
       let generation;
       try { generation = action.generation_id ? await adapters.getImage(action.generation_id) : null; }
       catch (error) { return { kind: 'active', action, source, target, pollError: error }; }
+      if (repo.getAction(db,action.id)?.result?.retry_start_requested_at) return {kind:'superseded',action,source,target};
       if (!generation || ['pending', 'processing'].includes(generation.status)) {
         return { kind: 'active', action, generation, source, target, superseded: actionSourceChanged };
       }
@@ -4494,6 +4495,7 @@ function createProductionMediaService(db, cfg, log, injected = {}) {
             dispatch_receipt: persistedDispatchReceipt,
           },
         });
+        if (action.result?.retry_start_requested_at) return {state:'progressed',reason:'retry_pending',action};
         repo.updateRun(db, run.id, { status: 'waiting_provider', waiting_reason: 'video_generation' });
         return { state: 'waiting_provider', action, shot };
       }
@@ -4509,6 +4511,7 @@ function createProductionMediaService(db, cfg, log, injected = {}) {
       if (['reserved', 'submitted', 'waiting'].includes(action.status)) {
         const generation = action.generation_id ? await adapters.getVideo(action.generation_id) : null;
         action = repo.getAction(db, action.id) || action;
+        if (action.result?.retry_start_requested_at) return {state:'progressed',reason:'retry_pending',action};
         if (actionIsDetachedFromSequence(action, shot)) {
           return settleDetachedVideoAction(action, generation, shot);
         }
@@ -4565,6 +4568,7 @@ function createProductionMediaService(db, cfg, log, injected = {}) {
         const completionVersion = Number(completionRun.version);
         const bundleState = await ensureReferenceBundleForShot(completionRun, shot);
         action = repo.getAction(db, action.id) || action;
+        if (action.result?.retry_start_requested_at) return {state:'progressed',reason:'retry_pending',action};
         if (actionIsDetachedFromSequence(action, shot)) {
           return settleDetachedVideoAction(action, generation, shot);
         }
@@ -4647,6 +4651,7 @@ function createProductionMediaService(db, cfg, log, injected = {}) {
           expected_aspect_ratio: normalizeProductionAspectRatio(afterBundleRun.policy?.aspect_ratio),
         });
         action = repo.getAction(db, action.id) || action;
+        if (action.result?.retry_start_requested_at) return {state:'progressed',reason:'retry_pending',action};
         if (actionIsDetachedFromSequence(action, shot)) {
           return settleDetachedVideoAction(action, generation, shot, receipt);
         }
@@ -4718,6 +4723,7 @@ function createProductionMediaService(db, cfg, log, injected = {}) {
           }
         }
         action = repo.getAction(db, action.id) || action;
+        if (action.result?.retry_start_requested_at) return {state:'progressed',reason:'retry_pending',action};
         if (actionIsDetachedFromSequence(action, shot)) {
           return settleDetachedVideoAction(action, generation, shot, receipt);
         }

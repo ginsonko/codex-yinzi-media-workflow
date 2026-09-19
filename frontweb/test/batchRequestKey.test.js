@@ -10,8 +10,8 @@ test('identical batch forms share one short-lived request key across tabs', () =
   assert.notEqual(batchRequestKey(first, 240000), batchRequestKey(first, 360001))
 })
 
-test('ambiguous items require reconciliation and never expose ordinary retry', () => {
+test('ambiguous items retain their label and expose explicit retry', () => {
   assert.equal(batchItemCanRetry({ status: 'failed' }), true)
-  assert.equal(batchItemCanRetry({ status: 'needs_review' }), false)
+  assert.equal(batchItemCanRetry({ status: 'needs_review' }), true)
   assert.equal(batchItemNeedsReview({ error_code: 'UPSTREAM_AMBIGUOUS' }), true)
 })

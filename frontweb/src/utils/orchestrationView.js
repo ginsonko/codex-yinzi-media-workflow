@@ -85,7 +85,7 @@ export function providerFailureGuidance(node, receipt) {
         '保留当前任务、已完成的素材和回执，修复后从原步骤继续',
       ],
       action: 'open_ai_config',
-      direct_retry_allowed: false,
+      direct_retry_allowed: true,
     }
   }
 
@@ -103,26 +103,26 @@ export function providerFailureGuidance(node, receipt) {
   if (retryable === false) {
     return {
       kind: 'not_retryable',
-      title: '当前回执标记为不可直接重试',
-      summary: '原地重试没有明确收益；请查看技术信息、编辑节点或跳过后继续其它工作。',
-      steps: ['查看原始错误代码和尝试范围', '必要时编辑节点或修复外部配置，再建立新的授权任务'],
+      title: '可以重新尝试当前步骤',
+      summary: '旧回执的重试建议会保留。你可以修正参数，也可以直接准备新一次尝试。',
+      steps: ['查看原始错误代码和尝试范围', '必要时调整参数，然后在原任务中重试'],
       action: null,
-      direct_retry_allowed: false,
+      direct_retry_allowed: true,
     }
   }
 
   return {
     kind: 'manual_review',
-    title: '是否重试需要人工判断',
-    summary: '需要人工判断：系统没有足够证据安全地自动重试；原始错误仍保留，你可以查看、编辑、跳过或人工接管。',
-    steps: ['先查看技术信息和原始回执', '确认不会重复提交后，再由人工决定后续动作'],
+    title: '这次请求的结果尚未确认',
+    summary: '可以继续查询原请求，也可以准备新一次尝试。原请求与费用记录会保留。',
+    steps: ['先查看技术信息和原始回执', '需要重新执行时，点击“准备重试”继续原任务'],
     action: null,
-    direct_retry_allowed: false,
+    direct_retry_allowed: true,
   }
 }
 
 export function canDirectlyRetryNode(node, receipt) {
-  return Boolean(providerFailureGuidance(node, receipt)?.direct_retry_allowed)
+  return Boolean(node && node.active !== false && node.status)
 }
 
 export function nodeNextActions(node, receipt) {

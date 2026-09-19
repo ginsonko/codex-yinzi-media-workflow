@@ -26,7 +26,7 @@ export function batchRequestKey(payload, timestamp = Date.now()) {
 }
 
 export function batchItemCanRetry(item = {}) {
-  return item.status === 'failed'
+  return Boolean(item.status)
 }
 
 export function batchItemNeedsReview(item = {}) {

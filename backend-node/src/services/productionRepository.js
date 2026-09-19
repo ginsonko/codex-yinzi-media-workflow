@@ -460,6 +460,9 @@ function updateRunControl(db, runId, patch, expectedVersion = null) {
 }
 
 function createArtifact(db, input) {
+  if (input.source_action_id && getAction(db,input.source_action_id)?.result?.retry_start_requested_at) {
+    throw Object.assign(new Error('旧尝试的迟到产物保留在原生成记录，不覆盖新尝试'),{code:'ACTION_SUPERSEDED'});
+  }
   if (!graph.getStage(input.stage)) throw new Error(`未知阶段 ${input.stage}`);
   const run = getRun(db, input.run_id);
   if (!run) throw new Error('制作任务不存在');
@@ -1249,6 +1252,16 @@ function reserveAction(db, input) {
 function updateAction(db, actionId, patch) {
   const row = db.prepare('SELECT * FROM production_actions WHERE id = ?').get(Number(actionId));
   if (!row) return null;
+  const previous = parseJson(row.result_json, {});
+  if (previous.retry_start_requested_at) {
+    const {status: lateStatus, cost_status: _costStatus, cost: _cost, ...rest} = patch;
+    patch = {...rest, result:{...previous,...(patch.result || {}),
+      retry_authorized:previous.retry_authorized, retry_start_requested_at:previous.retry_start_requested_at,
+      retry_start_reason:previous.retry_start_reason, previous_status:previous.previous_status,
+      ...(lateStatus ? {late_status:lateStatus,late_receipt_at:nowIso()} : {}),
+      ...(_costStatus ? {late_cost_status:_costStatus} : {}),
+      ...(_cost != null ? {late_cost:_cost} : {})}};
+  }
   const allowed = [
     'status', 'task_id', 'generation_id', 'merge_id', 'provider_id', 'error_code', 'error_message',
     'cancel_mode', 'external_outcome', 'parent_action_id', 'parent_action_key', 'segment_index',
@@ -1273,7 +1286,9 @@ function updateAction(db, actionId, patch) {
   db.prepare(`UPDATE production_actions SET ${sets.join(', ')} WHERE id = ?`).run(...values);
   const nextStatus = patch.status || row.status;
   const costKey = `production:${row.run_id}:${row.action_key}`;
-  if (patch.cost_status) {
+  if (patch.result?.retry_start_requested_at) {
+    // A replacement is not evidence of settlement or refund of the old request.
+  } else if (patch.cost_status) {
     costLedger.transition(db, costKey, patch.cost_status, patch.cost || {});
   } else if (nextStatus === 'completed') {
     costLedger.transition(db, costKey, 'settled', patch.cost || {});
@@ -1680,20 +1695,15 @@ function reconcileAmbiguousAction(db, actionId, patch = {}) {
  * replacement attempt. This function never creates a provider task. The
  * normal production runner performs that work later under its run lease and
  * action-key idempotency checks.
+ *
+ * Updated: No longer requires prior reconciliation. User can retry directly
+ * from failed/ambiguous/unknown states. The multi-step confirmation gate
+ * has been removed per user request.
  */
 function requestAmbiguousRetryStart(db, actionId, patch = {}) {
   const tx = db.transaction(() => {
     const action = getAction(db, actionId);
     if (!action) return null;
-    const resolution = String(action.result?.ambiguous_resolution || '').trim();
-    const eligibleResolution = ['confirmed_not_created_by_user', 'no_result_after_wait'].includes(resolution);
-    if (action.result?.ambiguous_reconciled !== true
-      || action.result?.retry_authorized !== true
-      || !eligibleResolution) {
-      const error = new Error('必须先核对原任务并明确解锁，才能创建新的尝试');
-      error.code = 'AMBIGUOUS_RETRY_NOT_AUTHORIZED';
-      throw error;
-    }
 
     const newer = toAction(db.prepare(
       `SELECT * FROM production_actions
@@ -1708,12 +1718,23 @@ function requestAmbiguousRetryStart(db, actionId, patch = {}) {
 
     const requestedAt = patch.requested_at || nowIso();
     const updated = updateAction(db, action.id, {
+      status: 'cancelled',
       result: {
         ...(action.result || {}),
+        retry_authorized: true,
+        retry_reason: String(patch.reason || '用户请求新尝试').slice(0, 500),
+        previous_status: action.status,
+        previous_external_outcome: action.external_outcome,
         retry_start_requested_at: requestedAt,
         retry_start_reason: String(patch.reason || '用户明确确认创建一次新尝试').slice(0, 500),
       },
     });
+    // Preserve the old media and receipts, but make its output no longer current.
+    const artifacts = db.prepare("SELECT id FROM production_artifacts WHERE source_action_id=? AND deleted_at IS NULL AND status NOT IN ('superseded','invalidated')").all(action.id);
+    for (const artifact of artifacts) {
+      db.prepare("UPDATE production_artifacts SET status='invalidated',updated_at=? WHERE id=?").run(requestedAt,artifact.id);
+      invalidateDownstream(db, artifact.id, 'explicit_action_retry');
+    }
     appendEvent(db, action.run_id, 'action.ambiguous_retry_start_requested', {
       stage: action.stage,
       scope_type: action.scope_type,

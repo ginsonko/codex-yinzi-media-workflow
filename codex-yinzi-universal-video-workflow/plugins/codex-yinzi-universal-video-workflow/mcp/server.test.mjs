@@ -132,6 +132,12 @@ before(async () => {
       return json(res, 201, { success: true, data: state.videoCreate })
     }
     if (req.method === 'PATCH' && /\/nodes\/(image|video)$/.test(url.pathname)) {
+      if (state.retryDuringLink && body.output_refs?.length) {
+        state.retryDuringLink = false
+        state.attempt = 2
+        state.reservedHash = 'new-current-request'
+        return json(res, 200, { success:true, data: { ignored:true, reason:'superseded_attempt', node:currentNode() } })
+      }
       state.patches.push(body)
       return json(res, 200, { success: true, data: { node: { ...currentNode(), ...body } } })
     }
@@ -185,6 +191,7 @@ function currentNode() {
   const last = state.patches.at(-1) || {}
   return {
     id: 'node-1',
+    attempt: state.attempt || 1,
     node_key: state.nodeKey || 'image',
     request_hash: state.reservedHash,
     progress: last.progress || (state.reservedHash ? { submission_state: 'submitting' } : {}),
@@ -550,6 +557,34 @@ test('ambiguous create result remains uncertain and is not automatically resubmi
   } finally { client.close() }
 })
 
+test('historical image and video reconciliation cannot complete a newer attempt', async () => {
+  for (const kind of ['image', 'video']) {
+    resetState({ nodeKey: kind, attempt: 2, reservedHash: 'new-request',
+      generation: { id: 41, status: 'completed', local_path: 'old.png' },
+      videoGeneration: { id: 51, status: 'completed', generation_status: 'completed', local_path: 'old.mp4', prompt_contract: { orchestration_request_hash: 'old-request' } } });
+    state.patches.push({ output_refs: [{ type: `${kind}_generation`, id: '999' }, { type: 'async_task', id: 'task-41' }] });
+    const client = makeClient();
+    try {
+      const response = await client.call(`reconcile_${kind}`, { session_id: 's1', node_key: kind, generation_id: kind === 'image' ? 41 : 51 });
+      assert.equal(response.data.outcome, 'historical_attempt');
+      assert.equal(state.actions.length, 0);
+      assert.equal(state.patches.length, 1);
+    } finally { client.close() }
+  }
+});
+
+test('current reconciliation carries attempt and hash through terminal callbacks', async () => {
+  resetState({ attempt: 3, reservedHash: 'current-request', generation: { id: 41, status: 'completed', local_path: 'current.png' } });
+  state.patches.push({ output_refs: [{ type: 'image_generation', id: '41' }] });
+  const client = makeClient();
+  try {
+    const result = await client.call('reconcile_image', { session_id: 's1', node_key: 'image' });
+    assert.equal(result.data.outcome, 'succeeded');
+    assert.equal(state.actions.at(-1).body.expected_attempt, 3);
+    assert.equal(state.actions.at(-1).body.request_hash, 'current-request');
+  } finally { client.close() }
+});
+
 test('reconciliation preserves unresolved, pending, succeeded, and failed truth', async () => {
   resetState()
   let client = makeClient()
@@ -603,7 +638,7 @@ test('image transport failures preserve the original request and can recover a l
       assert.equal(failure.original_code, 'IMAGE_PROVIDER_RESULT_UNCERTAIN')
       assert.equal(failure.message, message)
       assert.match(failure.progress.message, /保留原请求/)
-      assert.deepEqual(failure.next_actions, ['reconcile_image', 'inspect_provider_task'])
+      assert.deepEqual(failure.next_actions, ['reconcile_image', 'retry', 'inspect_provider_task'])
       const duplicate = await client.call('generate_image_once', imageArgs())
       assert.equal(duplicate.data.submitted, false)
       assert.equal(state.reservedHash, originalHash)
@@ -1080,4 +1115,17 @@ test('activity tool requests compact receipts and handles old and new runtime re
     assert.equal(replay.data.activity.message,'最新状态')
     assert.equal(state.videoSubmissions,0)
   } finally { client.close() }
+})
+
+test('independent review: retry racing with recovered linkage must stop old reconciliation', async () => {
+ resetState({ nodeKey:'video', attempt:1, reservedHash:'old-request', retryDuringLink:true,
+   videoGeneration:{id:51, task_id:'task-51', provider_task_id:'provider-51', status:'completed',generation_status:'completed',download_status:'completed',submission_status:'accepted',local_path:'media/videos/51.mp4',prompt_contract:{orchestration_request_hash:'old-request'}}
+ })
+ const client=makeClient()
+ try {
+   const response=await client.call('reconcile_video',{session_id:'s1',node_key:'video',generation_id:51,task_id:'task-51'})
+   assert.equal(response.data.outcome,'historical_attempt')
+   assert.equal(response.data.ignored,true)
+   assert.equal(state.actions.length,0,'old generation should not complete newly retried node')
+ } finally {client.close()}
 })

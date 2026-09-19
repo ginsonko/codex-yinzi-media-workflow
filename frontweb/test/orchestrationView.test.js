@@ -9,7 +9,7 @@ test('orchestration view never invents provider progress', () => {
 
 test('orchestration view keeps unknown modules actionable', () => {
   assert.match(moduleAvailabilityLabel({ module_contract_status: 'unknown' }), /允许人工处理/)
-  assert.deepEqual(nodeNextActions({ status: 'failed' }, { retryable: 'unknown', next_actions: [] }), ['skip'])
+  assert.deepEqual(nodeNextActions({ status: 'failed' }, { retryable: 'unknown', next_actions: [] }), ['retry', 'skip'])
   assert.equal(statusLabel('waiting_confirmation', true), '等待确认')
 })
 
@@ -17,11 +17,11 @@ test('retryability never treats the string false as truthy', () => {
   assert.equal(normalizeRetryability({ retryable: 'true' }), true)
   assert.equal(normalizeRetryability({ retryable: 'false' }), false)
   assert.equal(normalizeRetryability({ retryable: 'unexpected' }), 'unknown')
-  assert.equal(canDirectlyRetryNode({ status: 'failed' }, { retryable: 'false' }), false)
+  assert.equal(canDirectlyRetryNode({ status: 'failed' }, { retryable: 'false' }), true)
   assert.equal(canDirectlyRetryNode({ status: 'failed' }, { retryable: 'true' }), true)
 })
 
-test('route contract failures explain configuration repair and block direct retry', () => {
+test('route contract failures explain configuration repair and retain explicit retry', () => {
   const receipt = {
     retryable: false,
     normalized_category: 'provider_route_contract_missing',
@@ -30,9 +30,9 @@ test('route contract failures explain configuration repair and block direct retr
   const guidance = providerFailureGuidance({ status: 'failed' }, receipt)
   assert.equal(guidance.kind, 'configuration_required')
   assert.equal(guidance.action, 'open_ai_config')
-  assert.equal(guidance.direct_retry_allowed, false)
+  assert.equal(guidance.direct_retry_allowed, true)
   assert.match(guidance.summary, /沿原任务继续/)
-  assert.deepEqual(nodeNextActions({ status: 'failed' }, receipt), ['skip'])
+  assert.deepEqual(nodeNextActions({ status: 'failed' }, receipt), ['retry', 'skip'])
 })
 
 test('image configuration and input repair do not turn into video-key discovery gates', () => {
@@ -47,8 +47,8 @@ test('image configuration and input repair do not turn into video-key discovery 
 test('unknown failures keep manual recovery without unsafe automatic retry', () => {
   const guidance = providerFailureGuidance({ status: 'partial' }, { original_code: 'future_error' })
   assert.equal(guidance.kind, 'manual_review')
-  assert.equal(guidance.direct_retry_allowed, false)
-  assert.match(guidance.summary, /人工判断/)
+  assert.equal(guidance.direct_retry_allowed, true)
+  assert.match(guidance.summary, /准备新一次尝试/)
 })
 
 test('successful or running nodes do not expose failure guidance', () => {
@@ -68,3 +68,10 @@ test('orchestration view treats an explicit zero budget as a no-spend boundary',
   assert.equal(formatBudgetTruth({ max_cost_usd: 12 }), '预算上限 12.00 USD')
   assert.match(formatBudgetTruth({}), /未设置费用上限/)
 })
+
+ test('explicit retry remains available for every active node state', () => {
+ for (const status of ['pending','ready','running','succeeded','failed','partial','skipped','cancelled','future_state']) {
+   assert.equal(canDirectlyRetryNode({status}, {retryable:'unknown'}), true)
+ }
+ assert.equal(canDirectlyRetryNode({status:'failed',active:false}), false)
+ })
