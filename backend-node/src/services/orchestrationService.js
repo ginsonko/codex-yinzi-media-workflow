@@ -1,5 +1,6 @@
 const crypto = require('crypto');
 const moduleCatalog = require('./orchestrationModuleCatalog');
+const { absolutePath, workDirectory, prepareLocalArtifact } = require('./orchestrationFiles');
 
 const SESSION_STATUSES = new Set(['draft', 'waiting_confirmation', 'planned', 'running', 'paused', 'succeeded', 'partial', 'failed', 'cancelled']);
 const NODE_STATUSES = new Set(['pending', 'ready', 'running', 'waiting_confirmation', 'succeeded', 'partial', 'failed', 'skipped', 'cancelled']);
@@ -249,7 +250,9 @@ function publicArtifact(row) {
   if (!row) return null;
   return {
     id: row.id, artifact_id: row.artifact_id, session_id: row.session_id, node_id: row.node_id,
-    type: row.type, mime_type: row.mime_type, title: row.title, url: row.url, thumbnail_url: row.thumbnail_url,
+    type: row.type, mime_type: row.mime_type, title: row.title,
+    url: parse(row.validation_json, {}).local_file ? `/api/v1/orchestration-sessions/${encodeURIComponent(row.session_id)}/artifacts/${encodeURIComponent(row.artifact_id)}/file` : row.url,
+    thumbnail_url: row.thumbnail_url,
     path: row.path, bytes: row.bytes == null ? null : Number(row.bytes), width: row.width == null ? null : Number(row.width),
     height: row.height == null ? null : Number(row.height), duration_seconds: row.duration_seconds == null ? null : Number(row.duration_seconds),
     frame_rate: row.frame_rate == null ? null : Number(row.frame_rate), shot_id: row.shot_id, version: Number(row.version) || 1,
@@ -524,14 +527,14 @@ function createOrchestrationService(db) {
     const events = listEvents(id, { limit: query.event_limit || 200, after: query.after, latest: query.after == null });
     const receipts = listReceipts(id);
     const counts = nodes.reduce((acc, node) => { acc[node.status] = (acc[node.status] || 0) + 1; return acc; }, {});
-    return { schema_version: 2, open_world: true, creative_preferences: creativePreferences.get(db), planning_guidance: creativePreferences.profile(session.source_context?.quality_profile || creativePreferences.get(db).quality_profile), session, nodes, events, receipts, counts, artifacts: listArtifacts(id, query), feedback: listFeedback(id), delivery: latestDelivery(id), blender_jobs: listBlenderJobs(id) };
+    return { schema_version: 2, open_world: true, workspace: workDirectory(session.source_context), creative_preferences: creativePreferences.get(db), planning_guidance: creativePreferences.profile(session.source_context?.quality_profile || creativePreferences.get(db).quality_profile), session, nodes, events, receipts, counts, artifacts: listArtifacts(id, query), feedback: listFeedback(id), delivery: latestDelivery(id), blender_jobs: listBlenderJobs(id) };
   }
 
   function beginWork(input = {}) {
     if (!String(input.idempotency_key || '').trim() || !String(input.user_goal || '').trim()) throw makeError('WORK_INPUT_REQUIRED', '开始任务需要稳定请求键和用户目标');
     const intent = input.intent === 'analyze' ? 'analyze' : 'create';
     const stamp = nowIso();
-    const result = createSession({ ...input, source_context: { ...(input.source_context || {}), intent,
+    const result = createSession({ ...input, source_context: { ...(input.source_context || {}), ...(input.work_dir ? { work_dir: absolutePath(input.work_dir) } : {}), intent,
       activity: { stage: 'analysis', state: 'working', message: '已接收需求，正在分析素材与目标', next_action: '整理方案与验收标准', needs_user: false, updated_at: stamp },
     } });
     return { ...result, creative_preferences: creativePreferences.get(db) };
@@ -557,13 +560,22 @@ function createOrchestrationService(db) {
         session: { id: current.id, status: current.status, version: current.version, updated_at: current.updated_at },
         activity: current.source_context?.activity || null,
         analysis_report_available: current.source_context?.analysis_report != null,
+        workspace: workDirectory(current.source_context),
+        artifacts: (Array.isArray(input.artifacts) ? input.artifacts : []).map(item => listArtifacts(id).find(saved => saved.artifact_id === item.artifact_id)).filter(Boolean).map(item => ({ artifact_id: item.artifact_id, title: item.title, url: item.url, path: item.path, status: item.status })),
         event: { id: event.event.id, event_type: event.event.event_type },
         details_path: `/api/v1/orchestration-sessions/${encodeURIComponent(id)}`,
       });
       if (event.reused) return summary ? receipt(session) : getBundle(id);
+      if (input.artifacts != null && (!Array.isArray(input.artifacts) || input.artifacts.length > 20)) throw makeError('ACTIVITY_ARTIFACTS_INVALID', '一次进度回报最多登记20个成果');
+      for (const item of input.artifacts || []) {
+        if (!item || typeof item !== 'object' || Array.isArray(item) || !(typeof item.path === 'string' && item.path.trim() || typeof item.url === 'string' && item.url.trim())) {
+          throw makeError('ACTIVITY_ARTIFACT_SOURCE_REQUIRED', '每个成果需提供已写完文件的绝对path或可访问url');
+        }
+        recordArtifact(id, { ...item, ...(item.path ? prepareLocalArtifact(item) : {}), status: item.status || 'review_required', actor: input.actor || 'codex' }, { includeBundle: false });
+      }
       const activity = sanitize({ stage: input.stage || 'analysis', state, message: input.message, next_action: input.next_action || '', needs_user: Boolean(input.needs_user), updated_at: nowIso() });
       const nextStatus = state === 'completed' && session.source_context?.intent === 'analyze' ? (listNodes(id).length ? computeSessionStatus(db, id) : 'succeeded') : session.status;
-      const result = updateSession(id, { status: nextStatus, source_context: { ...session.source_context, activity, ...(report == null ? {} : { analysis_report: report }) } }, { includeBundle: !summary });
+      const result = updateSession(id, { status: nextStatus, source_context: { ...session.source_context, ...(input.work_dir ? { work_dir: absolutePath(input.work_dir) } : {}), activity, ...(report == null ? {} : { analysis_report: report }) } }, { includeBundle: !summary });
       return summary ? receipt(result) : result;
     })();
   }
@@ -1040,13 +1052,21 @@ function createOrchestrationService(db) {
       supervisor_history: supervisors.history(id).items, supervisor_reviews: supervisors.reviews(id) };
   }
 
-  function recordArtifact(sessionId, input = {}) {
+  function recordArtifact(sessionId, input = {}, { includeBundle = true } = {}) {
     const session = getSessionRow(db, sessionId);
     if (!session) throw makeError('ORCHESTRATION_NOT_FOUND', '编排任务不存在');
     const artifactId = String(input.artifact_id || input.id || '').trim();
     if (!artifactId || artifactId.length > 180) throw makeError('ARTIFACT_ID_REQUIRED', '成果必须提供不超过180个字符的稳定 artifact_id');
+    if (input.publish_local === true) input = prepareLocalArtifact(input);
     const existing = db.prepare('SELECT * FROM orchestration_artifacts WHERE session_id=? AND artifact_id=?').get(sessionId, artifactId);
-    if (existing) return { reused: true, artifact: publicArtifact(existing), bundle: getBundle(sessionId) };
+    if (existing) {
+      const savedFile = parse(existing.validation_json, {}).local_file;
+      const nextFile = input.validation?.local_file;
+      if (nextFile && (!savedFile || savedFile.canonical_path !== nextFile.canonical_path || savedFile.bytes !== nextFile.bytes || savedFile.mtime_ms !== nextFile.mtime_ms)) {
+        throw makeError('ARTIFACT_VERSION_CONFLICT', '这个成果ID已登记其他文件版本，请保留原文件并用新的artifact_id登记修改版');
+      }
+      return { reused: true, artifact: publicArtifact(existing), ...(includeBundle ? { bundle: getBundle(sessionId) } : {}) };
+    }
     const id = String(input.id || crypto.randomUUID());
     const type = String(input.type || 'unknown').trim().slice(0, 40) || 'unknown';
     const mime = input.mime_type == null ? null : String(input.mime_type).trim().slice(0, 120);
@@ -1061,7 +1081,7 @@ function createOrchestrationService(db) {
       String(input.status || 'ready').slice(0, 30), normalizedJson(input.source_refs, []), normalizedJson(input.validation, {}), stamp,
     );
     appendEvent(db, sessionId, 'artifact.registered', { artifact_id: artifactId, type, title: safe(input.title || artifactId, 240), validation: input.validation || {} }, { node_id: input.node_id || null, actor: input.actor || 'codex' });
-    return { reused: false, artifact: publicArtifact(db.prepare('SELECT * FROM orchestration_artifacts WHERE id=?').get(id)), bundle: getBundle(sessionId) };
+    return { reused: false, artifact: publicArtifact(db.prepare('SELECT * FROM orchestration_artifacts WHERE id=?').get(id)), ...(includeBundle ? { bundle: getBundle(sessionId) } : {}) };
   }
 
   function recordFeedback(sessionId, input = {}) {

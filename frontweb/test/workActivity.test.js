@@ -19,9 +19,9 @@ test('a current analysis report is recoverable context, not live backend work', 
 
 test('polling or changing the session does not turn stale agent activity into live work', () => {
   const view = describeWorkActivity(session, [], now)
-  assert.equal(view.label, '可恢复分析记录')
+  assert.equal(view.label, '等待最新进展')
   assert.equal(view.lastMessage, '准备320项')
-  assert.match(view.message, /不是后台正在计算/)
+  assert.match(view.message, /不能据此判断制作是否仍在运行/)
   assert.equal(describeWorkActivity({ status: 'running' }, [], now).stale, true)
 })
 test('a submitted provider task remains visible when the agent report is old', () => {

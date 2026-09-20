@@ -1,5 +1,5 @@
 const TERMINAL = new Set(['succeeded', 'completed', 'partial', 'failed', 'cancelled'])
-const STAGES = { analysis: '正在分析', prepare: '准备素材', create: '正在创作', edit: '正在编辑', qa: '正在验收', deliver: '正在交付' }
+const STAGES = { analysis: '正在分析', prepare: '准备素材', create: '正在创作', download: '正在下载', render: '正在渲染', preview: '已有预览，继续制作', edit: '正在编辑', qa: '正在核对内容', deliver: '正在交付' }
 
 export function selectExecutionActivity(nodes = []) {
   const active = (Array.isArray(nodes) ? nodes : []).filter(node => node.active !== false && !TERMINAL.has(node.status) && node.status !== 'skipped')
@@ -34,7 +34,7 @@ export function describeWorkActivity(session = {}, nodes = [], now = Date.now())
   if (unknown.length) return { ...base, label: '提交结果待核对', message: unknown[0].progress?.message || unknown[0].error?.message || '上游是否受理尚不明确，原请求已保留。', next: '核对原请求记录，避免重复提交' }
   if (base.needsUser) return { ...base, label: '等待补充信息' }
   if (activity.state === 'waiting') return { ...base, label: '等待中' }
-  if (stale) return { ...base, label: '可恢复分析记录', message: '这是可恢复的分析上下文，不是后台正在计算；任务记录和素材仍保留，不会因此阻止升级。', lastMessage: activity.message, next: '查看 Codex 对话继续原任务，或在任务结束后再更新' }
+  if (stale) return { ...base, label: session.source_context?.intent === 'analyze' ? '可恢复分析记录' : '等待最新进展', message: '尚未收到新的进度回报；这里保留最后一次实际状态，不能据此判断制作是否仍在运行。', lastMessage: activity.message, next: activity.next_action || '查看已有成果，或回到原 Codex 任务了解进展' }
   if (session.source_context?.intent === 'analyze' || activity.stage === 'analysis') {
     return {
       ...base,

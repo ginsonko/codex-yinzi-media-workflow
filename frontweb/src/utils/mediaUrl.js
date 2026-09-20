@@ -18,6 +18,7 @@ function staticPathFromUrl(value) {
 export function resolveMediaUrl(value, fallback = '') {
   const raw = String(value || '').trim()
   if (!raw) return fallback
+  if (/^\/api\/v1\/orchestration-sessions\/[^/]+\/artifacts\/[^/]+\/file$/.test(raw)) return raw
   if (raw.startsWith('data:') || raw.startsWith('blob:')) return raw
   if (raw.startsWith('/static/')) return raw
   if (raw.startsWith('static/')) return `/${raw}`

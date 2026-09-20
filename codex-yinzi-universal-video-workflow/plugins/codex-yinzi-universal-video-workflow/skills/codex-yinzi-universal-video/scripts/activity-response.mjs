@@ -20,6 +20,8 @@ export function activityResponse(result, detail = 'summary') {
     reused: typeof result.reused === 'boolean' ? result.reused : null,
     session: { id: session.id, status: session.status, version: session.version, updated_at: session.updated_at },
     activity: compact,
+    ...(result.workspace ? { workspace: result.workspace } : {}),
+    ...(Array.isArray(result.artifacts) && summary ? { artifacts: result.artifacts.slice(0, 20).map(item => ({ artifact_id: item.artifact_id, title: item.title, url: item.url, path: item.path, status: item.status })) } : {}),
     analysis_report_available: summary ? Boolean(result.analysis_report_available) : session.source_context?.analysis_report != null,
     event: summary && result.event ? { id: result.event.id, event_type: result.event.event_type } : null,
     details_path: `/api/v1/orchestration-sessions/${encodeURIComponent(session.id)}`,

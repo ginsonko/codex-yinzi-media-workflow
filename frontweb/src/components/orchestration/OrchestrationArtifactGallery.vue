@@ -14,6 +14,7 @@
           <div v-else class="artifact-placeholder"><strong>{{ brokenIds.has(item.id) ? '预览暂时不可用' : item.url ? item.title : item.status === 'failed' ? '生成失败' : '等待文件' }}</strong><span>{{ brokenIds.has(item.id) ? '请尝试打开文件，或检查本地素材是否仍存在' : item.url ? '文件已就绪' : item.error_message || '尚未提供文件' }}</span></div>
         </div>
         <footer><div><strong :title="item.title">{{ item.title }}</strong><span>{{ mediaTypeLabel(item.type) }} · {{ artifactReviewLabel(item) }}</span></div><a v-if="item.download_url || item.url" :href="item.download_url || item.url" target="_blank" rel="noreferrer">打开</a></footer>
+        <details v-if="item.path" class="artifact-location"><summary>文件位置</summary><code>{{ item.path }}</code></details>
         <div v-if="item.artifact_id && item.url" class="artifact-review">
           <el-tooltip content="通过内容核对"><el-button :icon="CircleCheck" circle size="small" :disabled="disabled || submitting" aria-label="通过内容核对" @click="submitReview(item, 'accepted')" /></el-tooltip>
           <el-tooltip content="需要修改"><el-button :icon="EditPen" circle size="small" :disabled="disabled || submitting" aria-label="需要修改" @click="reviewItem = item; reviewNote = ''" /></el-tooltip>
@@ -41,7 +42,7 @@ function submitReview(item, verdict) {
   if (!item?.artifact_id || props.disabled || props.submitting) return
   emit('review', { message: verdict === 'accepted' ? '已核对内容，符合要求' : reviewNote.value.trim() || '此成果需要修改', scope: { type: 'artifact', artifact_id: item.artifact_id, verdict } }, saved => { if (saved) reviewItem.value = null })
 }
-const items = computed(() => normalizeArtifacts(props.items))
+const items = computed(() => normalizeArtifacts(props.items).sort((a, b) => (Date.parse(b.created_at) || 0) - (Date.parse(a.created_at) || 0)))
 const brokenIds = ref(new Set())
 function markBroken(id) {
   const next = new Set(brokenIds.value)
@@ -51,6 +52,8 @@ function markBroken(id) {
 </script>
 
 <style scoped>
+.artifact-location { padding:0 11px 10px; font-size:12px; color:var(--text-muted); }.artifact-location summary { cursor:pointer; }.artifact-location code { display:block; margin-top:6px; overflow-wrap:anywhere; white-space:normal; }
+.artifact-media video { object-fit:contain; }
 .experience-panel{border:1px solid var(--border-color);border-radius:12px;background:var(--bg-card);padding:18px 20px}.experience-heading{display:flex;align-items:center;justify-content:space-between;gap:12px}.experience-heading small{display:block;margin-bottom:4px;color:var(--ui-accent);font-size:11px;font-weight:800;letter-spacing:.12em}.experience-heading h3{margin:0;color:var(--text-primary);font-size:15px}.artifact-count{color:var(--text-muted);font-size:12px}.artifact-note{margin:12px 0 0;color:var(--text-muted);font-size:12px;line-height:1.6}.artifact-note.error{color:var(--text-muted)}.artifact-loading{padding:28px 0;color:var(--text-muted);font-size:12px}.artifact-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px;margin-top:14px}.artifact-card{min-width:0;overflow:hidden;border:1px solid var(--border-color);border-radius:8px;background:var(--bg-card)}.artifact-media{aspect-ratio:16/10;min-height:150px;background:var(--bg-card)}.artifact-media img,.artifact-media video{display:block;width:100%;height:100%;object-fit:cover}.artifact-media audio{width:calc(100% - 18px);margin:64px 9px}.artifact-placeholder{height:100%;display:grid;place-content:center;gap:5px;padding:18px;color:var(--text-muted);text-align:center;font-size:11px}.artifact-placeholder strong{color:var(--text-primary);font-size:12px}.artifact-card footer{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:10px 11px}.artifact-card footer div{min-width:0;display:grid;gap:3px}.artifact-card footer strong{overflow:hidden;color:var(--text-primary);font-size:12px;text-overflow:ellipsis;white-space:nowrap}.artifact-card footer span{color:var(--text-muted);font-size:11px}.artifact-card footer a{flex:none;color:var(--ui-accent);font-size:11px;text-decoration:none}.artifact-card footer a:hover{text-decoration:underline}
 @media(max-width:600px){.artifact-grid{grid-template-columns:1fr 1fr}.artifact-media{min-height:120px}}
 .experience-panel{border:0;border-bottom:1px solid var(--border-color);border-radius:0;background:transparent}

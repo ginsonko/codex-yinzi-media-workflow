@@ -1,4 +1,6 @@
 const response = require('../response');
+const { artifactFile, openWorkDirectory, assertLocalFileRequest } = require('../services/orchestrationFiles');
+const path = require('path');
 const moduleCatalog = require('../services/orchestrationModuleCatalog');
 const { createOrchestrationService } = require('../services/orchestrationService');
 const { createOrchestrationBlenderService } = require('../services/orchestrationBlenderService');
@@ -32,6 +34,30 @@ module.exports = function orchestrationRoutes(db, log = console, cfg = {}, injec
   const options = () => toolOptions ||= createMediaToolOptions({getOperation});
   const toolOptionHttp = createHttpHandlers({service:{list:q=>options().list(q),get:id=>options().get(id)},response});
   return {
+    async openDirectory(req, res) {
+      try {
+        const session = service.getBundle(req.params.id)?.session;
+        if (!session) return response.error(res, 404, 'ORCHESTRATION_NOT_FOUND', '编排任务不存在');
+        response.success(res, await openWorkDirectory(req, session.source_context, injected.launchDirectory));
+      } catch (error) { sendError(res, log, 'open work directory', error); }
+    },
+    artifactFile(req, res) {
+      try {
+        assertLocalFileRequest(req);
+        const item = service.listArtifacts(req.params.id).find(artifact => artifact.artifact_id === req.params.artifactId);
+        if (!item) return response.error(res, 404, 'ARTIFACT_NOT_FOUND', '成果不存在');
+        const file = artifactFile(item);
+        res.setHeader('X-Content-Type-Options', 'nosniff');
+        res.setHeader('Cache-Control', 'private, no-cache');
+        res.setHeader('Content-Security-Policy', "sandbox; default-src 'none'");
+        if (!/\.(mp4|webm|mov|mp3|wav|m4a|ogg|flac|png|jpe?g|webp|gif)$/i.test(file)) res.attachment(path.basename(file));
+        res.sendFile(file, error => {
+          if (!error) return;
+          if (res.headersSent) res.destroy();
+          else response.error(res, error.statusCode || 404, 'ARTIFACT_FILE_UNAVAILABLE', '无法读取成果文件');
+        });
+      } catch (error) { sendError(res, log, 'read artifact file', error); }
+    },
     listMediaToolOptions: toolOptionHttp.list,
     getMediaToolOption: toolOptionHttp.get,
     blenderService: blender,
@@ -99,11 +125,18 @@ module.exports = function orchestrationRoutes(db, log = console, cfg = {}, injec
       catch (error) { sendError(res, log, 'orchestration onboarding', error); }
     },
     beginWork(req, res) {
-      try { response.success(res, service.beginWork(req.body || {})); }
+      try {
+        if (req.body?.work_dir) assertLocalFileRequest(req);
+        response.success(res, service.beginWork(req.body || {}));
+      }
       catch (error) { sendError(res, log, 'begin media work', error); }
     },
     reportActivity(req, res) {
-      try { response.success(res, service.reportActivity(req.params.id, req.body || {})); }
+      try {
+        const input = req.body || {};
+        if (input.work_dir || (Array.isArray(input.artifacts) && input.artifacts.some(item => item?.path || item?.publish_local || item?.validation?.local_file))) assertLocalFileRequest(req);
+        response.success(res, service.reportActivity(req.params.id, input));
+      }
       catch (error) { sendError(res, log, 'report media activity', error); }
     },
     createSession(req, res) {
@@ -212,7 +245,11 @@ module.exports = function orchestrationRoutes(db, log = console, cfg = {}, injec
       catch (error) { sendError(res, log, 'orchestration artifacts list', error); }
     },
     registerArtifact(req, res) {
-      try { response.created(res, service.recordArtifact(req.params.id, req.body || {})); }
+      try {
+        const input = req.body || {};
+        if (input.publish_local || input.validation?.local_file) assertLocalFileRequest(req);
+        response.created(res, service.recordArtifact(req.params.id, input));
+      }
       catch (error) { sendError(res, log, 'orchestration artifact register', error); }
     },
     feedback(req, res) {

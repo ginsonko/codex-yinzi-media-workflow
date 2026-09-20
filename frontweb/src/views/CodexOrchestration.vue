@@ -56,7 +56,7 @@
           >
             <span class="session-status" :class="statusTone(item.status)"></span>
             <span><strong>{{ item.title || '未命名任务' }}</strong><small>{{ item.user_goal || '等待 Codex 写入目标' }}</small></span>
-            <em>{{ statusLabel(item.status) }}</em>
+            <em>{{ sessionStatusLabel(item) }}</em>
           </button>
           <div v-if="!loading && !sessions.length" class="empty-list">
             <strong>{{ sessionScope === 'archived' ? '暂无归档任务' : '暂无任务' }}</strong>
@@ -65,12 +65,13 @@
 
         <section class="workspace">
           <template v-if="bundle?.session">
+            <TaskWorkspace :workspace="bundle.workspace" :session-id="bundle.session.id" :disabled="runtimeWriteBlocked" />
             <div v-if="refreshError" class="refresh-warning" role="status">{{ refreshError }}；仍显示 {{ formatTime(lastUpdated) }} 的状态，正在尝试重新连接。</div>
             <WorkActivity v-if="bundle.session.source_context?.activity || bundle.session.source_context?.analysis_report" :session="bundle.session" :nodes="bundle.nodes || []" />
             <LocalMediaProgress v-if="bundle.session.id" :session-id="bundle.session.id" />
             <header class="session-header">
               <div>
-                <div class="status-line"><span :class="['status-pill', statusTone(bundle.session.status)]">{{ statusLabel(bundle.session.status) }}</span><span v-if="bundle.session.source_context?.archived">已归档</span><span v-if="showTechnical">计划版本 {{ bundle.session.plan_revision }}</span><span v-if="showTechnical">状态版本 {{ bundle.session.version }}</span></div>
+                <div class="status-line"><span :class="['status-pill', statusTone(bundle.session.status)]">{{ sessionStatusLabel(bundle.session) }}</span><span v-if="bundle.session.source_context?.archived">已归档</span><span v-if="showTechnical">计划版本 {{ bundle.session.plan_revision }}</span><span v-if="showTechnical">状态版本 {{ bundle.session.version }}</span></div>
                 <h2>{{ bundle.session.title }}</h2>
                 <p>{{ bundle.session.user_goal || 'Codex 尚未写入任务目标。' }}</p>
               </div>
@@ -303,6 +304,13 @@ import OrchestrationProgress from '@/components/orchestration/OrchestrationProgr
 import OrchestrationArtifactGallery from '@/components/orchestration/OrchestrationArtifactGallery.vue'
 import OrchestrationFeedback from '@/components/orchestration/OrchestrationFeedback.vue'
 import OrchestrationDelivery from '@/components/orchestration/OrchestrationDelivery.vue'
+import TaskWorkspace from '@/components/orchestration/TaskWorkspace.vue'
+import { describeWorkActivity } from '@/utils/workActivity'
+
+function sessionStatusLabel(session) {
+  return session.status === 'draft' && session.source_context?.activity
+    ? describeWorkActivity(session).label : statusLabel(session.status)
+}
 import StyleSupervisorPanel from '@/components/orchestration/StyleSupervisorPanel.vue'
 
 const route = useRoute()
@@ -469,23 +477,26 @@ function assertRuntimeReady() {
     : '当前无法确认后端身份，写操作已暂停；请先重新检查运行时。')
   return false
 }
+let bundleRead = 0
 async function loadBundle(silent = false) {
-  if (!selectedId.value) { bundle.value = null; detailError.value = null; return }
+  const readId = ++bundleRead
+  if (!selectedId.value) { bundle.value = null; detailError.value = null; detailLoading.value = false; return }
   if (!silent) detailLoading.value = true
   const target = selectedId.value
   try {
     const data = await orchestrationAPI.get(target, { include_inactive: false, event_limit: 200 })
-    if (selectedId.value !== target) return
+    if (selectedId.value !== target || readId !== bundleRead) return
     bundle.value = data
     lastUpdated.value = new Date().toISOString()
     refreshError.value = ''
     detailError.value = null
     artifacts.value = bundle.value.artifacts || []
+    artifactsError.value = ''
     delivery.value = bundle.value.delivery || {}
     if (blenderInspect.value) blenderInspect.value = blenderJobs.value.find((item) => item.id === blenderInspect.value.id) || blenderInspect.value
   }
   catch (error) {
-    if (selectedId.value !== target) return
+    if (selectedId.value !== target || readId !== bundleRead) return
     refreshError.value = error.message || '进度暂时无法刷新'
     const status = Number(error?.response?.status)
     const missing = status === 404 || /编排任务不存在|ORCHESTRATION_NOT_FOUND|not found/i.test(String(error?.message || ''))
@@ -496,23 +507,10 @@ async function loadBundle(silent = false) {
       detailError.value = { title: '暂时无法读取这个任务', message: `${error?.message || '读取失败'}。可以稍后刷新；如果 Codex 仍在工作，不要重复提交同一个付费动作。` }
     }
   }
-  finally { detailLoading.value = false }
+  finally { if (readId === bundleRead) detailLoading.value = false }
 }
 async function loadExperience(silent = true) {
-  if (!selectedId.value || detailError.value) return
-  if (!silent) artifactsLoading.value = true
-  const target = selectedId.value
-  try {
-    const data = await orchestrationAPI.artifacts(target)
-    if (selectedId.value !== target) return
-    artifacts.value = Array.isArray(data?.items) ? data.items : (Array.isArray(data) ? data : [])
-    artifactsError.value = ''
-  } catch (error) {
-    // Keep the last successful gallery; an unavailable optional endpoint is not a reason to erase evidence.
-    if (selectedId.value === target) artifactsError.value = error.message || '成果暂时无法读取'
-  } finally { artifactsLoading.value = false }
-  try { const data = await orchestrationAPI.delivery(target); if (selectedId.value === target) delivery.value = data || {} }
-  catch (_) { if (!delivery.value?.items?.length) delivery.value = {} }
+  await loadBundle(silent)
 }
 function jobTitle(job) { const node = bundle.value?.nodes?.find((item) => item.node_key === job.node_key); return node?.decision?.title || node?.decision?.note || job.node_key }
 function openBlenderDirector(job) { router.push({ name: 'director-studio', query: { session: selectedId.value, node: job.node_key } }) }
@@ -701,12 +699,12 @@ async function downloadExport() {
   const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = `codex-orchestration-${shortId(selectedId.value)}.json`; a.click(); URL.revokeObjectURL(url)
 }
 
-watch(selectedId, async () => { bundle.value = null; artifacts.value = []; delivery.value = {}; refreshError.value = ''; detailError.value = null; await loadBundle(); await loadExperience(false); feedbackSubmitted.value = false })
+watch(selectedId, async () => { bundle.value = null; artifacts.value = []; delivery.value = {}; refreshError.value = ''; detailError.value = null; await loadBundle(); feedbackSubmitted.value = false })
 let identityCheckedAt = 0
 useLiveRefresh(async () => {
-  if (Date.now() - identityCheckedAt > 10000) { await loadRuntimeIdentity(); identityCheckedAt = Date.now() }
-  await loadSessions(false)
-  await loadBundle(true)
+  const reads = [loadSessions(false), loadBundle(true)]
+  if (Date.now() - identityCheckedAt > 10000) { identityCheckedAt = Date.now(); reads.push(loadRuntimeIdentity()) }
+  await Promise.allSettled(reads)
 }, { active: () => Boolean(bundle.value && !['succeeded','partial','failed','cancelled'].includes(bundle.value.session.status)), failed: () => Boolean(refreshError.value || sessionsError.value) })
 onMounted(async () => { await loadOnboarding(); if (!selectedId.value) await loadSessions() })
 onBeforeUnmount(() => { if (timer) window.clearInterval(timer) })

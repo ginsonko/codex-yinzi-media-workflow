@@ -138,6 +138,8 @@ function setupRouter(cfg, db, log, injected = {}) {
   r.get('/orchestration-artifacts', orchestration.searchArtifacts);
   r.post('/orchestration-sessions/begin', orchestration.beginWork);
   r.post('/orchestration-sessions/:id/activity', orchestration.reportActivity);
+  r.post('/orchestration-sessions/:id/open-directory', orchestration.openDirectory);
+  r.get('/orchestration-sessions/:id/artifacts/:artifactId/file', orchestration.artifactFile);
   r.post('/orchestration-sessions', orchestration.createSession);
   r.get('/orchestration-sessions/:id', orchestration.getSession);
   r.get('/orchestration-sessions/:id/blender/jobs', orchestration.blenderJobs);

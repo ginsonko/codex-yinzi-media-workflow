@@ -1,6 +1,6 @@
 <template>
   <section class="work-activity" aria-label="当前任务进展">
-    <header><div><small>{{ finished ? '分析与记录' : '当前任务' }}</small><h3>{{ session.title }}</h3></div><span class="activity-label">{{ label }}</span></header>
+    <header><div><small>{{ finished ? (session.source_context?.intent === 'analyze' ? '分析记录' : '制作记录') : '当前任务' }}</small><h3>{{ session.title }}</h3></div><span class="activity-label">{{ label }}</span></header>
     <div v-if="inputs.length" class="input-chips" aria-label="本次参考素材"><span v-for="(item,index) in inputs" :key="index">{{ typeof item === 'string' ? item : item.name || item.filename || item.type }}</span></div>
     <p class="work-message">{{ presentation.message }}</p>
     <p v-if="presentation.notice" class="pending-receipts" role="note">{{ presentation.notice }}</p>
