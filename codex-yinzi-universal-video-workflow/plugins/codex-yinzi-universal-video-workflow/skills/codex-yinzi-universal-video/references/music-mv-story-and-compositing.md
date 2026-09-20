@@ -28,6 +28,14 @@ Inspect alpha over black, white and saturated contrasting backgrounds through mo
 
 Keep editable text, characters, props, mattes, backgrounds and effects in AE. Lyrics can be pushed, caught, hidden behind, torn or reveal a new meaning. Design physical contact and occlusion so text has a relationship with performance. Keep key lines readable and faces/decisive hands visible. Test long English lines when sharing visuals with Chinese.
 
+## Promotional keywords and scene-aware typography
+
+For a short atmospheric trailer, use confirmed story terms or user-approved phrases. Do not invent a causal claim just to manufacture suspense. In one adaptation the user replaced an inaccurate “one banana” sentence with the keywords “电话微波炉 / 时空跳跃 / 凝胶香蕉”; that correction is specific to its scene, while the reusable lesson is to verify meaning before animating copy.
+
+Treat words as part of the composition. Match the scene's light, color, empty space and depth; use restrained weight and spacing instead of default bold captions. A subtle focus reveal, a narrow light sweep, tracked movement or partial occlusion can connect lettering to the environment. Choose only the treatment that serves the shot, rather than stacking every effect. Let keywords arrive with their relevant image, settle long enough to read, and leave with the camera or transition. Keep faces, actions and important props clear. A plain subtitle slapped over the frame does not fulfill a request for integrated promotional typography.
+
+Review at normal playback speed and at the intended phone viewing size. Check readability during motion, flicker/ghosting at dissolves, and consistency with existing successful titles. A contact sheet cannot validate a moving title's pacing. Keep the earlier render and change only the requested transition/text layer when the imagery and soundtrack are already approved.
+
 ## Finish
 
 Preserve chosen audio and use original PCM cuts when practical. Encoders may introduce delay/timestamp effects: compare decoded alignment against the reference. Correlation is useful for an unchanged track, not a universal sample-zero requirement for every codec or creative mix. Review sync at story contacts and musical transitions.

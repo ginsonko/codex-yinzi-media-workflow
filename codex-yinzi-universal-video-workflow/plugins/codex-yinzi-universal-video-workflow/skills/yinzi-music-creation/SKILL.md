@@ -11,11 +11,15 @@ Use the sibling [media workflow](../codex-yinzi-universal-video/SKILL.md) for ta
 
 ## Choose a usable route
 
-Before large downloads or inference, inspect GPU model, total and free VRAM, available RAM, CUDA/driver and free disk at environment/model/output paths. Read repository `docs/LOCAL-SONG-YUE2.md` for portable setup/inspect commands. Prepare only the chosen model in an isolated environment; preserve music/voice configuration and reuse verified weights.
+YuE2 and MusicGen are optional, on-demand components. Do not download their weights during ordinary workflow installation, browsing a capability list or preparing an unrelated task. When a requested task actually needs song/music generation, compare routes during planning: inspect the actual OS, GPU model, total/free VRAM, available RAM, CUDA/driver where applicable, and free disk at environment/model/output paths. Explain the useful local route and its preparation cost, then download only the selected components within the user's authorization. Do not treat a published minimum or a module being listed as evidence that this machine is ready.
+
+Read repository `docs/LOCAL-SONG-YUE2.md` for portable setup/inspect commands. Prepare only the chosen model in an isolated environment; preserve music/voice configuration and reuse verified weights. A short CPU MusicGen run may be an option when time permits, but benchmark it before promising practical throughput.
 
 YuE2 through WanGP offers INT8, CPU offload and tiled VAE. About 4.5 GB is a low-memory route to evaluate, not a guarantee for every 4.5 GB card. Prototype evidence used an 8 GB NVIDIA GPU; length, concurrent processes and runtime affect the peak. Start with a representative section and inspect the receipt. Do not silently substitute an unverified CPU YuE2 implementation. MusicGen CPU makes short instrumental music, not vocals.
 
 If hardware is unsuitable, explain the measured constraint and offer an online song service. Check current official availability, lyrics control, API access, price, output rights and data handling. Do not label a third-party Suno wrapper as its official API or assume Yinzi API has a music endpoint. A recommendation alone does not authorize uploading or payment. YuE2 and bundled MusicGen/F5 weights have noncommercial licensing; software licensing does not override model rights.
+
+Useful starting points are [Suno](https://suno.com/) with its [official help/tutorials](https://help.suno.com/), and [Udio](https://www.udio.com/) with its [official help](https://help.udio.com/). These are service and learning links, not promises of an available public API or a particular free tier. If the user prioritizes low cost, offer existing authorized music, spoken narration or a TTS rhythm placeholder as appropriate; clearly label a spoken draft and do not present it as a lower-quality version of actual sung music. Avoid configuring or downloading a local singing model for a task that only needs dialogue.
 
 ## Make the music
 

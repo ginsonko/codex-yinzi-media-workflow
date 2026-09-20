@@ -30,7 +30,7 @@ function operation(mode) {
   return {
     id:mode==='music'?'local.audio.neural-music':'local.audio.clone-voice',
     title:mode==='music'?'生成本地神经配乐':'用参考声音朗读新文本',
-    description:mode==='music'?'MusicGen 短纯音乐，独立CPU环境，权重为非商用许可。':'F5-TTS 参考条件配音，使用本人或已获授权的录音；权重为非商用许可。',
+    description:mode==='music'?'MusicGen 短纯音乐；模型按需下载，不随工作流预装。规划时先评估实际 CPU、内存、磁盘和等待时间，再推荐本地安装或在线音乐服务；权重为非商用许可。':'F5-TTS 参考条件配音，使用本人或已获授权的录音；模型按需下载，权重为非商用许可。',
     kind:'audio',component_id:'media.ffmpeg',resource_group:'neural-audio',defaults,
     source:mode==='music'?'https://huggingface.co/facebook/musicgen-small':'https://github.com/SWivid/F5-TTS',
     parameter_schema:{type:'object',properties:{
@@ -120,7 +120,7 @@ function validateSongParameters(raw={}) {
   return p;
 }
 const songOperation={
-  id:'local.audio.neural-song',title:'本地创作带歌词的歌曲',description:'WanGP YuE2 INT8 歌唱与伴奏生成，支持歌词、风格和可选 ABC 谱。运行前检查 NVIDIA 显存、内存与磁盘；约 4.5 GB 是低显存路线而非保证，权重仅供非商用。',
+  id:'local.audio.neural-song',title:'本地创作带歌词的歌曲',description:'WanGP YuE2 INT8 歌唱与伴奏生成，支持歌词、风格和可选 ABC 谱。模型按需下载，不随工作流预装；规划时先检查实际 GPU、空闲显存、内存与磁盘，再推荐安装或在线音乐服务。约 4.5 GB 为低显存路线参考，权重仅供非商用。',
   kind:'audio',phase:'audio',component_id:'media.ffmpeg',resource_group:'neural-audio',defaults:songDefaults,
   source:'https://github.com/deepbeepmeep/Wan2GP',parameter_schema:{type:'object',additionalProperties:false,properties:songProperties},
   validateParameters:validateSongParameters,

@@ -4,6 +4,14 @@ Use this recipe when the user wants music-synced MAD/MV, highlights or rhythmic 
 
 For thematic design, dynamic source collection, reference study, meme structure and artistic iteration, also read [MAD and remix creative direction](mad-remix-creative-direction.md).
 
+## Choose the sound before the effects
+
+For a trailer or character-led adaptation, first identify useful original dialogue, room tone and story sounds. Silencing a visibly speaking character without a deliberate reason weakens the scene. Audition the source soundtrack or music associated with the work when available and authorized, alongside other music fitting its mood. Do not default to the same background loop across unrelated samples or restart that loop at every visual cut. A continuous musical phrase with a chosen entrance, escalation and release often connects a short montage better.
+
+Keep dialogue, music, ambience and effects separately editable. Let speech lead across a cut (J-cut), or finish over the following image (L-cut), when it clarifies continuity. Reduce the music under key words with gentle volume envelopes; retain enough atmosphere that the world does not go silent. Place added impacts selectively, and match musical cuts at compatible phrases rather than hiding every join behind a loud whoosh. With retimed footage, check speech/lip timing separately instead of stretching all audio with the video.
+
+Inspect loudness, true peak and decoded alignment, then listen to the final mix with picture. Technical measurements cannot establish whether speech is intelligible, a music entry is emotionally appropriate or an effect is distracting. Preserve the previous approved mix when the user only requests visual changes.
+
 ## Find useful cut points
 
 Call `local_media_run` with an existing session and stable request key:
@@ -35,6 +43,8 @@ Use `shots[].start/end` with audio `onsets[].seconds` on the same source timelin
 Long input is bounded by `max_duration` and `max_frames`; split a large source into useful ranges if a limit is reached, retaining each range's source offset. The JSON remains `review_required` until the selected content and final edit have been checked.
 
 Match important actions, gestures, reveals and emotional changes to selected musical events. Keep enough lead-in and recovery around each action. Use cuts for clear accents and a fade when scene continuity benefits. Not every detected transient needs a cut or effect. Retain the original soundtrack timing when assembling the video.
+
+Keep a source interval list when selecting a small amount of good footage from several generations. Check internal cuts and face/prop changes before splicing. Avoid overlapping source intervals and repeated reveals introduced merely to fill duration; shortening the sample is preferable when the remaining footage does not support the story. For restrained promotional wording and text that belongs in the image, read [story and compositing](music-mv-story-and-compositing.md#promotional-keywords-and-scene-aware-typography).
 
 The tool prepares cut suggestions; it does not by itself produce a finished MAD or guarantee artistic quality. Verify the rendered video at normal speed, then inspect important cut points and audio/video synchronization. Record the actual successful settings, useful failure lessons and quality limits in the local experience records, linked to the job rather than copied into a new automatic receipt.
 

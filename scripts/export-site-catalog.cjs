@@ -18,7 +18,7 @@ const dirty = Boolean(execFileSync('git',['status','--porcelain','--untracked-fi
 const date = new Date().toISOString().slice(0,10);
 const old = new Map((base.items || []).map(x=>[x.id,x]));
 const editorial = {
-  'local.audio.neural-song': {group:'audio',featured:true,priority:0,demo_url:'/learn/studio/#song',usage_note:'YuE2 / WanGP 带歌词歌唱。先检查 GPU、空闲显存、内存与磁盘；需按需安装模型。约 4.5 GB 是低显存方案参考，实测原型为 8 GB NVIDIA 卡。模型权重限非商用；唱词与情绪须试听。'}
+  'local.audio.neural-song': {group:'audio',featured:true,priority:0,demo_url:'/learn/studio/#song',usage_note:'YuE2 / WanGP 带歌词歌唱。模型不随工作流预装；任务规划时先检查实际 GPU、空闲显存、内存与磁盘，再推荐按需下载。硬件或用途不合适时可选 Suno 等在线音乐服务，并先核对官方教程、许可和接入方式；TTS只作朗读或占位。约 4.5 GB 是低显存方案参考，实测原型为 8 GB NVIDIA 卡；唱词与情绪须试听。'}
 };
 const local = new Set(operations.map(o=>o.id));
 const groups = base.groups || ['video','image','audio','document','motion','assets','planning','workflow','extensions'].map((id,i)=>({id,label:['视频剪辑与后期','图像与修饰','声音与字幕','PPT 与文档','AE 与 3D 运镜','素材与整理','研究与创作','任务与恢复','扩展与维护'][i]}));
