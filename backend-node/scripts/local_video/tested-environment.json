@@ -1,0 +1,28 @@
+{
+  "python": "3.11.9",
+  "packages": {
+    "torch": "2.7.1+cu128",
+    "torchvision": "0.22.1+cu128",
+    "torchaudio": "2.7.1+cu128",
+    "transformers": "4.57.6",
+    "tokenizers": "0.22.2",
+    "numpy": "2.4.6",
+    "mmgp": "3.8.1",
+    "optimum-quanto": "0.2.7",
+    "torchao": "0.11.0",
+    "gguf": "0.17.1",
+    "av": "16.0.1",
+    "safetensors": "0.8.0",
+    "accelerate": "1.15.0",
+    "einops": "0.8.2",
+    "soundfile": "0.14.0",
+    "psutil": "7.2.2",
+    "diffusers": "0.39.0",
+    "Pillow": "12.3.0",
+    "comfy-kitchen": "0.2.35",
+    "huggingface-hub": "0.36.2",
+    "scipy": "1.17.1",
+    "tqdm": "4.70.1",
+    "peft": "0.21.0"
+  }
+}

@@ -243,6 +243,7 @@ operations.push(require('./faceImageOperations').faceDetectOperation, require('.
 operations.push(require('./videoFaceTracking').trackFacesOperation, require('./videoFaceTracking').faceMaskOperation);
 operations.push(require('./localSystemSpeech'));
 operations.push(...require('./localNeuralAudio').operations);
+operations.push(...require('./localVideoGeneration').operations);
 operations.push(require('./editablePresentation').operation);
 operations.push(require('./foregroundImageOperations').foregroundMaskOperation, require('./foregroundImageOperations').removeBackgroundOperation);
 operations.push(require('./videoForegroundOperations').videoForegroundMaskOperation, require('./videoForegroundOperations').videoForegroundReplaceOperation);

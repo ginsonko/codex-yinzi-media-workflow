@@ -1,5 +1,13 @@
 # 本地媒体组件与执行合同
 
+## 本地视频生成（按需，不自动下载）
+
+`local.video.generate` 是一个独立的本地素材路线，不是云端视频接口的隐藏替代。当前发布的 H3 Turbo8 档位只在 Windows x64 + NVIDIA 环境完成了真实集成和测量；首次准备约需 34.36 GB 模型文件，另外要给隔离 Python/CUDA 环境、缓存和恢复中间文件留出空间。安装器 `backend-node/scripts/setup-local-video.py` 默认执行只读 `--inspect`，`--prepare` 才会下载/安装，`--adopt` 只验证用户已经准备好的隔离环境。模型、源代码 revision、每个文件的大小和 SHA-256 都在 manifest 中固定；断点文件不会在哈希失败后与下一镜像错误拼接，配置合并保留未知字段。
+
+实测基准是 RTX 2070 SUPER 8 GiB、48 GiB RAM、832×480、107 帧、24 fps、Turbo8、BF16 计算：一个近景样本总计约 1,398 秒，采样约 1,155 秒，进程峰值约 28 GiB；输出仍需正常速度审片，`quality_status` 保持 `review_required`。这是“能否作为当前任务候选”的证据，不是对其它显卡、长片段、人物接触、身份连续性或电影级动作的保证。当前默认静音素材会在采样保存有限 video latent 后退出，再用独立解码器导出；失败时可用 `local.video.recover` 从像素或有限 latent 解码，不重新采样。带原生音频的路径内存压力更高，必须另外听审。
+
+与直接手动部署 H3 相比，工作流增加的是版本/哈希和许可记录、硬件与磁盘预检、隔离安装、镜像断点下载、单 GPU 锁、阶段进度、恢复清单、成果注册和任务历史；它不改变 H3 本身的模型能力，也不承诺把本地片段自动变成专业成片。恢复目录在解码期间必须由单一任务独占，解码器会在加载 latent 前再次核对哈希；GPU 画质仍需人工正常速度审片，CI 只覆盖合同与生命周期。无 CUDA、低空闲内存、严格交付期限、大批量或精确品牌/编舞任务，应优先考虑已有素材、AE/FFmpeg 或授权的云端模型；不会自动回退到付费生成。详见 [`yinzi-local-video`](../codex-yinzi-universal-video-workflow/plugins/codex-yinzi-universal-video-workflow/skills/yinzi-local-video/SKILL.md) 与 [安装集成说明](LOCAL-VIDEO-SETUP-INTEGRATION.md)。
+
 本地操作按独立执行合同计数，组件包、转场参数和研究候选分别统计。运行 `node backend-node/scripts/capability-inventory.cjs` 查看当前源码的准确数量、组件平台和源码匹配小样数量；工作台“工具目录”使用同一统计入口。组件可复用于多个操作。历史验收记录保留其当时的源码指纹，代码变化后必须重新核验才能展示当前源码实测标识。
 
 ## 用户看到的过程

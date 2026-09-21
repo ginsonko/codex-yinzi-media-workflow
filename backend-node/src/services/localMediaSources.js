@@ -19,6 +19,9 @@ function sourcesFor(request) {
   // Keep explicitly supplied source indices stable. The primary input remains
   // part of recovery identity even when it is not a clip in the composition.
   if (!sources.some(item => item.path === input)) sources.push({ role:'primary', path:input, identity:request.input_identity });
+  if(request.module_id==='local.video.recover')for(const source of require('./localVideoGeneration').recoverySources(input)){
+    if(!sources.some(item=>item.path===source.path))sources.push(source);
+  }
   const narration = request.module_id === 'local.video.edit-timeline' ? request.parameters?.narration_path : null;
   if (narration && !sources.some(item => item.path === path.resolve(narration))) sources.push({ role:'narration', path:path.resolve(narration) });
   const reference = request.module_id === 'local.audio.clone-voice' ? request.parameters?.reference_path : null;

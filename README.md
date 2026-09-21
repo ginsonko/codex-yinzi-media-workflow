@@ -18,6 +18,8 @@
 
 **带歌词的本地歌曲创作**：新增 YuE2 / WanGP 歌唱工具与 `yinzi-music-creation` Skill。先检查显卡、空闲显存、内存和磁盘，再选择本地或线上；支持歌词、风格、种子及可选 ABC 乐谱。约 4.5 GB 是低显存路线参考，实测原型使用 8 GB NVIDIA 显卡；模型权重限非商用。[安装与使用](docs/LOCAL-SONG-YUE2.md) · [官网歌曲入口](https://workflow.yinziapi.top/learn/studio/#song)。
 
+**可选的本地视频素材生成**：新增 `yinzi-local-video` Skill 与 `local.video.generate` / `local.video.recover`。当前以 Windows x64、NVIDIA、MiniMax H3 Turbo8 的真实测量为首个可执行档位：约 34.36 GB 权重，832×480、4.46 秒样片在 RTX 2070 SUPER 上约 23 分钟；这是单个近景样本，不是速度或质量保证。它适合隐私要求高、时间充裕、少量短素材和预览迭代；精确字幕、价格、节拍转场仍应使用 AE/FFmpeg。安装器默认只检查，按需在隔离目录下载并支持断点校验。[选择、安装和恢复边界](docs/LOCAL-VIDEO-SETUP-INTEGRATION.md) · [操作合同](docs/LOCAL-MEDIA-COMPONENTS.md)。
+
 图片与视频支持在已有授权和预算内明确重试：失败、处理中或结果未知都可以建立新尝试，旧任务、旧结果与费用记录仍保留；查询与断点下载不会自动提交新生成。新版还内置歌唱核词、真人动作修复、故事 MV 卡点、抠像与原生 AE 合成经验。
 
 新增教学 Skill 随安装器一并安装：学生可以发题目照片，老师可以给出知识点，制作讲解视频、步骤长图与适合该题的交互演示。先独立解题核验，再用精确模型呈现公式和运动；当前示例覆盖磁场运动、导数几何意义、诗词赏析与一道完整截图题。[制作方法与实测范围](docs/EDUCATIONAL-CREATION.md)。

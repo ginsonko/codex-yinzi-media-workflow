@@ -1,0 +1,136 @@
+{
+  "schema": 1,
+  "id": "h3-turbo8-int8",
+  "engine": "h3",
+  "source": {
+    "repository": "https://github.com/deepbeepmeep/Wan2GP",
+    "revision": "5b9bc5c1158074458ab0eb62bf18015a517d39c7",
+    "license": "WanGP Community License 2.0; see upstream LICENSE.txt"
+  },
+  "model_repository": "https://huggingface.co/DeepBeepMeep/MiniMax-H3",
+  "model_revision": "7b61c8edb895aaf25b248f064e9726ffdcc7ec46",
+  "model_license": {
+    "name": "MiniMax H3 Community License Agreement",
+    "url": "https://huggingface.co/MiniMaxAI/MiniMax-H3/blob/main/LICENSE"
+  },
+  "files": [
+    {
+      "path": "MiniMax-H3-FL2VA-pruned_rank8_int8_convrot.safetensors",
+      "size": 21057674787,
+      "sha256": "30ff400f974b11a1ef13d216c5d9f6439a9c10322a3988b0374a39672ce286f0",
+      "urls": [
+        "https://huggingface.co/DeepBeepMeep/MiniMax-H3/resolve/7b61c8edb895aaf25b248f064e9726ffdcc7ec46/MiniMax-H3-FL2VA-pruned_rank8_int8_convrot.safetensors",
+        "https://hf-mirror.com/DeepBeepMeep/MiniMax-H3/resolve/7b61c8edb895aaf25b248f064e9726ffdcc7ec46/MiniMax-H3-FL2VA-pruned_rank8_int8_convrot.safetensors"
+      ]
+    },
+    {
+      "path": "MiniMax-H3-audio_vae_fp32.safetensors",
+      "size": 605429308,
+      "sha256": "37dddc2f3e6d5d5139d823d5ea283bbf304dadcb885b1ccda818aa13dade5ea2",
+      "urls": [
+        "https://huggingface.co/DeepBeepMeep/MiniMax-H3/resolve/7b61c8edb895aaf25b248f064e9726ffdcc7ec46/MiniMax-H3-audio_vae_fp32.safetensors",
+        "https://hf-mirror.com/DeepBeepMeep/MiniMax-H3/resolve/7b61c8edb895aaf25b248f064e9726ffdcc7ec46/MiniMax-H3-audio_vae_fp32.safetensors",
+        "https://modelscope.cn/models/MiniMax/MiniMax-H3/resolve/master/Ref2VA/audio_vae/model.safetensors"
+      ]
+    },
+    {
+      "path": "Qwen3-VL-32B-Instruct/config.json",
+      "size": 1474,
+      "sha256": "d2dd0c60d01b9e195d9447c52da61c7302d28828524914c044d9c6e1b81d0427",
+      "urls": [
+        "https://huggingface.co/DeepBeepMeep/MiniMax-H3/resolve/7b61c8edb895aaf25b248f064e9726ffdcc7ec46/Qwen3-VL-32B-Instruct/config.json",
+        "https://hf-mirror.com/DeepBeepMeep/MiniMax-H3/resolve/7b61c8edb895aaf25b248f064e9726ffdcc7ec46/Qwen3-VL-32B-Instruct/config.json"
+      ]
+    },
+    {
+      "path": "Qwen3-VL-32B-Instruct/preprocessor_config.json",
+      "size": 390,
+      "sha256": "27225450ac9c6529872ee1924fcb0962ff5634834f817040f444118116f4e516",
+      "urls": [
+        "https://huggingface.co/DeepBeepMeep/MiniMax-H3/resolve/7b61c8edb895aaf25b248f064e9726ffdcc7ec46/Qwen3-VL-32B-Instruct/preprocessor_config.json",
+        "https://hf-mirror.com/DeepBeepMeep/MiniMax-H3/resolve/7b61c8edb895aaf25b248f064e9726ffdcc7ec46/Qwen3-VL-32B-Instruct/preprocessor_config.json"
+      ]
+    },
+    {
+      "path": "Qwen3-VL-32B-Instruct/qwen3vl-32B-MiniMax-H3-Q2_K.gguf",
+      "size": 8487968160,
+      "sha256": "5bbc11d0b3ef197c98df2ce8f05de8fbb8eb5917cd91c33d0b59f93759b34914",
+      "urls": [
+        "https://huggingface.co/DeepBeepMeep/MiniMax-H3/resolve/7b61c8edb895aaf25b248f064e9726ffdcc7ec46/Qwen3-VL-32B-Instruct/qwen3vl-32B-MiniMax-H3-Q2_K.gguf",
+        "https://hf-mirror.com/DeepBeepMeep/MiniMax-H3/resolve/7b61c8edb895aaf25b248f064e9726ffdcc7ec46/Qwen3-VL-32B-Instruct/qwen3vl-32B-MiniMax-H3-Q2_K.gguf"
+      ]
+    },
+    {
+      "path": "Qwen3-VL-32B-Instruct/tokenizer.json",
+      "size": 7032403,
+      "sha256": "a5d85b6dcc535e6b93115a9ef287e6132fdbf30270da6218194ba742261173c7",
+      "urls": [
+        "https://huggingface.co/DeepBeepMeep/MiniMax-H3/resolve/7b61c8edb895aaf25b248f064e9726ffdcc7ec46/Qwen3-VL-32B-Instruct/tokenizer.json",
+        "https://hf-mirror.com/DeepBeepMeep/MiniMax-H3/resolve/7b61c8edb895aaf25b248f064e9726ffdcc7ec46/Qwen3-VL-32B-Instruct/tokenizer.json",
+        "https://modelscope.cn/models/MiniMax/MiniMax-H3/resolve/master/FL2VA/tokenizer/tokenizer.json"
+      ]
+    },
+    {
+      "path": "Qwen3-VL-32B-Instruct/tokenizer_config.json",
+      "size": 11004,
+      "sha256": "0a05d1d0c5b7205132d3815dbb5c3e9912c926a00e0bbf32f67f7afaaa200542",
+      "urls": [
+        "https://huggingface.co/DeepBeepMeep/MiniMax-H3/resolve/7b61c8edb895aaf25b248f064e9726ffdcc7ec46/Qwen3-VL-32B-Instruct/tokenizer_config.json",
+        "https://hf-mirror.com/DeepBeepMeep/MiniMax-H3/resolve/7b61c8edb895aaf25b248f064e9726ffdcc7ec46/Qwen3-VL-32B-Instruct/tokenizer_config.json"
+      ]
+    },
+    {
+      "path": "Qwen3-VL-32B-Instruct/vocab.json",
+      "size": 2776833,
+      "sha256": "ca10d7e9fb3ed18575dd1e277a2579c16d108e32f27439684afa0e10b1440910",
+      "urls": [
+        "https://huggingface.co/DeepBeepMeep/MiniMax-H3/resolve/7b61c8edb895aaf25b248f064e9726ffdcc7ec46/Qwen3-VL-32B-Instruct/vocab.json",
+        "https://hf-mirror.com/DeepBeepMeep/MiniMax-H3/resolve/7b61c8edb895aaf25b248f064e9726ffdcc7ec46/Qwen3-VL-32B-Instruct/vocab.json",
+        "https://modelscope.cn/models/MiniMax/MiniMax-H3/resolve/master/FL2VA/tokenizer/vocab.json"
+      ]
+    },
+    {
+      "path": "minimax_h3/minimax_h3_video_vae_int8_convrot.safetensors",
+      "size": 2811065184,
+      "sha256": "52a2c8c73583c86e4f41cdcce3a6ad0ea562987bc0bf3d60a0cef5f5c8e60c0e",
+      "urls": [
+        "https://huggingface.co/DeepBeepMeep/MiniMax-H3/resolve/7b61c8edb895aaf25b248f064e9726ffdcc7ec46/minimax_h3/minimax_h3_video_vae_int8_convrot.safetensors",
+        "https://hf-mirror.com/DeepBeepMeep/MiniMax-H3/resolve/7b61c8edb895aaf25b248f064e9726ffdcc7ec46/minimax_h3/minimax_h3_video_vae_int8_convrot.safetensors",
+        "https://modelscope.cn/models/Comfy-Org/MiniMax-H3/resolve/28f23183b0ec49739a0c01184f04384e5470042e/vae/minimax_h3_video_vae_int8_convrot.safetensors"
+      ]
+    },
+    {
+      "path": "loras/minimax_h3_lightx2v_fl2v_turbo_8step_alpha8_v1.0_bf16.safetensors",
+      "size": 1383712504,
+      "sha256": "d9ae80a006c591633d6bee37b6db07dab4f7ac0cc23750d9b1112cfb376b6749",
+      "urls": [
+        "https://huggingface.co/DeepBeepMeep/MiniMax-H3/resolve/7b61c8edb895aaf25b248f064e9726ffdcc7ec46/loras/minimax_h3_lightx2v_fl2v_turbo_8step_alpha8_v1.0_bf16.safetensors",
+        "https://hf-mirror.com/DeepBeepMeep/MiniMax-H3/resolve/7b61c8edb895aaf25b248f064e9726ffdcc7ec46/loras/minimax_h3_lightx2v_fl2v_turbo_8step_alpha8_v1.0_bf16.safetensors"
+      ]
+    }
+  ],
+  "defaults": {
+    "frames": 107,
+    "width": 832,
+    "height": 480,
+    "fps": 24,
+    "steps": 8,
+    "flow_shift": 12,
+    "compute_dtype": "bfloat16",
+    "offload_profile": 5,
+    "budgets": {
+      "*": 2000,
+      "transformer": 1200
+    },
+    "vae_tile": 256
+  },
+  "measured_host": {
+    "gpu": "RTX 2070 SUPER",
+    "vram_gib": 8,
+    "ram_gib": 48,
+    "platform": "Windows x64",
+    "generation_seconds": 4.458333,
+    "warm_text_total_seconds": 1398.288,
+    "notes": "One near-face shot; excludes download and initial text encoding; not a quality guarantee."
+  }
+}
