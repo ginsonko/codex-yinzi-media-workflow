@@ -5,7 +5,7 @@
 ## 选择与持续使用
 
 1. `begin_media_task` / `create_session` / CLI `begin` 返回 `session.supervisor`。普通模式是 suggested；自动/挂机模式采用推荐。显式传 `supervisor: {mode:"manual",supervisor_id:"builtin-mischief",reason:"用户选择热梗鬼畜"}` 可直接绑定；`mode:"off"` 关闭。
-2. 结合目标、受众、参考、素材、音乐、时长和预算检查推荐；关键词只负责初筛，不代表模型审美判断。介绍主监督及两个备选的擅长方向、取舍和本次审片重点。用户明确方向后选择；挂机不用再次确认。简单转码/OCR等没有审美任务时可关闭，不制造步骤。
+2. 结合目标、受众、参考、素材、音乐、时长和预算检查推荐；关键词只负责初筛，不代表模型审美判断。将主监督与有帮助的备选融入[创作方向讨论](creative-clarification.md)，用具体的观感、取舍和审片重点解释。用户已明确方向或委托 AI 设计时，按该方向选择并说明理由，不再要求选择人格或增加一轮风格菜单；挂机不用再次确认。简单转码/OCR等没有审美任务时可关闭，不制造步骤。
 3. 获取 `task_supervisor {action:"get",session_id}`。使用 selection.prompt_context 和 profile 的视觉/声音规则，写出一句创作命题、镜头关系、节奏优先级与返工条件。将这些判断写入原任务计划和实际剪辑，不仅复述人设。
 4. 分别在 plan、rough_cut、final 记录审片意见。意见要对应真实文件/时间码/音乐段落/具体改法。看到画面而未听声音，应明确未听部分；无法检查作品时 outcome=not_reviewed。没有证据不得通过；仍有 major/blocking 问题不得通过。修复后用新的 request_key 记录，旧意见保留。
 5. 目录修改不改变当前任务。用户想采用新版、更换或关闭时，重新 select 并给 expected_revision 和原因；选择历史与旧审片均保留。继续任务时先读原快照，不重新随机换人格。技术 QA 仍遵循原任务要求，不能用人格意见代替严格解码、同步、真实素材检查。

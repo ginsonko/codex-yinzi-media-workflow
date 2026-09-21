@@ -4,6 +4,8 @@
 
 Always show a plan in the conversation before production steps. Startup, local discovery and minimal input inspection may happen first. Do not ask the user to move to the workbench to read or approve it.
 
+For an unresolved creative direction, use [creative clarification](creative-clarification.md) before designing the tool route or scanning a large catalog. The resulting brief supplies the plan's purpose, feel, must-keep material and assumptions. Integrate that brief into the complete plan without a separate direction-approval round. Choosing **Design it for me** delegates optional creative decisions; it does not by itself confirm an unseen execution plan or change the saved unattended setting. Conversely, an existing instruction to execute autonomously remains valid: do not add another confirmation just because a brief or mode was recorded. Reuse the existing approval basis in the table below.
+
 | Situation | Plan detail | Continue after showing it? |
 | --- | --- | --- |
 | User chose the method, tools or a sufficiently complete procedure | Short table covering that route and its result | Yes, within that instruction |
@@ -82,6 +84,8 @@ Save the visible plan in the existing orchestration `plan` object, for example:
 ```
 
 This is metadata in the existing flexible plan, not a new API schema or user form. Supply actual nodes and current `expected_revision` through `submit_plan` / CLI `plan`. Fallbacks can record module IDs, trigger observations, tradeoffs and attempt result references. Keep individual steps in existing node `decision` fields.
+
+Include the current creative brief snapshot in `plan.planning_context.creative_brief` when relevant. Keep `checkpoint.creative_brief` current during discovery and revision using the merge-and-journal procedure in the clarification guide; changing the conversation mode alone must not replace an approved plan or increment its revision.
 
 - Ordinary new proposal: send `confirm:false`, report `needs_user:true` and wait. On approval, confirm that revision through the existing operation, then start it. One approval covers the primary route and its described authorized fallbacks.
 - User-selected, previously approved or reused successful method: record that basis and send `confirm:true` under the current instruction. A stored recipe supports the decision; it does not authorize an action by itself.
