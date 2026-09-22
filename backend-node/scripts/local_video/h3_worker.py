@@ -13,6 +13,15 @@ class SamplingCompleteDecodeRequired(Exception):
     """Sampling is complete; the caller must decode in a separate process."""
 
 
+def verify_recovery_file(request, source, name):
+    expected = request.get('recovery_hashes', {}).get(name)
+    if not expected:
+        raise ValueError('Recovery hash missing for '+name)
+    actual = digest(source/name)
+    if actual != expected:
+        raise ValueError('Recovery file changed after validation: '+name)
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--request', required=True)
@@ -84,15 +93,6 @@ def main():
             audio=np.pad(audio,((0,samples-len(audio)),(0,0)))
         np.save(out/'decoded-audio.npy', audio[:samples], allow_pickle=False)
 
-    def verify_recovery_file(source, name):
-        expected = request.get('recovery_hashes', {}).get(name)
-        if not expected:
-            raise ValueError('Recovery hash missing for '+name)
-        file = source/name
-        actual = digest(file)
-        if actual != expected:
-            raise ValueError('Recovery file changed after validation: '+name)
-
     if args.phase=='text':
         emit('text_loading', '正在加载文字编码器；完成后会退出释放内存')
         encoder = _load_text_encoder(str(weights/'Qwen3-VL-32B-Instruct/qwen3vl-32B-MiniMax-H3-Q2_K.gguf'), torch.float16)
@@ -107,7 +107,7 @@ def main():
 
     if args.phase=='decode':
         source=Path(request['recover_dir'])
-        verify_recovery_file(source, 'video-latent.pt')
+        verify_recovery_file(request, source, 'video-latent.pt')
         saved=torch.load(source/'video-latent.pt',weights_only=True,map_location='cpu')
         if saved['fingerprint'] != request['fingerprint'] or saved['parameters']!=p:
             raise ValueError('Recovery latent belongs to another configuration')
@@ -122,7 +122,7 @@ def main():
         save_pixels(video)
         del video, vae, decoder, manager
         if (source/'audio-latent.pt').is_file():
-            verify_recovery_file(source, 'audio-latent.pt')
+            verify_recovery_file(request, source, 'audio-latent.pt')
             saved_audio=torch.load(source/'audio-latent.pt',weights_only=True,map_location='cpu')
             if saved_audio['fingerprint']!=request['fingerprint']:
                 raise ValueError('Audio recovery fingerprint mismatch')

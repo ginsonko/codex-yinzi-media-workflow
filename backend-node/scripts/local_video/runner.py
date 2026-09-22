@@ -212,7 +212,8 @@ def run(request):
                     payload['conditioning']=str(conditioning);atomic_json(payload_file,payload)
                     stage='sample';worker(payload_file,'sample',cfg,limits,started,work)
                     if not (work/'decoded-pixels.npy').exists():
-                        checkpoint(work,payload)
+                        saved=checkpoint(work,payload)
+                        payload['recovery_hashes']={name: entry['sha256'] for name,entry in saved['files'].items()}
                         payload['recover_dir']=str(work);atomic_json(payload_file,payload)
                         stage='decode';worker(payload_file,'decode',cfg,limits,started,work)
         checkpoint(work,payload)
