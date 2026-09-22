@@ -60,6 +60,21 @@ afterEach(async () => {
 });
 
 describe('runtime work status upgrade boundary', () => {
+  it('active research prevents an automatic update, saved finished reports do not', async () => {
+    let complete;
+    const service=require('../src/services/productResearchJobs').createResearchJobs({root:path.join(storageDir,'research'),sessionManager:{},collect:async ctx=>{
+      await new Promise(resolve=>{complete=resolve;});
+      fs.writeFileSync(ctx.outputPath,JSON.stringify({items:[],collection:{status:'empty'}}));return {collection:{status:'empty'}};
+    }});
+    const {job}=service.create({request_key:'research-work-status',query:{product:'测试',platforms:['douyin']}});
+    await new Promise(resolve=>setImmediate(resolve));
+    try {
+      const status=await request('/runtime-work-status');
+      assert.equal(status.body.data.counts.research_jobs,1);assert.equal(status.body.data.busy,true);
+    } finally {complete();await service.settle(job.id);}
+    const finished=await request('/runtime-work-status');
+    assert.equal(finished.body.data.counts.research_jobs,0);assert.equal(finished.body.data.busy,false);
+  });
   it('keeps historical analysis drafts as recoverable context and does not mark the runtime busy', async () => {
     const orchestration = createOrchestrationService(db);
     const first = orchestration.beginWork({ idempotency_key: 'analysis-draft-1', user_goal: '整理历史分析草稿', intent: 'analyze' });

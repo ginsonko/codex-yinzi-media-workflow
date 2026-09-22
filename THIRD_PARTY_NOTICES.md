@@ -21,3 +21,10 @@
 - MusicGen-small: https://huggingface.co/facebook/musicgen-small. Pretrained weights CC-BY-NC-4.0; not bundled with this repository.
 - F5-TTS: https://github.com/SWivid/F5-TTS. Source MIT, pretrained F5 weights CC-BY-NC-4.0; downloaded separately. Reference voice permissions are separate from model licensing.
 - Vocos: https://huggingface.co/charactr/vocos-mel-24khz. Model card declares MIT. Downloaded only when preparing the optional voice backend.
+# Optional Jianying draft adapter
+
+The optional isolated dependency `pyJianYingDraft==0.3.0` is provided by GuanYixuan
+and contributors under Apache-2.0: https://github.com/GuanYixuan/pyJianYingDraft.
+It is obtained only when preparing the selected local draft route. Its license
+does not license Jianying Pro, fonts, music, effects or templates; those retain
+their own terms and account entitlements. No editor or paid resource is bundled.

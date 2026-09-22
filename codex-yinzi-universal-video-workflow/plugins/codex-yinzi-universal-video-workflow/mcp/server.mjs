@@ -9,6 +9,7 @@ import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 import readline from 'node:readline'
 import { reverseTools } from './reverse-tools.mjs'
+import { researchTools, researchRequest } from './research-tools.mjs'
 import { styleSupervisorTools, styleSupervisorRequest, selectionSchema } from './style-supervisor-tools.mjs'
 import { activityResponse } from '../skills/codex-yinzi-universal-video/scripts/activity-response.mjs'
 import { readRegistry, localOrigin, verifyUi, openBrowser } from '../scripts/runtime-state.mjs'
@@ -980,6 +981,7 @@ const tools = [
   ...styleSupervisorTools,
   { name:'prompt_adapt', description:'本地分镜提示词适配：读取profiles、拆分可编辑IR或编译目标提示词；保留素材引用与约束，返回差异报告，不提交媒体生成。', inputSchema:{type:'object',properties:{action:{type:'string',enum:['profiles','parse','validate','compile']},text:{type:'string'},ir:{type:'object'},profile:{oneOf:[{type:'string'},{type:'object'}]},options:{type:'object'}}} },
   ...reverseTools,
+  ...researchTools,
   { name: 'get_workflow_preferences', description: '读取实时质量档位与持久化挂机模式。', inputSchema: { type: 'object', properties: {} } },
   { name: 'set_workflow_preferences', description: '更新本机工作流偏好。用户勾选挂机、明确说自己挂机或授权自主花费时，可设置 unattended_mode=true；可随时关闭。保留用户任务范围与预算。', inputSchema: { type: 'object', properties: { unattended_mode: { type: 'boolean' }, quality_profile: { enum: ['quality', 'balanced', 'speed'] } } } },
   { name: 'workflow_health', description: '检查本机银子视频工作流服务是否可用。', inputSchema: { type: 'object', properties: {} } },
@@ -1028,6 +1030,10 @@ tools.find(tool => tool.name === 'generate_video_once').inputSchema.properties.c
 for (const name of ['begin_media_task','create_session']) tools.find(tool=>tool.name===name).inputSchema.properties.supervisor = selectionSchema
 
 async function callTool(name, args = {}) {
+  if (name === 'product_video_research' || name === 'research_platform_connection') {
+    rejectSecrets(args)
+    return api(...researchRequest(name, args))
+  }
   if (name === 'style_supervisors' || name === 'task_supervisor') {
     rejectSecrets(args)
     return api(...styleSupervisorRequest(name,args))

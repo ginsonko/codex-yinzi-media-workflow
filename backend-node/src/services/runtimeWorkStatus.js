@@ -91,6 +91,7 @@ function countStatus(db, table, statuses) {
 
 function collectRuntimeWorkStatusOrThrow(db) {
   const counts = {};
+  counts.research_jobs = require('./productResearchJobs').activeResearchCount();
   for (const [table, statuses] of Object.entries(QUEUE_TABLES)) {
     counts[table] = countStatus(db, table, statuses);
   }
@@ -201,7 +202,8 @@ function collectRuntimeWorkStatusOrThrow(db) {
     + counts.video_generations
     + counts.asset_import_sessions
     + counts.production_actions
-    + counts.live_orchestration_nodes;
+    + counts.live_orchestration_nodes
+    + counts.research_jobs;
 
   const unknown = counts.unknown_paid_requests;
   const blocking = [];

@@ -1,0 +1,8 @@
+[
+  {"id":"generic","name":"通用","hosts":[],"search_prefix":null,"public_search_url":null,"analysis_focus":"先确认平台、语言、目标市场和样本来源，再比较同类受众与相近时段；优先使用已有适配器。"},
+  {"id":"douyin","name":"抖音","hosts":["douyin.com"],"search_prefix":null,"public_search_url":"https://www.douyin.com/search/{query}?type=video","analysis_focus":"重点观察开场吸引力、实物上身或使用效果、卖点证明、镜头节奏、评论中的购买顾虑。不能用点赞代替播放量或成交。"},
+  {"id":"xiaohongshu","name":"小红书","hosts":["xiaohongshu.com","xhslink.com"],"search_prefix":null,"public_search_url":"https://www.xiaohongshu.com/search_result?keyword={query}&type=51","analysis_focus":"重点观察真实使用场景、审美搭配、尺码与材质细节、收藏理由和搜索型问题；收藏不等于购买。"},
+  {"id":"bilibili","name":"B站","hosts":["bilibili.com","b23.tv"],"search_prefix":"bilisearch","public_search_url":"https://search.bilibili.com/all?keyword={query}","analysis_focus":"重点观察测评依据、解释深度、可信度、故事展开和评论互动；长短视频分开比较。"},
+  {"id":"tiktok","name":"TikTok","hosts":["tiktok.com"],"search_prefix":null,"public_search_url":"https://www.tiktok.com/search?q={query}","analysis_focus":"按目标市场和语言分别观察内容习惯、前三秒演示、生活场景和本地化表达；不把抖音规律直接套用到海外市场。"},
+  {"id":"youtube","name":"YouTube","hosts":["youtube.com","youtu.be"],"search_prefix":"ytsearch","public_search_url":"https://www.youtube.com/results?search_query={query}","analysis_focus":"Shorts与长视频分别观察开场、信息密度、观看动机、测评证明和行动引导；搜索排名不是销量排名。"}
+]

@@ -48,7 +48,8 @@ const MODULES = Object.freeze([
   moduleContract('session.readback', 'V1', 'deliver', 'codex', 'integrated', 'Read the authoritative session, nodes, receipts and events.', ['session_id'], ['session_bundle']),
 
   // V2 - research and creative reasoning; Codex performs research with its
-  // available tools and records evidence here. The backend never scrapes by itself.
+  // available tools and records evidence here. Explicit local.research.collect-*
+  // executors perform bounded public collection only when selected in a task.
   moduleContract('research.request', 'V2', 'research', 'codex', 'bridge', 'Define a bounded research question, sources and stop condition.', ['research_goal'], ['research_brief'], { network: true }),
   moduleContract('research.record-source', 'V2', 'research', 'codex', 'integrated', 'Persist source URL, date, metrics and a non-copying summary.', ['source_evidence'], ['source_record']),
   moduleContract('research.extract-patterns', 'V2', 'research', 'codex', 'bridge', 'Extract reusable structural patterns without treating third-party media as licensed assets.', ['source_records'], ['patterns']),

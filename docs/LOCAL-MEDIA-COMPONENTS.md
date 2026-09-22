@@ -1,5 +1,11 @@
 # 本地媒体组件与执行合同
 
+## 剪映可选工程路线
+
+`local.jianying.inspect` 只读检查当前剪映/草稿库环境；`local.jianying.draft` 生成独立可编辑工程，支持本地素材、文字/SRT、关键帧、预设引用和明文本地模板替换。它们输出 JSON 回执，`draft_ready` 明确表示工程已准备，尚待剪映预览与导出。前端显示真实工程目录和接续说明，不把工程生成称为成片验收。可选 Python 环境使用 `backend-node/scripts/setup-jianying.py` 按需隔离准备，不自动安装、降级或购买剪映。
+
+仅安装剪映不保证自动使用全部功能：应用版本、资源可用性、账号权益和界面桥接分别验证。本机 11.5 的草稿数据测试已经建立，但真实剪映导出受桌面捕获接口故障影响仍未验证。在线模板网址不是当前适配器的输入；先确认可合法取得可编辑本地模板。具体设置、模板选择、已有坑和质量标准见 [剪映 Skill](../codex-yinzi-universal-video-workflow/plugins/codex-yinzi-universal-video-workflow/skills/yinzi-jianying/SKILL.md)。
+
 ## 本地视频生成（按需，不自动下载）
 
 `local.video.generate` 是一个独立的本地素材路线，不是云端视频接口的隐藏替代。当前发布的 H3 Turbo8 档位只在 Windows x64 + NVIDIA 环境完成了真实集成和测量；首次准备约需 34.36 GB 模型文件，另外要给隔离 Python/CUDA 环境、缓存和恢复中间文件留出空间。安装器 `backend-node/scripts/setup-local-video.py` 默认执行只读 `--inspect`，`--prepare` 才会下载/安装，`--adopt` 只验证用户已经准备好的隔离环境。模型、源代码 revision、每个文件的大小和 SHA-256 都在 manifest 中固定；断点文件不会在哈希失败后与下一镜像错误拼接，配置合并保留未知字段。

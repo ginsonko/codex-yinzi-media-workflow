@@ -70,19 +70,19 @@
     "example": "查看已经做到了哪里"
   },
   "research.request": {
-    "title": "资料研究",
-    "description_zh": "明确研究问题、信息来源和停止条件。",
-    "example": "参考同类商品广告结构"
+    "title": "找同类热门视频与电商爆款参考",
+    "description_zh": "按商品、目标平台、市场和时间范围调研热门短视频；由 Agent 调用可用搜索与平台采集工具，保留数据出处和访问限制。",
+    "example": "找针织毛衣带货视频，分别记录原站热度与待核验样本"
   },
   "research.record-source": {
-    "title": "记录参考来源",
-    "description_zh": "保留网址、时间和可复核摘要。",
-    "example": "记录公开教程的关键步骤"
+    "title": "保存视频来源与热度证据",
+    "description_zh": "保留原视频链接、平台、作者、采集时间、实际指标与分析依据；缺失数据保持未知，搜索摘要不冒充原站数据。",
+    "example": "为电商参考清单保留播放与点赞的出处"
   },
   "research.extract-patterns": {
-    "title": "提炼创作规律",
-    "description_zh": "借鉴内容结构，保留素材授权边界。",
-    "example": "比较三种短视频开场"
+    "title": "拆解热门视频的开场、卖点与节奏",
+    "description_zh": "结合平台与受众，分析实际观看样本的钩子、商品证明、镜头节奏和行动引导，形成适合自己商品的创意。",
+    "example": "比较穿搭展示、实物测评和场景演示，设计三种带货短视频"
   },
   "product.extract-facts": {
     "title": "整理商品事实",

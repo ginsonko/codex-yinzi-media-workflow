@@ -98,6 +98,8 @@ function setupRouter(cfg, db, log, injected = {}) {
   r.use(require('./styleSupervisors')(db));
   r.get('/orchestration-modules', orchestration.listModules);
   r.use('/prompt-adapter', require('./promptAdapter')());
+  r.use('/research/platform-sessions', require('./researchPlatformSessions')());
+  r.use('/research/jobs', require('./researchJobs')({createSession: require('../services/orchestrationService').createOrchestrationService(db).createSession}));
   r.post('/orchestration-modules', orchestration.registerModule);
   r.post('/orchestration-modules/import', orchestration.importModules);
   r.get('/orchestration-modules/export', orchestration.exportModules);

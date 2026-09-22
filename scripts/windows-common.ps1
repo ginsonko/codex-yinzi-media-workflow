@@ -49,10 +49,10 @@ function Get-VerifiedDownload {
   $downloaded = $false
   foreach ($candidate in @($Url,$FallbackUrl) | Where-Object { $_ }) {
     if ($curl) {
-      & $curl.Source --fail --location --retry 1 --connect-timeout 20 --speed-limit 10240 --speed-time 30 --max-time 900 --output $partial $candidate
+      & $curl.Source --fail --location --retry 1 --header 'Accept: application/octet-stream' --connect-timeout 20 --speed-limit 10240 --speed-time 30 --max-time 900 --output $partial $candidate
       if ($LASTEXITCODE -eq 0) { $downloaded = $true; break }
     } else {
-      try { Invoke-WebRequest $candidate -UseBasicParsing -TimeoutSec 900 -OutFile $partial; $downloaded = $true; break }
+      try { Invoke-WebRequest $candidate -Headers @{ Accept = 'application/octet-stream' } -UseBasicParsing -TimeoutSec 900 -OutFile $partial; $downloaded = $true; break }
       catch { Write-Warning 'Download source unavailable; trying the next publisher source.' }
     }
   }

@@ -12,6 +12,8 @@
 
 本次更新：[20 位作品监督、入门引导与制作经验](docs/RELEASE-2026-09-17.md)。
 
+**商品视频研究已开放试用**：输入商品和目标平台，收集同类参考、查看有出处的可视化报告，选出重点视频，再结合自己的商品资料交给 Agent 做原创脚本、分镜和制作。支持官方扫码登录、验证后接续、部分结果保留和离线研究包；主媒体 Skill 会按需求调用，无需记工具名。[更新与试用方法](docs/RELEASE-2026-09-22-ECOMMERCE.md) · [平台与数据边界](docs/ECOMMERCE-REFERENCE-RESEARCH.md)。
+
 [作品官网](https://workflow.yinziapi.top/) · [教学样片](https://workflow.yinziapi.top/learn/) · [拍题讲解与交互实验](https://workflow.yinziapi.top/learn/table/)
 
 [配乐、声音与课件工坊](https://workflow.yinziapi.top/learn/studio/) · [诗词独立朗诵](https://workflow.yinziapi.top/poetry-recital/)。新增可按需安装的本地音乐、参考声音及原生可编辑 PPTX 工具，复用工作台任务与恢复记录；[查看安装方法和实测范围](docs/LOCAL-AUDIO-AND-SLIDES.md)。

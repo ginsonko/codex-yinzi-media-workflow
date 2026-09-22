@@ -55,6 +55,7 @@ before(async () => {
   apiServer = http.createServer(async (req, res) => {
     const url = new URL(req.url, 'http://127.0.0.1')
     const body = await readBody(req)
+    if (url.pathname.startsWith('/api/v1/research/')) return json(res,200,{success:true,data:{method:req.method,path:url.pathname,query:Object.fromEntries(url.searchParams),body}})
     if (req.method === 'POST' && url.pathname === '/api/v1/orchestration-sessions/s1/activity') {
       state.activityBody = body
       return json(res, 200, {success:true,data:state.activityResult})
@@ -260,6 +261,24 @@ test('prompt_adapt is discoverable and reaches the real local compiler without g
     assert.equal(conflict.isError,true)
     assert.equal(state.videoSubmissions,0)
     assert.equal(state.imageSubmissions,0)
+  } finally { client.close() }
+})
+
+test('durable research is discoverable over MCP and forwards selection, paging and login recovery', async () => {
+  resetState(); const client = makeClient()
+  try {
+    const listed = await client.request('tools/list')
+    for (const name of ['product_video_research','research_platform_connection']) assert.ok(listed.result.tools.some(t => t.name === name))
+    const create = await client.call('product_video_research',{action:'create',input:{request_key:'stable',query:{product:'鞋',platforms:['douyin']}}})
+    assert.equal(create.isError,false); assert.equal(create.data.body.request_key,'stable')
+    const page = await client.call('product_video_research',{action:'records',job_id:'abc',input:{offset:50,limit:50,v:2}})
+    assert.deepEqual(page.data.query,{offset:'50',limit:'50',v:'2'})
+    const update = await client.call('product_video_research',{action:'update',job_id:'abc',input:{selected_ids:[]}})
+    assert.equal(update.data.method,'PATCH'); assert.deepEqual(update.data.body.selected_ids,[])
+    const login = await client.call('research_platform_connection',{action:'check',platform:'douyin'})
+    assert.equal(login.data.path,'/api/v1/research/platform-sessions/douyin/check')
+    const missing = await client.call('product_video_research',{action:'resume'})
+    assert.equal(missing.isError,true); assert.equal(state.videoSubmissions,0)
   } finally { client.close() }
 })
 

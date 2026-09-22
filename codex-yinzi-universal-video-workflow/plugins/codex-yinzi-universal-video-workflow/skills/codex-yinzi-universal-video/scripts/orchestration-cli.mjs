@@ -3,6 +3,7 @@
 import fs from 'node:fs/promises'
 import { compactModuleIndex } from './module-index.mjs'
 import { activityResponse } from './activity-response.mjs'
+import { researchRequest } from '../../../mcp/research-tools.mjs'
 import { readRegistry, localOrigin } from '../../../scripts/runtime-state.mjs'
 
 const explicitBase = String(process.env.YINZI_WORKFLOW_URL || '').trim().replace(/\/+$/, '')
@@ -150,6 +151,14 @@ async function request(method, path, body) {
 }
 
 const pos = positional()
+if (command === 'research' || command === 'research-platform') {
+  try {
+    const tool = command === 'research' ? 'product_video_research' : 'research_platform_connection'
+    const parameters = {action: pos[0] || 'list', job_id: pos[1], platform: pos[1], input: await input()}
+    process.stdout.write(JSON.stringify(await request(...researchRequest(tool, parameters)), null, 2) + '\n')
+    process.exit(0)
+  } catch (error) { fail(JSON.stringify({code:error.code, message:error.message}), 2) }
+}
 if (command === 'ae') {
   const { createRequire } = await import('node:module')
   const nodePath = await import('node:path')
@@ -224,7 +233,7 @@ if (command === 'help' || !routes[command]) {
   process.stdout.write('Prompts: prompt-profiles; prompt-adapt --input request.json (editable IR, references and constraints; no generation)\n')
   process.stdout.write('Catalog: module-index [--limit 60] [--offset 0] (all registered tools, compact pages); module MODULE_ID (one full contract)\n')
   process.stdout.write('AE: ae discover; ae run --input job.json --output DIR; ae read --output DIR (local visible editor)\n')
-  process.stdout.write(`Usage: node scripts/orchestration-cli.mjs <command> [session-id] [node-key] [--input file]\nCommands: preferences set-preferences begin activity event health modules sessions get export create plan confirm start node retry pause resume checkpoint components local-run local-job local-resume experiences experience record-experience tool-options tool-option\nLocal: local-run --input request.json; local-job JOB_ID; local-resume JOB_ID; modules --query SEARCH\nOptions: tool-options [--query TEXT] [--category CATEGORY] [--limit 20]; tool-option ID\nExperiences: experiences [--query TEXT] [--module MODULE_ID] [--session SESSION_ID] [--limit 20] [--offset 0]; experience ID; record-experience --input note.json\n`)
+  process.stdout.write(`Usage: node scripts/orchestration-cli.mjs <command> [session-id] [node-key] [--input file]\nResearch: research create|list|get|records|brief|update|resume|cancel|handoff [JOB_ID] [--input file]; research-platform list|open|check|disconnect [PLATFORM]\nCommands: preferences set-preferences begin activity event health modules sessions get export create plan confirm start node retry pause resume checkpoint components local-run local-job local-resume experiences experience record-experience tool-options tool-option\nLocal: local-run --input request.json; local-job JOB_ID; local-resume JOB_ID; modules --query SEARCH\nOptions: tool-options [--query TEXT] [--category CATEGORY] [--limit 20]; tool-option ID\nExperiences: experiences [--query TEXT] [--module MODULE_ID] [--session SESSION_ID] [--limit 20] [--offset 0]; experience ID; record-experience --input note.json\n`)
   process.exit(command === 'help' ? 0 : 1)
 }
 

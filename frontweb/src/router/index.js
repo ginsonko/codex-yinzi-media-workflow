@@ -10,6 +10,12 @@ const router = createRouter({
   },
   routes: [
     {
+      path: '/research',
+      name: 'product-research',
+      component: () => import('@/views/ProductResearch.vue'),
+      meta: { title: '商品视频研究' }
+    },
+    {
       path: '/supervisors',
       name: 'style-supervisors',
       component: () => import('@/views/StyleSupervisors.vue'),

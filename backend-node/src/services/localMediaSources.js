@@ -43,6 +43,11 @@ function sourcesFor(request) {
     for (const source of dependencies) if (!sources.some(item => item.path === path.resolve(source.path))) sources.push({ ...source, path:path.resolve(source.path) });
     if (sources.length > 256) throw error('INVALID_SOURCES', 'AE job has too many source files');
   }
+  if (request.module_id === 'local.jianying.draft') {
+    for (const source of require('./jianyingDraft').sourcesForJob(input)) {
+      if (!sources.some(item => item.path === source.path)) sources.push(source);
+    }
+  }
   return sources;
 }
 function snapshot(request) { return sourcesFor(request).map(item => ({ role:item.role, path:item.path, identity:identity(item.path) })); }

@@ -3,6 +3,7 @@
     <div class="catalog-page">
       <div class="tool-actions"><el-button @click="experiencesOpen = true">制作经验</el-button><el-button @click="toolOptionsOpen = true">探索制作方案</el-button><el-button @click="transitionsOpen = true">转场预览</el-button></div>
       <section class="catalog-hero"><div><span class="kicker">CODEX 可以自己选工具</span><h2>从目标出发，不用记工具名字</h2><p>你只需要说想完成什么。Codex 会先看任务和素材，再从这张目录里组合合适的能力；需要人工处理的模块会明确标出来。</p></div><div class="catalog-count" aria-live="polite"><strong>{{ inventory?.builtin_modules ?? items.length }}</strong><span>个内置能力模块</span><span v-if="query || track" class="filter-count">当前筛选 {{ filtered.length }} 项</span></div></section>
+      <ProductResearchPanel :modules="items" />
       <dl v-if="inventory" class="inventory-strip" aria-label="完整能力目录统计">
         <div><dt>本地执行合同</dt><dd>{{ inventory.local_operation_contracts }}</dd></div>
         <div><dt>其他内置模块</dt><dd>{{ inventory.other_builtin_modules }}</dd></div>
@@ -50,6 +51,7 @@ import orchestrationAPI from '@/api/orchestration'
 import MediaExperiencePanel from '@/components/MediaExperiencePanel.vue'
 import MediaToolOptionsPanel from '@/components/MediaToolOptionsPanel.vue'
 import TransitionGallery from '@/components/TransitionGallery.vue'
+import ProductResearchPanel from '@/components/ProductResearchPanel.vue'
 const transitionsOpen = ref(false)
 const transitionOptions = computed(() => items.value.find(item => item.module_id === 'local.video.compose-clips')?.transition_options || [])
 const toolOptionsOpen = ref(false)

@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; connect-src 'none'; base-uri 'none'; form-action 'none'">
+  <title>__REPORT_TITLE__ · 电商视频研究</title>
+  <style>__REPORT_CSS__</style>
+</head>
+<body>
+  <header class="topbar"><div class="brand"><span class="brand-mark" aria-hidden="true">Y</span><span>银子媒体工作流<span class="brand-sub">电商研究</span></span></div><nav aria-label="报告导航"><a href="#overview">概览</a><a href="#comparison">数据比较</a><a href="#references">参考视频</a><a href="#methods">来源与口径</a></nav><button id="save-report" class="button">保存报告</button></header>
+  <main>
+    <div class="page-heading"><div><p class="eyebrow">商品内容研究 / 公开样本</p><h1>__REPORT_TITLE__<span>视频参考研究</span></h1><p id="query-caption" class="muted"></p></div><div class="snapshot-time"><span class="status-dot"></span>数据快照 <time id="snapshot-time"></time></div></div>
+    <div class="filters" aria-label="报告筛选"><label>平台<select id="platform"><option value="">全部平台</option></select></label><label>来源<select id="evidence"><option value="">全部来源</option></select></label><label>发布日期<select id="period"><option value="">全部（含历史）</option><option value="30">近 30 天</option><option value="90">近 90 天</option><option value="365">近 1 年</option></select></label><label id="kind-label" hidden>候选类型<select id="content-kind"><option value="">全部类型</option></select></label><label id="scope-label" hidden>样本范围<select id="scope"><option value="matched">符合查询</option><option value="all">全部线索（含历史与待核验）</option></select></label><label class="search-label">查找视频<input id="search" type="search" placeholder="标题、作者或视频 ID" /></label><button id="reset" class="text-button">重置</button><button id="export-csv" class="button">导出 CSV</button></div>
+    <section id="overview" aria-labelledby="overview-heading"><h2 class="sr-only" id="overview-heading">样本概览</h2><div id="stats" class="stats"></div><div id="overview-charts" class="overview-charts"></div></section>
+    <section id="shortlist" hidden><div class="section-heading"><div><p class="eyebrow">从数据筛到值得看的作品</p><h2>优先观片清单</h2></div><button id="recent-focus" class="button">只看近 30 天</button></div><p class="section-note">按当前同平台样本的收藏、点赞、评论分别选取。这里只筛选观片优先级，最终拍法还需核对内容和商品适配。</p><div id="shortlist-content" class="shortlist-grid"></div></section>
+    <section id="relationships" hidden><div class="section-heading"><h2>片长、热度与收藏倾向</h2></div><div id="relationships-content" class="research-charts"></div></section>
+    <section id="comparison" hidden aria-labelledby="comparison-heading"><div class="section-heading"><div><p class="eyebrow">已取得的公开指标</p><h2 id="comparison-heading">同平台，分组看表现</h2></div><label class="inline-select">比较指标<select id="metric"></select></label></div><p class="section-note">原站与授权数据按平台、地区、候选类型及片长分组。含历史样本，累计计数受发布时间影响；不代表当期热度或成交。</p><div id="comparison-content" class="comparison-grid"></div></section>
+    <section id="publication" hidden><div class="section-heading"><h2>样本发布分布</h2><span id="publication-count" class="muted"></span></div><div id="publication-chart" class="publication-chart"></div><p class="section-note">按已核验的发布日期统计，不表示市场热度走势；未采集到的月份不推断为零。</p></section>
+    <section id="references" aria-labelledby="references-heading"><div class="section-heading"><div><p class="eyebrow">可追溯的视频资料库</p><h2 id="references-heading">参考视频 <span id="reference-count"></span></h2></div><button id="export-json" class="button">导出数据与来源</button></div><div id="reference-list"></div><p id="empty-state" hidden>当前筛选没有匹配的视频。<button id="empty-reset" class="text-button">重置筛选</button></p></section>
+    <section id="analysis" hidden><div class="section-heading"><h2>已记录的内容分析</h2></div><div id="analysis-content" class="analysis-grid"></div></section>
+    <section id="creative" hidden><div class="section-heading"><h2>创意与实验提案</h2></div><p class="section-note">待验证的创作方向，与已观测的数据分开记录。</p><div id="creative-content" class="analysis-grid"></div></section>
+    <section id="methods"><details class="methods"><summary>来源、指标口径与研究记录</summary><div class="methods-grid"><div><h3>样本范围</h3><p id="scope-description"></p><p>一条记录对应一个去重后的视频链接。同链接优先保留原站或授权来源，再取同等级最新快照；历史观察可在视频详情中查看。此处是采集样本，不是全平台榜单。</p></div><div><h3>数据口径</h3><p>播放、点赞、评论、分享、收藏均为来源当时的累计计数。各指标独立展示，不相加为互动率。图表只使用实际取得的数值，零值保留。未取得字段不生成图表。</p></div><div><h3>证据与内容分析</h3><p>“原站数据”与“搜索索引”分别标记。搜索命中及标题中的商品宣称不构成热度、销量或商品功效证明。仅有元数据的记录不视作已观片，真实观看记录以逐条分析依据为准。</p></div><div><h3>继续创作</h3><p>从相关样本中选拍法，实际观看后补齐开场、卖点证明、节奏与行动引导；结合自己的商品资料形成原创方案。对照效果需要自有曝光、留存、点击与订单数据。</p></div></div></details></section>
+    <footer><span>银子万能媒体工作流 · 电商研究报告</span><span id="footer-scope"></span><span id="notice" role="status" aria-live="polite"></span></footer>
+  </main>
+  <noscript>交互报告需要浏览器启用 JavaScript。参考包同时包含 Markdown 和 CSV 版本。</noscript>
+  <script id="report-data" type="application/json">__REPORT_DATA__</script>
+  <script>__REPORT_MODEL__</script>
+  <script>__REPORT_CLIENT__</script>
+</body>
+</html>
