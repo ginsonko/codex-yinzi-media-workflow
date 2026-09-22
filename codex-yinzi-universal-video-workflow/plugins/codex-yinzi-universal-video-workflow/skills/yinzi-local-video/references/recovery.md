@@ -22,3 +22,9 @@ Each attempt has `local-video/` with request, phase logs, events, resource obser
 - Corrupted or incompatible recovery files are a concrete failure. Keep them, inspect the source and create a new approved attempt if necessary. Do not call a file technically valid when its content/shape is wrong.
 
 After recovery, verify the output, inspect normal-speed motion and update the task with original attempt time, recovery time, output path and remaining quality limitations. Keep the model/source versions, prompt, seed, dimensions, frames and actual result hash for reproducibility; do not claim one seed establishes a success rate.
+
+## Benchmark versus product recovery
+
+The September 2026 H3 benchmark was produced by an earlier runner whose saved envelope is only `{latent, config}`. The four benchmark latents were independently decoded and technically checked, but that decoder is a compatibility tool for evidence, not a product recovery shortcut. `local.video.recover` must receive the current versioned `recovery.json` containing the task fingerprint, parameters, prompt, source revision and file hashes. If those fields are absent, report an incompatible artifact and preserve it; do not invent a manifest or silently resample.
+
+The four decoded benchmark videos are silent (`audio_streams=0`). A valid MP4 and finite pixels therefore say nothing about native audio. Treat `sampling_complete_decode_required`, independent decode, MP4 validation and artistic review as separate milestones.

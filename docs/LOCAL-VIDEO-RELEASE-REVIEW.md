@@ -5,8 +5,10 @@
 ## 当前结论
 
 - H3 Turbo8 的 Windows x64 + NVIDIA 路线已经有真实采样、有限值检查、断点恢复和独立解码路径。
+- 2026-09-22 又完成四个新增 Turbo8 场景的独立解码与正常速度用途审片：电商粗 B-roll、动漫 blocking、雨夜街景气氛和黑底粒子层。它们分别保留在实验目录的 MP4 与接触表中，结论只适用于对应镜头类型。
 - 采样完成只表示 `video-latent.pt` 已保存；必须继续独立解码、导出、ffprobe 检查和正常速度审片，才能称为有 MP4。
 - GPU 画质不在 CI 中自动验收。每个实际任务仍要检查身份、构图、动作顺序、接触关系、连续性、用途和音频。
+- 本批四条新增 MP4 均为 `audio:none`，因此技术解码通过不代表原生音频可用；它们不是完整 MV 质量保证。
 - 本轮独立代码审查确认 Windows CPU 合同测试通过；Linux 进程生命周期、共享目录并发修改和跨硬件速度仍是未知。
 
 ## 合并前修复
@@ -19,3 +21,5 @@
 ## 证据边界
 
 Windows 实测主机为 RTX 2070 SUPER 8 GiB、Ryzen 5 3600X、48 GiB RAM；H3 Turbo8 的 832×480、107 帧、24 fps 近景样本约 23 分钟。该数字只描述观测主机和该样本，不是其它显卡、长片段或电影级动作的保证。H3 与 WanGP 的社区许可分别记录，不能合并成 Apache 或商用保证。
+
+四个新增 benchmark latent 使用旧版 `{latent, config}` 包装，独立兼容解码器可以读取并生成证据，但它们不是正式 `local.video.recover` 的输入。正式恢复仍必须有带 fingerprint、parameters、prompt、source revision 和 hashes 的 `recovery.json`。这条兼容性边界已写入恢复 Skill，避免把旧实验结果伪装成产品恢复完成。
