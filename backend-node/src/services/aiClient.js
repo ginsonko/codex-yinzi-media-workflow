@@ -46,7 +46,7 @@ function postJSONNonStream(url, headers, body, timeoutMs = 120000) {
       res.on('error', reject);
     });
 
-    const timer = setTimeout(() => { req.destroy(); reject(new Error(`Vision request timeout after ${timeoutMs}ms`)); }, timeoutMs);
+    const timer = setTimeout(() => { req.destroy(); reject(Object.assign(new Error(`AI HTTP request timeout after ${timeoutMs}ms`), { code: 'HTTP_REQUEST_TIMEOUT', timeout_ms: timeoutMs })); }, timeoutMs);
     req.on('error', (e) => { clearTimeout(timer); reject(e); });
     req.on('close', () => clearTimeout(timer));
     req.write(bodyStr);
@@ -98,27 +98,37 @@ function postJSONWithTimeout(url, headers, body, timeoutMs = 600000) {
       headers: reqHeaders,
     };
 
+    let statusCode = null;
+    let requestId = null;
+    const withDiagnostics = (error) => Object.assign(error, {
+      http_status: statusCode, request_id: requestId,
+    });
     const req = mod.request(options, (res) => {
+      statusCode = res.statusCode || null;
+      requestId = String(res.headers['x-request-id'] || res.headers['request-id'] || '').slice(0, 256) || null;
       const chunks = [];
       res.on('data', (c) => chunks.push(c));
       res.on('end', () => {
         clearTimeout(timer);
         const raw = Buffer.concat(chunks).toString('utf-8');
-        resolve({ statusCode: res.statusCode || 0, raw });
+        resolve({ statusCode: res.statusCode || 0, raw, request_id: requestId });
       });
       res.on('error', (e) => {
         clearTimeout(timer);
-        reject(e);
+        reject(withDiagnostics(e));
       });
     });
 
     const timer = setTimeout(() => {
+      const error = withDiagnostics(Object.assign(new Error(`HTTP request timeout after ${timeoutMs}ms`), {
+        code: 'HTTP_REQUEST_TIMEOUT', timeout_ms: timeoutMs, timeout_kind: 'total',
+      }));
+      reject(error);
       req.destroy();
-      reject(new Error(`Image generation HTTP timeout after ${timeoutMs}ms`));
     }, timeoutMs);
     req.on('error', (e) => {
       clearTimeout(timer);
-      reject(e);
+      reject(withDiagnostics(e));
     });
     req.write(bodyStr);
     req.end();

@@ -13,6 +13,7 @@ import { researchTools, researchRequest } from './research-tools.mjs'
 import { styleSupervisorTools, styleSupervisorRequest, selectionSchema } from './style-supervisor-tools.mjs'
 import { activityResponse } from '../skills/codex-yinzi-universal-video/scripts/activity-response.mjs'
 import { readRegistry, localOrigin, verifyUi, openBrowser } from '../scripts/runtime-state.mjs'
+import { runtimeLaunchFailure } from '../scripts/runtime-launch-error.mjs'
 
 const execFileAsync = promisify(execFile)
 
@@ -216,11 +217,7 @@ async function launchLocalRuntime() {
     if (!result.ok && result.error) throw new Error(result.error)
     return result
   } catch (error) {
-    const detail = error?.stderr || error?.message || String(error)
-    const wrapped = new Error(`工作流界面尚未启动：${redactString(detail)}。请安装桌面包，或配置 YINZI_WORKFLOW_PROJECT_ROOT 后重试。`)
-    wrapped.code = 'RUNTIME_LAUNCH_FAILED'
-    wrapped.cause = error
-    throw wrapped
+    throw runtimeLaunchFailure(error, redactString)
   }
 }
 

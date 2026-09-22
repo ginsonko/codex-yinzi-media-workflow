@@ -4,6 +4,8 @@ import http from 'node:http'
 import { after, before, test } from 'node:test'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import fs from 'node:fs/promises'
+import os from 'node:os'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const serverPath = path.join(here, 'server.mjs')
@@ -242,6 +244,22 @@ function makeClient(overrides = {}) {
     close: () => { child.stdin.end(); child.kill() },
   }
 }
+
+test('open_workflow preserves the real failing launcher reason and isolates runtime state', async () => {
+  const isolated = await fs.mkdtemp(path.join(os.tmpdir(), 'yinzi-launch-failure-'))
+  const client = makeClient({YINZI_WORKFLOW_URL:'',YINZI_WORKFLOW_CANDIDATE_URLS:'http://127.0.0.1:1',
+    YINZI_WORKFLOW_AUTO_START:'1',YINZI_WORKFLOW_PROJECT_ROOT:path.join(isolated,'missing-source'),YINZI_WORKFLOW_RUNTIME_DIR:isolated})
+  try {
+    const result = await client.call('open_workflow', {open_browser:false})
+    assert.equal(result.isError,true)
+    assert.match(result.data.message,/指定源码目录不包含 backend-node 和 frontweb/)
+    assert.equal(result.data.reason_source,'launcher_stdout')
+    assert.equal(result.data.exit_code,3)
+    assert.equal(result.data.code,'RUNTIME_LAUNCH_FAILED')
+    assert.doesNotMatch(result.data.message,/请安装桌面包|Command failed/)
+    await assert.rejects(fs.access(path.join(isolated,'runtime.json')))
+  } finally {client.close()}
+})
 
 test('prompt_adapt is discoverable and reaches the real local compiler without generation', async () => {
   resetState()

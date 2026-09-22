@@ -28,10 +28,15 @@ export async function runTextTask({request,config,output,post}) {
     throw new Error('该请求已有提交记录，请先核对结果；不会自动重放')
   }
   try {await fs.access(output);throw new Error('输出文件已存在，请选择新文件名')} catch(error) {if(error.code!=='ENOENT')throw error}
-  const receipt={schema:'yinzi.text-task/v1',config_id:config.id,model,request_hash:fingerprint,status:'submitted',started_at:new Date().toISOString()}
+  const target=new URL(url)
+  const timeoutMs=Number(request.timeout_ms)||180000
+  const receipt={schema:'yinzi.text-task/v1',config_id:config.id,model,request_hash:fingerprint,status:'submitted',started_at:new Date().toISOString(),
+    service_type:'text',transport:'http-json',endpoint:redact(target.origin+target.pathname,config.api_key),timeout_ms:timeoutMs}
   await fs.writeFile(receiptPath,JSON.stringify(receipt,null,2),{flag:'wx'})
   try {
-    const response=await post(url,{Authorization:'Bearer '+config.api_key},body,Number(request.timeout_ms)||180000)
+    const response=await post(url,{Authorization:'Bearer '+config.api_key},body,timeoutMs)
+    receipt.http_status=response.statusCode||null
+    receipt.request_id=response.request_id?redact(response.request_id,config.api_key):null
     if(response.statusCode<200||response.statusCode>=300) throw Object.assign(new Error('HTTP '+response.statusCode+': '+response.raw.slice(0,500)),{known:true,statusCode:response.statusCode})
     const json=JSON.parse(response.raw);let value=json.choices?.[0]?.message?.content??json.output_text??json.choices?.[0]?.text
     if(Array.isArray(value))value=value.map(x=>typeof x==='string'?x:x.text||'').join('')
@@ -40,7 +45,11 @@ export async function runTextTask({request,config,output,post}) {
     Object.assign(receipt,{status:'succeeded',finished_at:new Date().toISOString(),output_sha256:sha(value),bytes:Buffer.byteLength(value),usage:json.usage||null})
     await fs.writeFile(receiptPath,JSON.stringify(receipt,null,2));return {...receipt,reused:false}
   } catch(error) {
-    Object.assign(receipt,{status:error.known?'failed':'needs_review',finished_at:new Date().toISOString(),error:redact(error.message,config.api_key),http_status:error.statusCode||null})
+    Object.assign(receipt,{status:error.known?'failed':'needs_review',finished_at:new Date().toISOString(),error:redact(error.message,config.api_key),
+      error_code:error.code?redact(error.code,config.api_key):null,
+      timeout_kind:error.timeout_kind||null,
+      http_status:error.statusCode||error.http_status||receipt.http_status||null,
+      request_id:error.request_id?redact(error.request_id,config.api_key):receipt.request_id||null})
     await fs.writeFile(receiptPath,JSON.stringify(receipt,null,2));throw new Error(receipt.error)
   }
 }
