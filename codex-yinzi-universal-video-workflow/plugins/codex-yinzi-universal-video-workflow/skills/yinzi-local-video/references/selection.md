@@ -21,7 +21,7 @@ The following four cases were sampled before this release and then decoded indep
 | Cinematic rainy street | Rainy street, warm storefronts, blue sign, wet reflections and a left-to-right pedestrian are readable | Strong dolly motion, stable rain detail and cinematic camera continuity | Atmosphere B-roll, transition layer or background texture |
 | Gold ribbon particle effect | Ribbon sweeps from lower-left to upper-right, spreads and fades with a coherent subject | True alpha, clean edges at every frame and compositing without a key check | Screen/Additive or luma-keyed AE layer after edge inspection |
 
-These reviews are recorded in `H:\Yinzi-LocalVideo-Lab-20260921\decoded-release-review.json`. Technical MP4 validation and contact sheets do not replace normal-speed artistic review. None of these cases proves complex choreography, exact brand fidelity, native audio quality or complete-MV readiness.
+The [public evidence page](https://workflow.yinziapi.top/learn/local-video/) includes a redacted machine-readable review and the four original videos. Technical MP4 validation and contact sheets do not replace normal-speed artistic review. None of these cases proves complex choreography, exact brand fidelity, native audio quality or complete-MV readiness.
 
 H3 Turbo8's **sampling** speedup over the ordinary 30-step closeup was 3.591×. Do not mix that with total runtime, download speed, or a promised quality improvement. Native audio on Turbo/Hybrid was finite 32 kHz stereo; numerical validation is not subjective listening acceptance.
 

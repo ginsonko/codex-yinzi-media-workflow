@@ -160,7 +160,7 @@ def main():
         'installation_status': 'configured' if saved_config else 'not_configured',
         'recommendation': support.recommend(profile) if profile.get('gpus') else None,
         'python_required': '3.11 or 3.12, 64-bit; NVIDIA CUDA, Windows/Linux',
-        'fresh_install_estimate_gib': '34–40 (models + CUDA environment)',
+        'fresh_install_estimate_gib': 'About 32 GiB weights, plus CUDA environment, source, intermediates and reserve; 40 GiB free is not guaranteed sufficient',
         'measured_performance': manifest_data.get('measured_host', {})
     }
 

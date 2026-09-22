@@ -204,6 +204,44 @@ class TestImportVerification(unittest.TestCase):
 
         self.assertEqual(result['status'], 'failed')
 
+    def test_package_relative_import_and_noisy_library_stdout(self):
+        import subprocess
+        import sys
+
+        with tempfile.TemporaryDirectory() as temp:
+            source = Path(temp)
+            package = source / 'models' / 'minimax_h3'
+            package.mkdir(parents=True)
+            for parent in (package.parent, package):
+                (parent / '__init__.py').write_text('')
+            (package / 'constants.py').write_text('VALUE = 42\n')
+            (package / 'pipeline.py').write_text(
+                'from .constants import VALUE\nassert VALUE == 42\nprint("model import notice")\n')
+            real_run = subprocess.run
+
+            def run_probe(command, **kwargs):
+                # Fake only heavyweight dependencies; execute the actual installer
+                # probe and a real package-relative pipeline import in a subprocess.
+                prelude = '''import sys, types, importlib.metadata
+sys.prefix = sys.base_prefix + '/isolated-fixture'
+for name in ('torch', 'torchvision', 'torchaudio', 'numpy', 'safetensors', 'einops', 'psutil', 'av', 'mmgp'):
+    sys.modules[name] = types.ModuleType(name)
+sys.modules['torch'].__version__ = 'fixture'
+sys.modules['torch'].cuda = types.SimpleNamespace(is_available=lambda: True)
+sys.modules['torch'].version = types.SimpleNamespace(cuda='fixture')
+sys.modules['mmgp'].quant_router = types.SimpleNamespace(register_handler=lambda name: None)
+importlib.metadata.version = lambda name: 'fixture'
+'''
+                command = list(command)
+                code_index = command.index('-c') + 1
+                command[code_index] = prelude + command[code_index]
+                return real_run(command, **kwargs)
+
+            with mock.patch.object(installation.subprocess, 'run', side_effect=run_probe):
+                result = installation.verify_imports(Path(sys.executable), source)
+            self.assertEqual(result['status'], 'ready', result)
+            self.assertEqual(result['torch'], 'fixture')
+
     def test_verification_timeout(self):
         """Test that verification has timeout protection."""
         # This is tested implicitly by the timeout parameter in subprocess.run

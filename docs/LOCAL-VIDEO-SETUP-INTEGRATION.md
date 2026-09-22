@@ -255,7 +255,7 @@ python setup-local-video.py --inspect
 ### Advisories (from support.recommend)
 - Measured peak process memory: ~28 GiB + OS
 - CUDA backend required (no CPU/AMD/Apple validation)
-- Fresh install: 34-40 GiB (models + CUDA env)
+- Model files total 34,355,672,047 bytes (about 32 GiB); add the isolated CUDA environment, source, intermediates and a free-space reserve. A 40 GiB free disk is not a guaranteed sufficient installation target.
 - Not a fixed GPU allowlist: recommendations are advisory
 
 ## License Information
@@ -267,12 +267,12 @@ python setup-local-video.py --inspect
 
 ## Limitations and未完成项
 
-### Not Implemented in This Task
-- **GPU execution**: Tests use mocks, no actual model loading or inference
-- **Large downloads**: Tests use small fixtures, not 34GB model downloads
-- **Full prepare**: --prepare mode tested only in unit tests with mocks
-- **Node integration**: Node service operations not modified (main session owns)
-- **Worker/runner**: Generation worker not in scope (main session owns)
+### Test and integration boundary
+- **Unit-test boundary**: The installer tests use small fixtures and mocks; they do not prove a clean 34GB download, full --prepare, or model quality.
+- **Real lab evidence**: The existing isolated Windows H3 environment passed an --adopt/import probe after the relative-package-import fix (status=ready, Torch/CUDA/Python/mmgp versions recorded). This is an environment-specific readiness check, not proof that every user installation or GPU inference succeeds.
+- **Large downloads**: No new 34GB download was repeated during this release closeout; use the manifest, resume and hash checks for an approved prepare.
+- **Node integration**: Node service operations were not changed in this installer fix; the main local-video runtime owns that integration.
+- **Runtime**: `local.video.generate` and `local.video.recover` use the integrated worker/runner. Actual sample evidence and remaining quality limits are in [the release review](LOCAL-VIDEO-RELEASE-REVIEW.md).
 - **License file verification**: Upstream LICENSE not fetched in tests (network-dependent)
 
 ### Known Constraints
@@ -306,12 +306,12 @@ python setup-local-video.py --inspect
 ### Configuration Issues
 - Check location: `echo $YINZI_LOCAL_VIDEO_CONFIG` or default ~/.yinzi-media/local-video.json
 - Validate: `python -c "from local_video import support; support.validate_config(support.read_json('path'))"`
-- Reset: Remove config file and run --prepare again (or manually edit)
+- Repair the reported field while preserving other settings, or validate the prepared environment with `--adopt`. Keep the original config and use `--config` for an isolated test; deleting config is not a prerequisite for repair.
 
 ### GPU Lock Conflicts
 - Check active processes: Lock files at {cache_root}/gpu-{device}.lock
-- Stale lock: Auto-detected and cleaned after 60s idle
-- Manual cleanup: Remove lock directory if process confirmed dead
+- Lock ownership uses both PID and process creation time. A live owner is not cleared merely because it has produced no recent progress. The 60-second fallback applies only when ownership metadata cannot be read.
+- Resume after the owner exits. Preserve stale directories and investigate unreadable ownership instead of deleting another task's lock.
 
 ## Example Workflow
 

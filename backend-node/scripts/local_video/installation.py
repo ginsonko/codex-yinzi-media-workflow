@@ -256,7 +256,7 @@ def verify_imports(python_path, source_dir, runtime_dir=None):
     test_code = """
 import sys
 import json
-import importlib.util
+import importlib
 import importlib.metadata as md
 
 source_dir, runtime_dir = sys.argv[1], sys.argv[2]
@@ -291,10 +291,8 @@ from pathlib import Path
 pipeline_path = Path(source_dir) / 'models' / 'minimax_h3' / 'pipeline.py'
 assert pipeline_path.is_file(), f'Pipeline not found: {pipeline_path}'
 
-spec = importlib.util.spec_from_file_location('h3_pipeline', pipeline_path)
-h3_module = importlib.util.module_from_spec(spec)
-sys.modules['h3_pipeline'] = h3_module
-spec.loader.exec_module(h3_module)
+# The pipeline uses relative imports; import it with its real package identity.
+importlib.import_module('models.minimax_h3.pipeline')
 
 result = {
     'status': 'ready',
@@ -303,7 +301,7 @@ result = {
     'python': sys.version.split()[0],
     'mmgp': md.version('mmgp')
 }
-print(json.dumps(result))
+print('YINZI_LOCAL_VIDEO_IMPORT_RESULT=' + json.dumps(result))
 """
 
     try:
@@ -312,11 +310,16 @@ print(json.dumps(result))
             str(source_dir), str(runtime_dir.resolve()) if runtime_dir else ''
         ], check=True, capture_output=True, text=True, timeout=30)
 
-        data = json.loads(result.stdout)
+        prefix = 'YINZI_LOCAL_VIDEO_IMPORT_RESULT='
+        report = next((line[len(prefix):] for line in reversed(result.stdout.splitlines())
+                       if line.startswith(prefix)), None)
+        if report is None:
+            raise ValueError('Import probe produced no completion record')
+        data = json.loads(report)
         return data
 
     except subprocess.CalledProcessError as e:
         error_msg = e.stderr if e.stderr else str(e)
         return dict(status='failed', error=f'Import verification failed: {error_msg}')
-    except (subprocess.TimeoutExpired, json.JSONDecodeError, OSError) as e:
+    except (subprocess.TimeoutExpired, ValueError, OSError) as e:
         return dict(status='failed', error=f'Verification error: {e}')
