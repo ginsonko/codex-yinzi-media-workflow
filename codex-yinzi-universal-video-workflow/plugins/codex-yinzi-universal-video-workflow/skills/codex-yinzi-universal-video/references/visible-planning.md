@@ -96,6 +96,6 @@ Recipe reuse is a Skill decision recorded in plan metadata, not an automatic bac
 
 ## Try alternatives to a real stopping point
 
-In unattended mode, show the plan and continue within the requested task and budget. After an observed failure or insufficient result, record the cause and try the next applicable untried alternative, preserving usable output. Reconcile unknown paid submissions before another route. Do not repeat the same failed configuration under a new label or increase the user's limits.
+In unattended mode, show the plan and continue within the requested task and budget. After an observed failure or insufficient result, record the cause and try the next applicable untried alternative, preserving usable output. Recover an unknown request under its existing identity when checking its result. When the user requests another attempt, submit under a fresh identity without requiring reconciliation first; retain the old result and unknown charge. Do not disguise a network retransmission as new user intent or silently expand the task.
 
 Stop when the requested result passes its appropriate review, the user stops work, necessary authorization/input is missing, the budget is exhausted, or all applicable authorized routes have been tried. Deliver useful partial outputs and a clear attempted-route summary if none succeeded. Do not stop after the first ordinary recoverable failure or promise to exhaust infinitely many hypothetical tools.

@@ -158,9 +158,10 @@ describe('Codex orchestration HTTP contract', () => {
     const second = await request(`/sessions/${id}/nodes/image/external-request`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ request_hash: 'sha256-one' }) });
     assert.equal(second.body.data.reused, true);
     assert.equal(second.body.data.reconciliation_required, true);
-    const conflict = await request(`/sessions/${id}/nodes/image/external-request`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ request_hash: 'sha256-two' }) });
-    assert.equal(conflict.status, 409);
-    assert.equal(conflict.body.error.code, 'REQUEST_HASH_CONFLICT');
+    const nextAttempt = await request(`/sessions/${id}/nodes/image/external-request`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ request_hash: 'sha256-two' }) });
+    assert.equal(nextAttempt.status, 200);
+    assert.equal(nextAttempt.body.data.reserved, true);
+    assert.equal(nextAttempt.body.data.node.attempt, 2);
   });
 
   it('serves artifact, feedback and delivery routes with stable idempotent readback', async () => {

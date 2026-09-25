@@ -17,7 +17,7 @@ test('library searches across sessions with type, pagination and parameterized i
     assert.equal(service.searchArtifacts({ q: "' OR 1=1 --" }).pagination.total, 0);
   } finally { db.close(); }
 });
-test('pause rejects new paid reservations and node starts but permits same-request reconciliation', () => {
+test('pause keeps same-request reconciliation idle while explicit new work resumes the session', () => {
   const db = new Database(':memory:'); const service = createOrchestrationService(db);
   try {
     const id = service.createSession({ idempotency_key: 'pause', user_goal: 'pause' }).session.id;
@@ -26,11 +26,12 @@ test('pause rejects new paid reservations and node starts but permits same-reque
     service.reserveExternalRequest(id, 'a', { request_hash: 'same' });
     service.pauseSession(id);
     assert.equal(service.reserveExternalRequest(id, 'a', { request_hash: 'same' }).reserved, false);
-    assert.throws(() => service.reserveExternalRequest(id, 'b', { request_hash: 'new' }), e => e.code === 'SESSION_PAUSED');
-    assert.throws(() => service.actOnNode(id, 'c', 'start'), e => e.code === 'SESSION_PAUSED');
     service.updateNode(id, 'a', { status: 'succeeded' });
     assert.equal(service.getBundle(id).session.status, 'paused');
-    service.resumeSession(id);
     assert.equal(service.reserveExternalRequest(id, 'b', { request_hash: 'new' }).reserved, true);
+    assert.equal(service.getBundle(id).session.status, 'running');
+    service.pauseSession(id);
+    assert.equal(service.actOnNode(id, 'c', 'start').node.status, 'running');
+    assert.equal(service.getBundle(id).session.status, 'running');
   } finally { db.close(); }
 });

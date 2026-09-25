@@ -29,8 +29,12 @@ const ORPHAN_PROCESSING_MS = 10 * 60 * 1000
 const LAST_FRAME_TYPES = new Set(['last', 'storyboard_last', 'tail', 'last_frame'])
 const FIRST_FRAME_TYPES = new Set(['first', 'storyboard_first', 'head', 'first_frame'])
 
-function taskKey({ dramaId, episodeId, resourceType, resourceId }) {
+function resourceKey({ dramaId, episodeId, resourceType, resourceId }) {
   return `${dramaId}:${episodeId}:${resourceType}:${resourceId}`
+}
+
+function taskKey(meta) {
+  return `${resourceKey(meta)}${meta.attemptId ? `:${meta.attemptId}` : ''}`
 }
 
 function isLastFrameType(frameType) {
@@ -77,6 +81,7 @@ export const useGenerationTaskStore = defineStore('generationTask', () => {
   const recoveredTaskIds = ref(new Set())
   /** 用户或系统主动停止轮询的 taskId */
   const cancelledPollTaskIds = ref(new Set())
+  const latestAttempts = new Map()
 
   const runningTasks = computed(() => {
     return [...tasks.value.values()].filter((t) => t.status === 'running')
@@ -105,20 +110,28 @@ export const useGenerationTaskStore = defineStore('generationTask', () => {
     for (const key of keys) {
       const existing = tasks.value.get(key)
       if (!existing) continue
-      _setTask(key, {
+      const finished = {
         ...existing,
         status,
         error: error || '',
         finishedAt: Date.now(),
-      })
+      }
+      _setTask(key, finished)
       const delay = status === 'failed' ? 8000 : 3000
-      setTimeout(() => _deleteTask(key), delay)
+      setTimeout(() => {
+        const current = tasks.value.get(key)
+        if (current?.status === status && current.finishedAt === finished.finishedAt) _deleteTask(key)
+      }, delay)
     }
   }
 
   function markRunning(meta) {
+    const linked = meta.taskId ? [...tasks.value.values()].find((item) => item.taskId === meta.taskId && resourceKey(item) === resourceKey(meta)) : null
+    meta.attemptId ||= linked?.attemptId || (meta.taskId ? `task:${meta.taskId}` : crypto.randomUUID())
     const key = taskKey(meta)
     if (!key || key.includes('undefined') || key.includes('null')) return key
+    const logicalKey = resourceKey(meta)
+    if (!tasks.value.has(key) && (!meta.recovering || !latestAttempts.has(logicalKey))) latestAttempts.set(logicalKey, meta.attemptId)
     _setTask(key, {
       ...meta,
       key,
@@ -131,7 +144,7 @@ export const useGenerationTaskStore = defineStore('generationTask', () => {
   function markDone(meta) {
     const key = typeof meta === 'string' ? meta : taskKey(meta)
     const existing = tasks.value.get(key)
-    const taskId = existing?.taskId || (typeof meta === 'object' ? meta?.taskId : null)
+    const taskId = (typeof meta === 'object' ? meta?.taskId : null) || existing?.taskId
     const keys = taskId ? _findKeysByTaskId(taskId) : [key]
     if (keys.length === 0 && key) keys.push(key)
     _finishKeys(keys, 'completed')
@@ -140,16 +153,35 @@ export const useGenerationTaskStore = defineStore('generationTask', () => {
   function markFailed(meta, error) {
     const key = typeof meta === 'string' ? meta : taskKey(meta)
     const existing = tasks.value.get(key)
-    const taskId = existing?.taskId || (typeof meta === 'object' ? meta?.taskId : null)
+    const taskId = (typeof meta === 'object' ? meta?.taskId : null) || existing?.taskId
     const keys = taskId ? _findKeysByTaskId(taskId) : [key]
     if (keys.length === 0 && key) keys.push(key)
     _finishKeys(keys, 'failed', error)
   }
 
   function isRunning(meta) {
+    return [...tasks.value.values()].some((item) => item.status === 'running'
+      && resourceKey(item) === resourceKey(meta)
+      && (!meta.attemptId || item.attemptId === meta.attemptId))
+  }
+
+  function isCurrentAttempt(meta) {
+    const latest = latestAttempts.get(resourceKey(meta))
+    if (!latest) return true
+    const linked = meta.taskId ? [...tasks.value.values()].find((item) => item.taskId === meta.taskId && resourceKey(item) === resourceKey(meta)) : null
+    return latest === (meta.attemptId || linked?.attemptId || `task:${meta.taskId}`)
+  }
+
+  function isSubmitting(meta) {
+    return [...tasks.value.values()].some((item) => item.submitting === true
+      && resourceKey(item) === resourceKey(meta))
+  }
+
+  function finishSubmission(meta) {
     const key = taskKey(meta)
-    const t = tasks.value.get(key)
-    return t?.status === 'running'
+    const task = tasks.value.get(key)
+    if (task) _setTask(key, { ...task, submitting: false })
+    meta.submitting = false
   }
 
   function getRunningForEpisode(dramaId, episodeId) {
@@ -254,7 +286,8 @@ export const useGenerationTaskStore = defineStore('generationTask', () => {
   function pollTask(taskId, meta, onDone, options = {}) {
     if (!taskId) return Promise.resolve({ status: 'failed', error: '缺少 task_id' })
 
-    const key = markRunning({ ...meta, taskId })
+    meta.taskId = taskId
+    const key = markRunning(meta)
 
     if (pollPromises.value.has(taskId)) {
       return pollPromises.value.get(taskId)
@@ -279,13 +312,13 @@ export const useGenerationTaskStore = defineStore('generationTask', () => {
           if (isOrphanedProcessingTask(t)) {
             const errMsg = ORPHAN_TASK_MSG
             markFailed(key, errMsg)
-            if (showErrorToast && options.ElMessage) {
+            if (isCurrentAttempt(meta) && showErrorToast && options.ElMessage) {
               options.ElMessage.warning(errMsg)
             }
             return resolve({ status: 'failed', error: errMsg })
           }
           if (t.status === 'completed') {
-            if (onDone) {
+            if (onDone && isCurrentAttempt(meta)) {
               try {
                 await onDone()
               } catch (e) {
@@ -298,7 +331,7 @@ export const useGenerationTaskStore = defineStore('generationTask', () => {
           if (t.status === 'failed') {
             const errMsg = taskFailMessage(t)
             markFailed(key, errMsg)
-            if (showErrorToast && options.ElMessage) {
+            if (isCurrentAttempt(meta) && showErrorToast && options.ElMessage) {
               options.ElMessage.error(errMsg)
             }
             return resolve({ status: 'failed', error: errMsg })
@@ -312,7 +345,7 @@ export const useGenerationTaskStore = defineStore('generationTask', () => {
           const timeoutMsg = options.timeoutMessage
             || '生成任务已超时（超过15分钟），请刷新页面查看是否已完成'
           markFailed(key, timeoutMsg)
-          if (showTimeoutToast && options.ElMessage) {
+          if (isCurrentAttempt(meta) && showTimeoutToast && options.ElMessage) {
             options.ElMessage.warning(timeoutMsg)
           }
           resolve({ status: 'timeout', error: timeoutMsg })
@@ -339,6 +372,8 @@ export const useGenerationTaskStore = defineStore('generationTask', () => {
    */
   async function attachPollIfNeeded(taskId, meta, onDone, options = {}) {
     if (!taskId) return null
+    meta = { ...meta, taskId, recovering: true }
+    markRunning(meta)
 
     if (pollPromises.value.has(taskId)) {
       markRunning({ ...meta, taskId })
@@ -352,7 +387,7 @@ export const useGenerationTaskStore = defineStore('generationTask', () => {
         return { status: 'failed', error: ORPHAN_TASK_MSG }
       }
       if (t.status === 'completed') {
-        if (onDone) await onDone()
+        if (onDone && isCurrentAttempt(meta)) await onDone()
         markDone({ ...meta, taskId })
         return { status: 'completed', result: t.result }
       }
@@ -643,6 +678,9 @@ export const useGenerationTaskStore = defineStore('generationTask', () => {
     markDone,
     markFailed,
     isRunning,
+    isCurrentAttempt,
+    isSubmitting,
+    finishSubmission,
     getRunningForEpisode,
     getAllRunningTasks,
     pollTask,

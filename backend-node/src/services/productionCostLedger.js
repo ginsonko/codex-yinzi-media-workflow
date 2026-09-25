@@ -120,7 +120,7 @@ function findPrice(db, input = {}) {
 }
 
 function estimateMicrousd(price, usage = {}) {
-  if (!price || price.billing_unit === 'unknown') return null;
+  if (!price || !ALLOWED_UNITS.has(price.billing_unit) || price.billing_unit === 'unknown') return null;
   const units = Math.max(0, Number(usage.units ?? usage.quantity ?? 1) || 0);
   if (price.billing_unit === 'per_1k_tokens') {
     const inputTokens = Math.max(0, Number(usage.input_tokens) || 0);
@@ -130,7 +130,8 @@ function estimateMicrousd(price, usage = {}) {
       + (outputTokens / 1000) * Number(price.output_price_microusd || 0)
     );
   }
-  return Math.ceil(units * Number(price.unit_price_microusd || 0));
+  if (price.unit_price_microusd == null || !Number.isFinite(Number(price.unit_price_microusd))) return null;
+  return Math.ceil(units * Number(price.unit_price_microusd));
 }
 
 function budgetMicrousd(run) {
@@ -167,17 +168,7 @@ function reserve(db, input = {}) {
   const estimate = input.estimated_microusd != null
     ? Math.max(0, Math.floor(Number(input.estimated_microusd) || 0))
     : estimateMicrousd(price, input.usage || { units: input.units });
-  // Existing projects without a money cap must keep working even when a
-  // third-party provider has no catalog price. They are recorded as unpriced,
-  // never as zero. Once a cap exists, unknown prices require explicit opt-in.
-  const allowUnknown = input.allow_unknown_price === true
-    || run?.budget?.allow_unknown_price === true
-    || budgetMicrousd(run) == null;
-  if (estimate == null && !allowUnknown) {
-    const error = new Error(`模型 ${input.model || '未知'} 没有可用价格，已在付费提交前停止`);
-    error.code = 'COST_PRICE_UNKNOWN';
-    throw error;
-  }
+  // Price discovery and budget references are advisory, never submission gates.
   const tx = db.transaction(() => {
     const raced = db.prepare('SELECT * FROM cost_ledger WHERE idempotency_key = ?').get(key);
     if (raced) return { entry: publicLedger(raced), reused: true };
@@ -185,12 +176,9 @@ function reserve(db, input = {}) {
     const limit = budgetMicrousd(run);
     const reserved = estimate || 0;
     const committed = summary.reserved_microusd + summary.settled_microusd + summary.uncertain_microusd;
-    if (limit != null && committed + reserved > limit) {
-      const error = new Error(`本次预计 ${fromMicrousd(reserved).toFixed(6)} USD，将超过任务金额上限 ${fromMicrousd(limit).toFixed(6)} USD`);
-      error.code = 'COST_BUDGET_EXHAUSTED';
-      error.details = { limit_microusd: limit, committed_microusd: committed, requested_microusd: reserved };
-      throw error;
-    }
+    const warnings = [];
+    if (estimate == null) warnings.push('price_unknown');
+    if (limit != null && committed + reserved > limit) warnings.push('estimate_above_reference');
     const now = nowIso();
     const status = estimate == null ? 'unpriced' : 'reserved';
     const priceSnapshot = price || {
@@ -207,7 +195,7 @@ function reserve(db, input = {}) {
       input.run_id || null, input.action_id || null, key, String(input.provider || '').toLowerCase(),
       String(input.service_type || ''), String(input.model || ''), normalizeUnit(input.billing_unit || price?.billing_unit || 'unknown'),
       Math.max(0, Number(input.units ?? input.usage?.units ?? 0) || 0), status, estimate, reserved,
-      json(priceSnapshot), json(input.usage || {}), input.note || null, now, now
+      json({ ...priceSnapshot, cost_policy: 'advisory', warnings }), json(input.usage || {}), input.note || null, now, now
     );
     return { entry: publicLedger(db.prepare('SELECT * FROM cost_ledger WHERE id = ?').get(Number(info.lastInsertRowid))), reused: false };
   });
@@ -267,6 +255,8 @@ function listRunCosts(db, runId, query = {}) {
     items,
     summary: {
       ...summary,
+      cost_policy: 'advisory',
+      has_unknown_cost: summary.unpriced_count > 0,
       reserved_usd: fromMicrousd(summary.reserved_microusd),
       settled_usd: fromMicrousd(summary.settled_microusd),
       uncertain_usd: fromMicrousd(summary.uncertain_microusd),

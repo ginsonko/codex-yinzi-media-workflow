@@ -310,9 +310,10 @@ export function useScenes(deps) {
   }
 
   async function onGenerateSceneImage(scene, useQuadGrid = false) {
+    const meta = { ...buildSceneImageMeta(scene), submitting: true }
+    if (genStore.isSubmitting(meta)) return
     scene.errorMsg = ''
     scene.error_msg = ''
-    const meta = buildSceneImageMeta(scene)
     generatingSceneIds.add(scene.id)
     genStore.markRunning(meta)
     try {
@@ -322,9 +323,11 @@ export function useScenes(deps) {
         style: getSelectedStyle(),
         use_quad_grid: !!useQuadGrid
       })
+      genStore.finishSubmission(meta)
       const taskId = res?.image_generation?.task_id ?? res?.task_id
       if (taskId) {
         const pollRes = await pollTask(taskId, () => loadDrama(), meta)
+        if (!genStore.isCurrentAttempt(meta)) return
         if (pollRes?.status === 'failed') {
           scene.errorMsg = pollRes.error || '生成失败'
         } else {
@@ -340,12 +343,15 @@ export function useScenes(deps) {
         ElMessage.success('场景图片已生成')
       }
     } catch (e) {
+      genStore.markFailed(meta, e.message || '提交失败')
+      if (!genStore.isCurrentAttempt(meta)) return
       console.error(e)
       scene.errorMsg = e.message || '生成失败'
       ElMessage.error(e.message || '提交失败')
     } finally {
-      generatingSceneIds.delete(scene.id)
-      genStore.markDone(meta)
+      genStore.finishSubmission(meta)
+      if (genStore.isCurrentAttempt(meta)) generatingSceneIds.delete(scene.id)
+      if (!meta.taskId && genStore.isRunning(meta)) genStore.markDone(meta)
     }
   }
 

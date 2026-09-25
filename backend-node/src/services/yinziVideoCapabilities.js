@@ -1,3 +1,5 @@
+const { getYinziVideoReferenceContract } = require('./yinziVideoReferenceContracts');
+
 const COMMON_LIMITS = Object.freeze({
   provider_contract: 'aizzz-video-v1',
   provider_create_path: '/videos',
@@ -391,7 +393,8 @@ function applyAutomaticRouteAvailability(model, capability) {
 function getYinziVideoCapability(model) {
   const normalized = normalizeModelName(model);
   const profileKey = MODEL_CAPABILITY_ALIASES[normalized] || normalized;
-  return applyAutomaticRouteAvailability(model, AIZZZ_PROFILES[profileKey] || null);
+  return applyAutomaticRouteAvailability(model,
+    AIZZZ_PROFILES[profileKey] || getYinziVideoReferenceContract(model));
 }
 
 function listYinziVideoCapabilities() {

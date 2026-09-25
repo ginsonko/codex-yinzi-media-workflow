@@ -2,6 +2,7 @@ const { uploadMetadata, appendReferenceFile } = require('../utils/uploadMetadata
 // ? Go pkg/video + VideoGenerationService ????????? API??????(????)
 const fs = require('fs');
 const path = require('path');
+const { localReferencePath, importGenerationReferences } = require('./localMediaReference');
 const aiConfigService = require('./aiConfigService');
 let sharp; try { sharp = require('sharp'); } catch (_) { sharp = null; }
 const { uploadLocalImageToProxy, uploadToImageProxy } = require('./uploadService');
@@ -920,7 +921,7 @@ function getDefaultVideoConfig(db, preferredModel, preferredConfigId = null) {
     // An explicit config binds the connection, credential and protocol. Model
     // catalogs are advisory snapshots and must not invalidate a user-selected
     // model before the upstream provider has a chance to evaluate it.
-    if (selected && selected.service_type === 'video' && selected.is_active) return selected;
+    if (selected) return selected;
     return null;
   }
   const configs = aiConfigService.listConfigs(db, 'video');
@@ -1097,6 +1098,21 @@ function resolveYinziCapabilityContext(config, model, hint = null) {
   }
 
   const catalogItem = findYinziCatalogModel(config, targetModel);
+  const localOverrides = aiConfigService.getModelCapabilityOverrides(config);
+  const localOverrideKey = Object.keys(localOverrides).find((name) => sameOpaqueModel(name, targetModel));
+  if (localOverrideKey) {
+    const base = cloneCapabilitySnapshot(catalogItem?.capabilities)
+      || cloneCapabilitySnapshot(getYinziVideoCapability(targetModel));
+    return {
+      model: targetModel,
+      capability: cloneCapabilitySnapshot(aiConfigService.mergeModelCapability(base, localOverrides[localOverrideKey])),
+      capability_source: base ? 'catalog_or_builtin+local' : 'local',
+      contract_status: 'local',
+      contract_warnings: [],
+      catalog_verified: catalogItem?.catalog_verified === true,
+      resolution_source: 'local_override',
+    };
+  }
   if (catalogItem && hasOwn(catalogItem, 'capabilities')) {
     const capability = cloneCapabilitySnapshot(catalogItem.capabilities);
     const builtin = capability ? null : cloneCapabilitySnapshot(getYinziVideoCapability(targetModel));
@@ -3037,11 +3053,10 @@ function isYinziAizzzVideoModel(model) {
     || /^(mg-seedance2\.0|cc-seedance2\.0|xx-seedance|破甲seedance)/i.test(String(model || '').trim());
 }
 
-// Capability data is useful for routing and diagnostics, but a user-selected
-// model must be allowed to reach the provider. Only an explicit advisory mode
-// bypasses these local hints; ordinary API clients keep strict validation.
-function normalizeContractValidationMode(mode) {
-  return String(mode || '').trim().toLowerCase() === 'advisory' ? 'advisory' : 'strict';
+// Capability metadata is advisory for all entry points, including old saved
+// requests carrying strict. The provider returns the actual execution result.
+function normalizeContractValidationMode(_mode) {
+  return 'advisory';
 }
 
 function appendContractWarning(warnings, code) {
@@ -3050,7 +3065,9 @@ function appendContractWarning(warnings, code) {
 }
 
 function buildYinziVideoRequest({ model, prompt, duration, aspect_ratio, resolution, references, capability }) {
-  const seconds = clampYinziVideoDuration(model, duration, capability);
+  const requestedSeconds = Number(duration);
+  const seconds = Number.isFinite(requestedSeconds) && requestedSeconds > 0
+    ? requestedSeconds : clampYinziVideoDuration(model, duration, capability);
   const body = {
     model: String(model || ''),
     prompt: String(prompt || ''),
@@ -3090,60 +3107,124 @@ function yinziReference(type, role, source) {
 
 function capabilityRoleState(capability, mediaType, role) {
   const roles = capability?.roles?.[mediaType];
-  if (!Array.isArray(roles)) return 'unknown';
+  if (!Array.isArray(roles)) {
+    if (mediaType === 'image' && ['first_frame', 'last_frame'].includes(role)
+      && typeof capability?.first_last_frame_supported === 'boolean') {
+      return capability.first_last_frame_supported ? 'supported' : 'unsupported';
+    }
+    return 'unknown';
+  }
   return roles.includes(role) ? 'supported' : 'unsupported';
 }
 
-function buildYinziReferences(input, resolved = {}, capabilityInput = undefined) {
+function buildYinziReferencePlan(input, resolved = {}, capabilityInput = undefined) {
   const refs = [];
+  const bindings = [];
   const rawImages = Array.isArray(input?.reference_urls) ? input.reference_urls.filter(Boolean) : [];
   const capability = capabilityInput === undefined
     ? getYinziVideoCapability(input?.model)
     : capabilityInput;
-  const firstRoleState = capabilityRoleState(capability, 'image', 'first_frame');
-  const lastRoleState = capabilityRoleState(capability, 'image', 'last_frame');
-  const firstRole = firstRoleState === 'unsupported' ? 'reference' : 'first_frame';
-  const lastRole = lastRoleState === 'unsupported' ? 'reference' : 'last_frame';
-  const appendImage = (role, source) => {
+  const firstRole = capabilityRoleState(capability, 'image', 'first_frame') === 'unsupported' ? 'reference' : 'first_frame';
+  const lastRole = capabilityRoleState(capability, 'image', 'last_frame') === 'unsupported' ? 'reference' : 'last_frame';
+  const appendImage = (role, source, inputIndex = null, requestedRole = null) => {
     const reference = yinziReference('image', role, source);
     if (!reference) return;
-    if (refs.some((item) => JSON.stringify(item) === JSON.stringify(reference))) return;
     refs.push(reference);
+    const binding = { type: 'image', index: refs.length, input_index: inputIndex, role, requested_roles: requestedRole ? [requestedRole] : [] };
+    bindings.push(binding);
+    return binding;
   };
+  const appendFrame = (role, source, rawSource, requestedRole) => {
+    if (!source) return;
+    if (role === 'reference') {
+      const reference = yinziReference('image', role, source);
+      const alias = bindings.find((binding) => binding.input_index != null && (
+        String(rawImages[binding.input_index - 1]).trim() === String(rawSource || '').trim()
+        || JSON.stringify(refs[binding.index - 1]) === JSON.stringify(reference)
+      ));
+      if (alias) { alias.requested_roles.push(requestedRole); return; }
+    }
+    appendImage(role, source, null, requestedRole);
+  };
+  // Preserve the established first/generic/last wire order. A downgraded
+  // frame already present in the generic list reuses that exact input slot.
+  if (firstRole === 'first_frame') appendImage(firstRole, resolved.first, null, 'first_frame');
+  const firstRawSource = input?.first_frame_url || input?.image_url;
+  const firstAliasInput = firstRole === 'reference' && firstRawSource
+    ? rawImages.findIndex((source) => String(source).trim() === String(firstRawSource).trim()) : -1;
+  if (firstRole === 'reference') {
+    // If the frame is already one of the ordered generic slots, bind that slot
+    // in place. Otherwise retain the explicit frame's position before the list.
+    if (firstAliasInput < 0) appendFrame(firstRole, resolved.first, firstRawSource, 'first_frame');
+  }
   if (rawImages.length) {
-    if (resolved.first) appendImage(firstRole, resolved.first);
-    for (const source of resolved.images || resolved.references || []) appendImage('reference', source);
-    if (resolved.last) appendImage(lastRole, resolved.last);
-  } else if (capability) {
-    if (resolved.first) appendImage(firstRole, resolved.first);
-    if (resolved.last) appendImage(lastRole, resolved.last);
-  } else {
-    // Unknown capability is not evidence that a role is unsupported. Preserve
-    // the user's explicit semantics and let the provider return the contract.
-    appendImage('first_frame', resolved.first);
-    appendImage('last_frame', resolved.last);
+    (resolved.images || resolved.references || []).forEach((source, index) => {
+      // Repeated explicit slots are meaningful to a prompt; never collapse them.
+      appendImage('reference', source, index + 1, index === firstAliasInput ? 'first_frame' : null);
+    });
   }
-  for (const source of resolved.videos || []) {
-    const reference = yinziReference('video', 'reference', source);
-    if (reference) refs.push(reference);
+  appendFrame(lastRole, resolved.last, input?.last_frame_url, 'last_frame');
+  for (const [type, sources] of [['video', resolved.videos], ['audio', resolved.audios]]) {
+    let index = 0;
+    for (const source of sources || []) {
+      const reference = yinziReference(type, 'reference', source);
+      if (!reference) continue;
+      refs.push(reference);
+      bindings.push({ type, index: ++index, input_index: index, role: 'reference', requested_roles: [] });
+    }
   }
-  for (const source of resolved.audios || []) {
-    const reference = yinziReference('audio', 'reference', source);
-    if (reference) refs.push(reference);
-  }
-  return refs;
+  return { references: refs, bindings };
 }
 
-function dedupeReferenceInputs(values) {
-  const seen = new Set();
-  const result = [];
-  for (const value of Array.isArray(values) ? values : []) {
-    const normalized = String(value || '').trim();
-    if (!normalized || seen.has(normalized)) continue;
-    seen.add(normalized);
-    result.push(normalized);
+function buildYinziReferences(input, resolved = {}, capabilityInput = undefined) {
+  return buildYinziReferencePlan(input, resolved, capabilityInput).references;
+}
+
+function adaptYinziReferencePrompt(prompt, plan, capability) {
+  let text = String(prompt || '');
+  const warnings = [];
+  const names = { image: '图片', video: '视频', audio: '音频' };
+  const required = capability?.each_reference_must_be_mentioned === true;
+  const configuredTemplate = capability?.reference_template;
+  const candidateTemplate = configuredTemplate == null && required ? '@{type}{index}' : configuredTemplate;
+  const template = typeof candidateTemplate === 'string'
+    && candidateTemplate.includes('{type}') && candidateTemplate.includes('{index}') ? candidateTemplate : null;
+  if (candidateTemplate != null && !template) warnings.push('reference_template_invalid');
+  const marker = (type, index) => template?.replaceAll('{type}', names[type]).replaceAll('{index}', String(index));
+  const escape = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const bindings = plan.bindings.map((binding) => ({ ...binding, marker: marker(binding.type, binding.index) || null }));
+  // Replace all original slots in one pass; sequential replace can cascade
+  // @图片1 -> @图片2 -> @图片3 and bind a different asset.
+  if (template) {
+    const remap = new Map(bindings.filter((binding) => binding.input_index != null)
+      .map((binding) => [marker(binding.type, binding.input_index), binding.marker]));
+    if (remap.size) {
+      const pattern = new RegExp(`(?:${[...remap.keys()].sort((a, b) => b.length - a.length).map(escape).join('|')})(?!\\d)`, 'g');
+      const original = text;
+      text = text.replace(pattern, (match) => remap.get(match));
+      if (text !== original) warnings.push('reference_indices_remapped');
+    }
   }
-  return result;
+  const additions = [];
+  for (const binding of bindings) {
+    if (binding.type !== 'image' || binding.role !== 'reference') continue;
+    const label = binding.marker || `第 ${binding.index} 张参考图`;
+    for (const role of binding.requested_roles) {
+      const hint = role === 'first_frame' ? `开场画面以 ${label} 为参考。` : `收尾画面以 ${label} 为参考。`;
+      if (!text.includes(hint) && !additions.includes(hint)) additions.push(hint);
+    }
+  }
+  if (additions.length) warnings.push('frame_semantics_in_prompt');
+  const withHints = [text, ...additions].join('\n');
+  if (required && template) {
+    const missing = bindings.map((binding) => binding.marker)
+      .filter((value) => !new RegExp(`${escape(value)}(?!\\d)`).test(withHints));
+    if (missing.length) {
+      additions.push(`参考素材：${missing.join(' ')}。`);
+      warnings.push('reference_markers_added');
+    }
+  }
+  return { prompt: [text, ...additions].filter(Boolean).join('\n'), bindings, warnings };
 }
 
 function validateYinziReferenceCounts(model, images, videos, audios, capabilityInput = undefined) {
@@ -3158,37 +3239,16 @@ function validateYinziReferenceCounts(model, images, videos, audios, capabilityI
   ];
   for (const [label, actual, maximum] of checks) {
     if (Number.isFinite(Number(maximum)) && actual > Number(maximum)) {
-      return `${model} 最多支持 ${maximum} 个参考${label}，当前为 ${actual} 个；已在提交前停止。`;
+      return `${model} 的目录参考上限为 ${maximum} 个参考${label}，当前为 ${actual} 个；仍按请求提交。`;
     }
   }
   if (Number.isFinite(Number(capability.max_total_references))
     && images.length + videos.length + audios.length > Number(capability.max_total_references)) {
-    return `${model} 的参考媒体总数超过 ${capability.max_total_references}；已在提交前停止。`;
+    return `${model} 的参考媒体总数超过目录参考上限 ${capability.max_total_references}；仍按请求提交。`;
   }
   return null;
 }
 
-function localReferencePath(raw, storageLocalPath) {
-  if (!storageLocalPath) return null;
-  let value = String(raw || '').trim();
-  if (!value || value.startsWith('data:')) return null;
-  if (/^https?:\/\//i.test(value)) {
-    try {
-      const parsed = new URL(value);
-      if (!['localhost', '127.0.0.1', '0.0.0.0'].includes(parsed.hostname)) return null;
-      value = parsed.pathname;
-    } catch (_) {
-      return null;
-    }
-  }
-  const staticIndex = value.indexOf('/static/');
-  if (staticIndex >= 0) value = value.slice(staticIndex + '/static/'.length);
-  value = decodeURIComponent(value).replace(/^[/\\]+/, '');
-  const root = path.resolve(storageLocalPath);
-  const candidate = path.resolve(root, value);
-  if (candidate !== root && !candidate.startsWith(root + path.sep)) return null;
-  return fs.existsSync(candidate) && fs.statSync(candidate).isFile() ? candidate : null;
-}
 
 function validateLocalYinziReferenceVideoDurationBudget(values, storageLocalPath, capability) {
   const maximum = Number(capability?.max_reference_video_seconds_total);
@@ -3210,7 +3270,7 @@ function validateLocalYinziReferenceVideoDurationBudget(values, storageLocalPath
   if (knownTotal > maximum + 0.001) {
     return {
       ok: false,
-      error: `YinziAPI reference videos total ${knownTotal.toFixed(3)} seconds, above the ${maximum}-second provider limit; stopped before upload`,
+      error: `YinziAPI reference videos total ${knownTotal.toFixed(3)} seconds, above the ${maximum}-second catalog hint; advisory adaptation will be attempted`,
       known_total_seconds: knownTotal,
       unknown_count: unknownCount,
       durations,
@@ -3270,6 +3330,7 @@ function mimeTypeForReference(filePath, type) {
 
 async function uploadYinziReferenceFile(config, filePath, type, capability, log, videoGenId, index, storageRoot, aspectRatio, options = {}) {
   let prepared;
+  try {
   if (type === 'video') {
     prepared = prepareYinziReferenceVideo(filePath, {
       storage_root: storageRoot,
@@ -3288,18 +3349,21 @@ async function uploadYinziReferenceFile(config, filePath, type, capability, log,
   } else {
     prepared = { file_path: filePath };
   }
+  } catch (error) {
+    // Local transcoding/probing is an optimization, not permission to submit.
+    // The actual read/upload still reports missing files and provider errors.
+    prepared = { file_path: filePath };
+    appendContractWarning(options.contract_warnings || [], `${type}_preparation_unavailable`);
+    log?.warn?.('[YinziAPI] Reference preparation unavailable; uploading original file', { type, message: error.message });
+  }
   const uploadPath = prepared.file_path;
   const size = fs.statSync(uploadPath).size;
   const maxBytes = capability?.[`max_${type}_bytes`];
   if (maxBytes && size > maxBytes) {
-    if (normalizeContractValidationMode(options.contract_validation_mode) === 'advisory') {
       appendContractWarning(options.contract_warnings || [], `${type}_size_over_contract`);
       log?.warn?.('[YinziAPI] advisory contract warning: reference file is over the local size hint', {
         video_gen_id: videoGenId, type, bytes: size, max_bytes: maxBytes,
       });
-    } else {
-      throw new Error(`参考${type}文件超过 ${(maxBytes / 1024 / 1024).toFixed(0)}MB 限制`);
-    }
   }
   const base = String(config.base_url || 'https://api.yinziapi.top/v1').replace(/\/$/, '');
   const form = new FormData();
@@ -3357,17 +3421,22 @@ async function resolveYinziReferenceSource(config, raw, type, capability, opts, 
     return { url: value };
   }
   const filePath = localReferencePath(value, opts.storage_local_path);
-  if (!filePath) throw new Error(`本地参考${type}文件不存在或不在媒体目录中`);
+  if (!filePath) throw new Error(`无法读取本地参考${type}文件：${value}`);
   if (type === 'image' && String(opts.reference_transport || 'data_url').toLowerCase() !== 'file_id') {
-    const prepared = await prepareYinziReferenceImage(filePath, {
+    let prepared;
+    try { prepared = await prepareYinziReferenceImage(filePath, {
       storage_root: opts.storage_local_path,
       log,
       video_gen_id: opts.video_gen_id,
       index,
-    });
+    }); } catch (error) {
+      prepared = { file_path: filePath };
+      appendContractWarning(opts.contract_warnings || [], 'image_preparation_unavailable');
+      log?.warn?.('[YinziAPI] Image preparation unavailable; using original file', { message: error.message });
+    }
     const maxBytes = Number(capability?.max_image_bytes);
     if (Number.isFinite(maxBytes) && Number(prepared.probe?.bytes) > maxBytes) {
-      throw new Error(`参考图片超过 ${(maxBytes / 1024 / 1024).toFixed(0)}MB 限制`);
+      appendContractWarning(opts.contract_warnings || [], 'image_size_over_contract');
     }
     const inline = localImageDataUrl(prepared.file_path);
     log.info('[YinziAPI] Local image reference prepared as data URL', {
@@ -3398,6 +3467,8 @@ async function callYinziVideoApi(db, config, log, opts) {
   const contractValidationMode = normalizeContractValidationMode(opts.contract_validation_mode);
   const contractWarnings = [];
   const referenceVideoAdaptations = [];
+  let referenceBindings = [];
+  let submittedPrompt = null;
   let submissionReferenceSummary = null;
   let responseRequestId = null;
   opts.contract_warnings = contractWarnings;
@@ -3414,6 +3485,8 @@ async function callYinziVideoApi(db, config, log, opts) {
       resolution_source: capabilityContext.resolution_source,
       model: String(opts.model || ''),
       reference_video_adaptations: referenceVideoAdaptations.length ? referenceVideoAdaptations : [],
+      reference_bindings: referenceBindings,
+      ...(submittedPrompt == null ? {} : { submitted_prompt: submittedPrompt }),
     },
   });
   const publishSubmission = (status, result = {}, receipt = {}) => {
@@ -3453,18 +3526,17 @@ async function callYinziVideoApi(db, config, log, opts) {
   );
   if (Number.isFinite(maxPromptChars) && prompt.length > maxPromptChars) {
     warn('prompt_over_contract');
-    if (contractValidationMode === 'strict') {
-      return publishSubmission('not_sent', {
-        error: `YinziAPI prompt has ${prompt.length} characters, above the ${maxPromptChars}-character model limit; stopped before reference upload`,
-      }, { phase: 'local_prompt_validation' });
-    }
     log?.warn?.('[YinziAPI] advisory contract warning: prompt is over the local model hint', {
       video_gen_id: opts.video_gen_id, prompt_chars: prompt.length, max_prompt_chars: maxPromptChars,
     });
   }
-  const rawReferenceUrls = dedupeReferenceInputs(opts.reference_urls);
-  let rawVideoUrls = dedupeReferenceInputs(opts.reference_video_urls);
-  const rawAudioUrls = dedupeReferenceInputs(opts.reference_audio_urls);
+  // These arrays define prompt slots. Repeated sources may intentionally occupy
+  // more than one slot, so normalizing must not silently renumber later media.
+  const referenceSlots = (values) => (Array.isArray(values) ? values : [])
+    .map((value) => String(value || '').trim()).filter(Boolean);
+  const rawReferenceUrls = referenceSlots(opts.reference_urls);
+  let rawVideoUrls = referenceSlots(opts.reference_video_urls);
+  const rawAudioUrls = referenceSlots(opts.reference_audio_urls);
   const legacyFirst = String(opts.first_frame_url || opts.image_url || '').trim();
   const legacyLast = String(opts.last_frame_url || '').trim();
   const firstRoleState = capabilityRoleState(capability, 'image', 'first_frame');
@@ -3476,12 +3548,6 @@ async function callYinziVideoApi(db, config, log, opts) {
   if (contractValidationMode === 'advisory'
     && legacyFirst && strictFirstUnsupported) {
     warn('first_frame_role_unsupported');
-  }
-  if (contractValidationMode === 'strict'
-    && legacyFirst && strictFirstUnsupported) {
-    return publishSubmission('not_sent', {
-      error: '该 YinziAPI 模型能力提示仅支持通用 reference，不能同时把 first_frame 当作严格首帧提交；已在提交前停止，未创建上游任务。',
-    }, { phase: 'local_reference_role_validation' });
   }
   const rawImageCount = rawReferenceUrls.length
     + (legacyFirst ? 1 : 0)
@@ -3495,9 +3561,6 @@ async function callYinziVideoApi(db, config, log, opts) {
   );
   if (countError) {
     warn('reference_count_over_contract');
-    if (contractValidationMode === 'strict') {
-      return publishSubmission('not_sent', { error: countError }, { phase: 'local_reference_count_validation' });
-    }
   }
   try {
     const durationBudget = validateLocalYinziReferenceVideoDurationBudget(
@@ -3516,9 +3579,10 @@ async function callYinziVideoApi(db, config, log, opts) {
         rawVideoUrls = adapted.values;
         referenceVideoAdaptations.push(...adapted.adaptations);
       } catch (error) {
-        return publishSubmission('not_sent', { error: `${durationBudget.error}；${error.message}，未提交` }, { phase: 'local_reference_duration_adaptation' });
+        warn('reference_video_adaptation_unavailable');
+        log?.warn?.('[YinziAPI] Reference adaptation unavailable; submitting original references', { message: error.message });
       }
-      warn('reference_video_auto_clipped');
+      if (referenceVideoAdaptations.length) warn('reference_video_auto_clipped');
       log?.info?.('[YinziAPI] Auto-clipped local reference videos to provider contract', {
         video_gen_id: opts.video_gen_id,
         maximum_seconds: Number(capability?.max_reference_video_seconds_total),
@@ -3535,7 +3599,8 @@ async function callYinziVideoApi(db, config, log, opts) {
       });
     }
   } catch (error) {
-    return publishSubmission('not_sent', { error: error.message }, { phase: 'local_reference_duration_probe' });
+    warn('reference_video_duration_unknown');
+    log?.warn?.('[YinziAPI] Duration probe unavailable; continuing reference upload', { message: error.message });
   }
 
   try {
@@ -3555,26 +3620,28 @@ async function callYinziVideoApi(db, config, log, opts) {
       });
     }
   } catch (error) {
-    return publishSubmission('not_sent', { error: error.message }, { phase: 'local_reference_image_prepare' });
+    warn('image_preparation_unavailable');
+    log?.warn?.('[YinziAPI] Image preparation unavailable; continuing with original references', { message: error.message });
   }
 
   if (contractValidationMode === 'advisory'
     && legacyLast && strictLastUnsupported) {
     warn('last_frame_role_unsupported');
   }
-  if (contractValidationMode === 'strict'
-    && legacyLast && strictLastUnsupported) {
-    return publishSubmission('not_sent', {
-      error: '该 YinziAPI 模型能力提示使用通用 reference，不支持 last_frame 角色；已在提交前停止，未创建上游任务。',
-    }, { phase: 'local_reference_role_validation' });
-  }
 
   const resolvedReferences = [];
+  const resolvedImagesByInput = new Map();
+  const resolveImage = async (source, index) => {
+    if (!resolvedImagesByInput.has(source)) {
+      resolvedImagesByInput.set(source, await resolveYinziReferenceSource(
+        config, source, 'image', capability, opts, log, index
+      ));
+    }
+    return resolvedImagesByInput.get(source);
+  };
   for (let i = 0; i < rawReferenceUrls.length; i++) {
     try {
-      resolvedReferences.push(await resolveYinziReferenceSource(
-        config, rawReferenceUrls[i], 'image', capability, opts, log, i
-      ));
+      resolvedReferences.push(await resolveImage(rawReferenceUrls[i], i));
     } catch (error) {
       return publishSubmission('not_sent', { error: error.message }, { phase: 'reference_image_upload' });
     }
@@ -3615,7 +3682,7 @@ async function callYinziVideoApi(db, config, log, opts) {
       || firstRoleState === 'unknown'
       || contractValidationMode === 'advisory')) {
       try {
-        first = await resolveYinziReferenceSource(config, rawFirst, 'image', capability, opts, log, 'first');
+        first = await resolveImage(rawFirst, 'first');
       } catch (error) {
         return publishSubmission('not_sent', { error: error.message }, { phase: 'first_frame_upload' });
       }
@@ -3625,7 +3692,7 @@ async function callYinziVideoApi(db, config, log, opts) {
       || lastRoleState === 'unknown'
       || contractValidationMode === 'advisory')) {
       try {
-        last = await resolveYinziReferenceSource(config, rawLast, 'image', capability, opts, log, 'last');
+        last = await resolveImage(rawLast, 'last');
       } catch (error) {
         return publishSubmission('not_sent', { error: error.message }, { phase: 'last_frame_upload' });
       }
@@ -3636,16 +3703,22 @@ async function callYinziVideoApi(db, config, log, opts) {
     }, { phase: 'reference_resolution' });
   }
 
-  const references = buildYinziReferences(opts, {
+  const referencePlan = buildYinziReferencePlan({ ...opts, reference_urls: rawReferenceUrls }, {
     images: resolvedReferences,
     videos: resolvedVideos,
     audios: resolvedAudios,
     first,
     last,
   }, capability);
+  const references = referencePlan.references;
+  const promptAdaptation = adaptYinziReferencePrompt(opts.prompt, referencePlan, capability);
+  submittedPrompt = promptAdaptation.prompt;
+  referenceBindings = promptAdaptation.bindings;
+  for (const warning of promptAdaptation.warnings) warn(warning);
+  if (Number.isFinite(maxPromptChars) && promptAdaptation.prompt.length > maxPromptChars) warn('prompt_over_contract');
   const body = buildYinziVideoRequest({
     model: opts.model,
-    prompt: opts.prompt,
+    prompt: promptAdaptation.prompt,
     duration: opts.duration,
     aspect_ratio: opts.aspect_ratio,
     resolution: opts.resolution,
@@ -3682,7 +3755,7 @@ async function callYinziVideoApi(db, config, log, opts) {
     });
   } catch (error) {
     return publishSubmission('ambiguous', {
-      error: `YinziAPI 视频提交连接中断（${error.message || '网络错误'}）。上游可能已经受理并扣费，本应用不会自动重试；请先到站点任务记录核对。`,
+      error: `YinziAPI 视频提交连接中断（${error.message || '网络错误'}）。上游结果及费用未知；可以查询原记录，也可以明确重试创建新尝试，原记录会保留。`,
       ambiguous_submission: true,
     }, { phase: 'transport_error', message: error.message });
   }
@@ -4603,6 +4676,7 @@ function resolveVolcClassicImage(rawUrl, files_base_url, storage_local_path, log
  * @returns {Promise<{ task_id?: string, video_url?: string, error?: string }>}
  */
 async function callVideoApi(db, log, opts) {
+  opts = importGenerationReferences(opts);
   const {
     prompt,
     model: preferredModel,

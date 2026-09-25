@@ -406,7 +406,7 @@ describe('production workflow repository', () => {
     assert.equal(repo.claimLease(db, run.id, 'tab-b', 30000).claimed, true);
   });
 
-  it('reserves paid budget before submission and reuses a durable action key', () => {
+  it('records advisory usage before submission and reuses a durable action key', () => {
     const run = makeRun();
     const first = repo.reserveAction(db, {
       run_id: run.id, action_key: 'shot:1:video:r1:a1', stage: 'shot_video',
@@ -425,10 +425,12 @@ describe('production workflow repository', () => {
       run_id: run.id, action_key: 'shot:2:video:r1:a1', stage: 'shot_video',
       scope_type: 'shot', scope_id: '2', kind: 'video_generate', request: {}, reserved_video_seconds: 5,
     });
-    assert.throws(() => repo.reserveAction(db, {
+    const overReference = repo.reserveAction(db, {
       run_id: run.id, action_key: 'shot:3:video:r1:a1', stage: 'shot_video',
       scope_type: 'shot', scope_id: '3', kind: 'video_generate', request: {}, reserved_video_seconds: 5,
-    }), /超过预算/);
+    }).action;
+    assert.ok(overReference.request.usage_budget_diagnostics.warnings.includes('video_attempts_above_reference'));
+    assert.deepEqual(repo.getRun(db, run.id).usage, { video_attempts_reserved: 3, video_seconds_reserved: 15 });
   });
 
   it('releases a definitively rejected video reservation exactly once after local waiting state', () => {
@@ -642,28 +644,21 @@ describe('bounded fallback budget repository', () => {
     assert.equal(duplicate.reservation.amount_microusd, amount);
     assert.equal(repo.getRun(db, run.id).runtime.fallback_reserved_microusd, amount);
     assert.equal(repo.consumeFallbackBudget(db, run.id, 'shot:1:seedance-fallback', 3000000).remaining_microusd, 6500000);
-    assert.throws(
-      () => repo.consumeFallbackBudget(db, run.id, 'shot:1:seedance-fallback', 7000000),
-      (error) => error.code === 'COST_FALLBACK_SEGMENT_BUDGET_EXHAUSTED',
-    );
+    assert.equal(repo.consumeFallbackBudget(db, run.id, 'shot:1:seedance-fallback', 7000000).remaining_microusd, 0);
     const released = repo.releaseFallbackBudget(db, run.id, 'shot:1:seedance-fallback', 'test_converged');
-    assert.equal(released.released_microusd, 6500000);
+    assert.equal(released.released_microusd, 0);
     assert.equal(repo.getRun(db, run.id).runtime.fallback_reserved_microusd, 0);
     assert.equal(repo.releaseFallbackBudget(db, run.id, 'shot:1:seedance-fallback').released_microusd, 0);
   });
 
-  it('does not reserve a fallback chain when its worst case exceeds the run cap', () => {
+  it('records a fallback estimate above the reference without stopping the chain', () => {
     const run = makeRun({
       idempotency_key: 'fallback-budget-exhausted',
       budget: { max_cost_usd: 9 },
     });
-    assert.throws(
-      () => repo.reserveFallbackBudget(db, run.id, {
-        reservation_key: 'shot:1:seedance-fallback', amount_microusd: 9500000,
-      }),
-      (error) => error.code === 'COST_FALLBACK_BUDGET_EXHAUSTED',
-    );
-    assert.equal(repo.getRun(db, run.id).runtime.fallback_reserved_microusd, undefined);
+    const result = repo.reserveFallbackBudget(db, run.id, {reservation_key:'shot:1:seedance-fallback',amount_microusd:9500000});
+    assert.ok(result.reservation.warnings.includes('estimate_above_reference'));
+    assert.equal(repo.getRun(db, run.id).runtime.fallback_reserved_microusd, 9500000);
     assert.equal(repo.listActions(db, run.id).items.length, 0);
   });
 });

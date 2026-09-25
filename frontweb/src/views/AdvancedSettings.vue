@@ -106,7 +106,7 @@
               <article class="automation-setting-card">
                 <div class="setting-card-heading">
                   <span class="setting-icon"><el-icon><Operation /></el-icon></span>
-                  <div><strong>新任务故障恢复上限</strong><p>明确可安全重试的临时故障由系统自行分析和恢复；排队、等待和状态收敛不计入失败次数。</p></div>
+                  <div><strong>新任务自动恢复次数</strong><p>临时故障由系统按此次数自动恢复；排队和等待不计入。手动重试或重新生成始终可用。</p></div>
                 </div>
                 <div class="setting-control-line">
                   <label for="recovery-failure-limit">同一对象连续恢复</label>
@@ -165,8 +165,8 @@
                 :closable="false"
                 show-icon
                 :title="isExpensiveFallback
-                  ? '当前选择包含破甲等高价模型：开启并保存即表示允许在内容审核拒绝时自动使用，但仍受每个任务的金额上限约束。'
-                  : '默认推荐 480p fast；开关默认关闭。兜底模型仍需兼容该镜头的时长和参考媒体，并受任务金额上限约束。'"
+                  ? '当前选择包含破甲等高价模型：开启并保存即表示允许在内容审核拒绝时自动使用，费用会按实际可用报价提示。'
+                  : '默认推荐 480p fast；开关默认关闭。兜底模型仍需兼容该镜头的时长和参考媒体，费用信息仅作参考。'"
               />
             </article>
           </section>
@@ -174,10 +174,10 @@
 
         <el-tab-pane label="价格与预算" name="costs">
           <section class="settings-section">
-            <div class="section-heading"><div><h2>价格与预算</h2><p>每个外部动作在提交前先预留费用，成功后结算，明确失败释放，不确定结果保留待对账。</p></div><div class="section-actions"><el-button :icon="Plus" @click="openPriceDialog()">添加兼容站价格</el-button><el-button :icon="Refresh" :loading="syncingPrices" @click="syncPrices">同步 YinziAPI 价格目录</el-button></div></div>
+            <div class="section-heading"><div><h2>价格与预算</h2><p>尽力估算每次请求费用；未知价格照常提交，估算不等于实扣。不确定结果保留原任务和待对账记录。</p></div><div class="section-actions"><el-button :icon="Plus" @click="openPriceDialog()">添加兼容站价格</el-button><el-button :icon="Refresh" :loading="syncingPrices" @click="syncPrices">同步 YinziAPI 价格目录</el-button></div></div>
             <div class="budget-panel">
-              <div><strong>新任务默认金额上限</strong><p>只影响之后创建的新任务；已存在任务保持自己的授权上限。</p></div>
-              <div class="budget-controls"><el-input-number v-model="budgetDraft.max_cost_usd" :min="0" :max="1000000" :precision="6" :step="0.1" controls-position="right" placeholder="不限额" /><span>USD</span><el-checkbox v-model="budgetDraft.allow_unknown_price">允许未定价模型提交</el-checkbox><el-button type="primary" :loading="savingBudget" @click="saveBudget">保存默认预算</el-button></div>
+              <div><strong>新任务默认参考费用</strong><p>仅用于估算和提示，不因价格未知或高于参考金额阻止生成。</p></div>
+              <div class="budget-controls"><el-input-number v-model="budgetDraft.max_cost_usd" :min="0" :max="1000000" :precision="6" :step="0.1" controls-position="right" placeholder="不限额" /><span>USD</span><span class="muted">未知费用照常提交，并标记为未估算</span><el-button type="primary" :loading="savingBudget" @click="saveBudget">保存默认预算</el-button></div>
             </div>
             <div class="price-toolbar"><el-input v-model="priceSearch" clearable placeholder="按提供商、服务类型或模型搜索" :prefix-icon="Search" /><el-select v-model="priceServiceType" clearable placeholder="服务类型"><el-option label="文本" value="text" /><el-option label="图片" value="image" /><el-option label="视频" value="video" /><el-option label="TTS" value="tts" /></el-select></div>
             <el-table v-loading="pricesLoading" :data="filteredPrices" stripe class="price-table">

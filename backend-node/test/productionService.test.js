@@ -1204,7 +1204,7 @@ describe('production executor text stages', () => {
     assert.equal(repo.getAction(db, failed.id).status, 'cancelled');
     const saved = repo.getRun(db, run.id);
     assert.equal(saved.policy.video_model_overrides['1'], 'cc-seedance2.0 480p-nsp');
-    assert.equal(saved.current_stage, 'reference_bundle');
+    assert.equal(saved.current_stage, 'shot_video');
     const bundle = repo.listArtifacts(db, run.id, { stage: 'reference_bundle', current: true }).items[0];
     assert.equal(bundle.content.routing_receipt.model, 'cc-seedance2.0 480p-nsp');
     assert.equal(bundle.content.images[0].artifact_id, storyboard.id);
@@ -1444,7 +1444,7 @@ describe('production executor text stages', () => {
     const authorized = service.authorizeRetry(run.id, { action_id: failed.id });
     assert.equal(authorized.action.status, 'cancelled');
     assert.equal(authorized.action.result.retry_authorized, true);
-    assert.equal(authorized.action.result.retry_reason, '用户请求重试当前失败任务');
+    assert.equal(authorized.action.result.retry_reason, '用户请求重新生成');
     assert.equal(repo.getRun(db, run.id).status, 'running');
 
     const ambiguous = repo.reserveAction(db, {
@@ -1527,6 +1527,32 @@ describe('production executor text stages', () => {
       assert.equal(saved.generation_id,31);
       assert.throws(()=>repo.createArtifact(db,{run_id:run.id,stage:'asset_images',scope_type:'character',scope_id:'1',title:'stale',source_action_id:original.id,content:{}}),{code:'ACTION_SUPERSEDED'});
       assert.equal(repo.listActions(db,run.id).items.length,1);
+    });
+  }
+
+  for (const runStatus of ['completed', 'paused', 'cancelled']) {
+    it(`restarts an earlier successful action from a ${runStatus} run without review or force`, () => {
+      const run = createRun('human');
+      const original = repo.reserveAction(db, {
+        run_id: run.id, action_key: `earlier-success-${runStatus}`, stage: 'asset_images',
+        scope_type: 'character', scope_id: 'hero', kind: 'image_generate', request: { prompt: 'original' },
+      }).action;
+      repo.updateAction(db, original.id, { status: 'completed', generation_id: 91 });
+      repo.updateRun(db, run.id, {
+        status: runStatus, current_stage: 'shot_video', current_scope_type: 'shot', current_scope_id: '8',
+        completed_at: new Date().toISOString(),
+      });
+      const service = createProductionService(db, {}, log);
+      const result = service.authorizeRetry(run.id, { action_id: original.id });
+      const saved = repo.getRun(db, run.id);
+      assert.equal(result.reused, false);
+      assert.equal(saved.status, 'running');
+      assert.equal(saved.current_stage, 'asset_images');
+      assert.equal(saved.current_scope_type, 'character');
+      assert.equal(saved.current_scope_id, 'hero');
+      assert.equal(saved.completed_at, null);
+      assert.equal(result.action.result.previous_status, 'completed');
+      assert.equal(result.action.generation_id, 91);
     });
   }
 
@@ -1657,7 +1683,7 @@ describe('production executor text stages', () => {
     assert.equal(switched.effects.reference_bundle_refreshed, true);
     assert.equal(switched.effects.retry_authorized, true);
     assert.deepEqual(switched.summary.run.usage, beforeUsage);
-    assert.equal(switched.summary.run.current_stage, 'reference_bundle');
+    assert.equal(switched.summary.run.current_stage, 'shot_video');
     assert.equal(switched.summary.run.policy.video_model_overrides['5'], 'cc-seedance2.0 480p-nsp');
     const newBundle = repo.getArtifact(db, switched.effects.reference_bundle_artifact_id);
     assert.equal(newBundle.status, 'draft');

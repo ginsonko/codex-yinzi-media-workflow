@@ -141,11 +141,9 @@ export function summarizeCounts(counts = {}) {
 
 export function formatBudgetTruth(budget = {}) {
   const rawAmount = budget.maximum ?? budget.max_cost_usd
-  if (rawAmount == null || rawAmount === '') return '未设置费用上限；付费节点仍需明确授权'
+  if (rawAmount == null || rawAmount === '') return '未填写参考费用；按请求执行，未知价格不会拦截'
   const amount = Number(rawAmount)
   const currency = String(budget.currency || (budget.maximum != null ? 'CNY' : 'USD')).toUpperCase()
-  if (!Number.isFinite(amount)) return '预算格式无法识别；付费节点仍需明确授权'
-  if (amount === 0) return `预算上限 0 ${currency}；禁止付费调用`
-  if (amount > 0) return `预算上限 ${amount.toFixed(2)} ${currency}`
-  return '预算不能为负数；付费节点仍需明确授权'
+  if (!Number.isFinite(amount) || amount < 0) return '参考费用无法识别；不影响执行'
+  return `参考费用 ${amount.toFixed(2)} ${currency}；仅提示，不拦截执行`
 }

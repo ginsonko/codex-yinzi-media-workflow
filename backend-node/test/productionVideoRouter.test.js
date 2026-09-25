@@ -72,9 +72,8 @@ describe('production video router', () => {
     assert.ok(route.contract_warnings.includes('unknown_contract'));
   });
 
-  it('does not treat an unverified static unknown model as an automatic candidate', () => {
-    assert.throws(
-      () => selectShotVideoRoute({
+  it('keeps unverified static metadata advisory when it is the only available model name', () => {
+    const route = selectShotVideoRoute({
         shot: { content: { duration: 5, previs_mode: 'skip', route_profile: 'short_image_guided' } },
         catalog: {
           pricing_version: 'static-list-v1',
@@ -87,9 +86,10 @@ describe('production video router', () => {
           }],
         },
         policy: { video_routing_mode: 'auto', video_quality: 'balanced', director_mode: 'off' },
-      }),
-      (error) => error?.code === 'VIDEO_ROUTE_NO_ELIGIBLE_MODEL',
-    );
+      });
+    assert.equal(route.model, 'static-unknown-video');
+    assert.ok(route.contract_warnings.includes('credential_unverified'));
+    assert.ok(route.reason_codes.includes('automatic_catalog_metadata_advisory'));
   });
 
   it('prefers an available Seedance model over a cheaper Grok model', () => {
@@ -321,7 +321,7 @@ describe('production video router', () => {
     assert.equal(fixed15.compatible, true);
     assert.equal(fixed15.incompatibility_code, null);
     assert.equal(expensive.selectable, true);
-    assert.equal(expensive.requires_explicit_confirmation, true);
+    assert.equal(expensive.requires_explicit_confirmation, false);
     assert.ok(expensive.warnings.includes('expensive_bypass'));
   });
 
@@ -356,7 +356,7 @@ describe('production video router', () => {
     assert.equal(option.contract_status, 'local');
   });
 
-  it('requires explicit automatic authorization before a local hint can enter auto routing', () => {
+  it('uses local automatic eligibility as a preference rather than an empty-candidate gate', () => {
     const capability = {
       duration_mode: 'range', duration_min: 5, duration_max: 12,
       max_images: 6, max_videos: 2, max_audios: 1,
@@ -368,10 +368,9 @@ describe('production video router', () => {
       pricing_version: 'local-v1',
       video: [{ ...price('new-local-video', 0.2), contract_status: 'local', capabilities: capability }],
     };
-    assert.throws(
-      () => selectShotVideoRoute({ shot: { content: { duration: 8 } }, catalog: localCatalog, policy }),
-      /没有满足媒体、时长和费用策略/,
-    );
+    const advisory = selectShotVideoRoute({ shot: { content: { duration: 8 } }, catalog: localCatalog, policy });
+    assert.equal(advisory.model, 'new-local-video');
+    assert.ok(advisory.contract_warnings.includes('not_automatic'));
     localCatalog.video[0].capabilities = { ...capability, automatic_eligible: true };
     const route = selectShotVideoRoute({ shot: { content: { duration: 8 } }, catalog: localCatalog, policy });
     assert.equal(route.model, 'new-local-video');

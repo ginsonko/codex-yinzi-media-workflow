@@ -63,10 +63,10 @@ test('orchestration view summarizes real terminal counts and receipts', () => {
   assert.equal(found.attempt, 2)
 })
 
-test('orchestration view treats an explicit zero budget as a no-spend boundary', () => {
-  assert.equal(formatBudgetTruth({ maximum: 0, currency: 'CNY' }), '预算上限 0 CNY；禁止付费调用')
-  assert.equal(formatBudgetTruth({ max_cost_usd: 12 }), '预算上限 12.00 USD')
-  assert.match(formatBudgetTruth({}), /未设置费用上限/)
+test('orchestration view presents costs as advisory rather than execution gates', () => {
+  assert.equal(formatBudgetTruth({ maximum: 0, currency: 'CNY' }), '参考费用 0.00 CNY；仅提示，不拦截执行')
+  assert.equal(formatBudgetTruth({ max_cost_usd: 12 }), '参考费用 12.00 USD；仅提示，不拦截执行')
+  assert.match(formatBudgetTruth({}), /未填写参考费用.*未知价格不会拦截/)
 })
 
  test('explicit retry remains available for every active node state', () => {

@@ -25,6 +25,17 @@ function parseObject(value) {
   }
 }
 
+function expectedSubmittedPrompt(db, videoGenId, row) {
+  // Read back for the immediate poll as well as restart recovery: the caller's
+  // row may predate the final prompt adaptation receipt written after submit.
+  let receipt = parseObject(row?.contract_validation_receipt_json);
+  try {
+    const current = db.prepare('SELECT contract_validation_receipt_json FROM video_generations WHERE id = ?').get(Number(videoGenId));
+    receipt = parseObject(current?.contract_validation_receipt_json) || receipt;
+  } catch (_) {} // Older ad-hoc databases do not have this optional column.
+  return typeof receipt?.submitted_prompt === 'string' ? receipt.submitted_prompt : row?.prompt;
+}
+
 function submissionStatusForRow(row) {
   const stored = String(row?.submission_status || '').trim().toLowerCase();
   if (VIDEO_SUBMISSION_STATUSES.has(stored)) return stored;
@@ -269,7 +280,7 @@ async function attachProviderTaskForRecovery(db, log, videoGenId, providerTaskId
   }
   const probe = injected.probe
     ? await injected.probe({ db, log, generation: rowToItem(row), provider_task_id: taskId, config })
-    : await videoClient.pollVideoTask(db, log, numericId, taskId, config, 1, 0, row.prompt);
+    : await videoClient.pollVideoTask(db, log, numericId, taskId, config, 1, 0, expectedSubmittedPrompt(db, numericId, row));
   const status = String(probe?.status || probe?.provider_status || '').trim().toLowerCase();
   const providerFailed = (Boolean(probe?.error) || ['failed', 'error', 'cancelled'].includes(status))
     && !probe?.pending && !probe?.video_url && !probe?.content_url;
@@ -890,7 +901,7 @@ function scheduleDownloadRetry(db, log, videoGenId, attempts = 1) {
 async function refreshCompletedDownloadSource(db, log, videoGenId, row, config) {
   if (!row.provider_task_id || !config) return null;
   const result = await videoClient.pollVideoTask(
-    db, log, videoGenId, row.provider_task_id, config, 1, 0, row.prompt
+    db, log, videoGenId, row.provider_task_id, config, 1, 0, expectedSubmittedPrompt(db, videoGenId, row)
   );
   const resolved = resolveRemoteVideoUrl(result.video_url, result.error);
   let sourceUrl = null;
@@ -1029,7 +1040,7 @@ async function pollProviderTaskAndFinalize(db, log, videoGenId, row, rowForAspec
     config,
     pollMaxAttempts,
     POLL_INTERVAL_MS,
-    row.prompt,
+    expectedSubmittedPrompt(db, videoGenId, row),
     (observation) => require('./videoPollProgress').recordPollProgress(db, videoGenId, providerTaskId, observation)
   );
   const now = new Date().toISOString();

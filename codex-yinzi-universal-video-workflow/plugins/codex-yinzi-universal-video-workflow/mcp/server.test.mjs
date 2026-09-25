@@ -22,6 +22,8 @@ function resetState(overrides = {}) {
     patches: [],
     actions: [],
     reservedHash: null,
+    reservedKey: null,
+    archivedRequests: [],
     publicConfig: { id: 2, service_type: 'image', provider: 'yinzi', model: ['gpt-image-2'], default_model: 'gpt-image-2', is_active: true, has_api_key: true, settings: '{}' },
     priceItems: [{ provider: 'yinzi', service_type: 'image', model: 'gpt-image-2', group_name: 'test-group', unit_price_usd: 0.07, source: 'mock-live-catalog', source_version: 'v1' }],
     imageCreate: { id: 41, task_id: 'task-41', status: 'pending' },
@@ -111,20 +113,31 @@ before(async () => {
     }
     if (req.method === 'GET' && url.pathname === '/api/v1/ai-configs/yinzi/catalog') {
       state.catalogCalls = [...(state.catalogCalls || []), url.searchParams.get('config_id')]
+      if (state.catalogError) return json(res, 503, {success:false,error:{message:'catalog unavailable'}})
       return json(res, 200, { success: true, data: state.yinziCatalog })
     }
     if (req.method === 'POST' && /\/external-request$/.test(url.pathname)) {
       if (!state.reservedHash) {
         state.reservedHash = body.request_hash
+        state.reservedKey = body.decision?.idempotency_key
         return json(res, 200, { success: true, data: { reserved: true, request_hash: body.request_hash, node: currentNode() } })
       }
       if (state.reservedHash === body.request_hash) {
         return json(res, 200, { success: true, data: { reserved: false, reused: true, reconciliation_required: true, request_hash: body.request_hash, node: currentNode() } })
       }
-      return json(res, 409, { success: false, error: { message: 'external request hash conflict', code: 'REQUEST_HASH_CONFLICT' } })
+      if (state.reservedKey && state.reservedKey === body.decision?.idempotency_key) {
+        return json(res, 409, { success: false, error: { message: 'external request hash conflict for same transport key', code: 'REQUEST_IDENTITY_CONFLICT' } })
+      }
+      state.archivedRequests.push(currentNode())
+      state.attempt = (state.attempt || 1) + 1
+      state.reservedHash = body.request_hash
+      state.reservedKey = body.decision?.idempotency_key
+      state.patches = []
+      return json(res, 200, {success:true,data:{reserved:true,node:currentNode()}})
     }
     if (req.method === 'POST' && url.pathname === '/api/v1/images') {
       state.imageSubmissions += 1
+      state.lastImageBody = body
       if (state.imageCreateError) return json(res, state.imageCreateError.status || 500, { success: false, error: { message: state.imageCreateError.message } })
       return json(res, 201, { success: true, data: state.imageCreate })
     }
@@ -134,7 +147,7 @@ before(async () => {
       if (state.videoCreateError) return json(res, state.videoCreateError.status || 500, { success: false, error: { message: state.videoCreateError.message } })
       return json(res, 201, { success: true, data: state.videoCreate })
     }
-    if (req.method === 'PATCH' && /\/nodes\/(image|video)$/.test(url.pathname)) {
+    if (req.method === 'PATCH' && /\/nodes\/(image|video|node-1)$/.test(url.pathname)) {
       if (state.retryDuringLink && body.output_refs?.length) {
         state.retryDuringLink = false
         state.attempt = 2
@@ -174,6 +187,12 @@ before(async () => {
     if (req.method === 'GET' && url.pathname === '/static/media/videos/51.mp4') {
       res.writeHead(206, { 'content-type': 'video/mp4', 'content-length': state.localVideo.length })
       return res.end(state.localVideo)
+    }
+    if (req.method === 'POST' && /\/nodes\/(image|video)\/actions\/retry$/.test(url.pathname)) {
+      state.actions.push({action:'retry',body})
+      state.reservedHash=null
+      state.patches=[]
+      return json(res,200,{success:true,data:{node:{...currentNode(),status:'ready'}}})
     }
     if (req.method === 'POST' && /\/nodes\/(image|video)\/actions\/(complete|fail)$/.test(url.pathname)) {
       const action = url.pathname.endsWith('/complete') ? 'complete' : 'fail'
@@ -401,19 +420,19 @@ test('open_workflow returns the local UI entry and record_event uses the structu
   } finally { client.close() }
 })
 
-test('unconfirmed paid generation is rejected before any network submission', async () => {
+test('explicit image generation needs no extra authorization flag or unattended mode', async () => {
   resetState()
   const client = makeClient()
   try {
     const result = await client.call('generate_image_once', imageArgs({ confirmed_paid_action: false }))
-    assert.equal(result.isError, true)
-    assert.match(result.data.message, /confirmed_paid_action/)
-    assert.equal(state.imageSubmissions, 0)
-    assert.equal(state.reservedHash, null)
+    assert.equal(result.isError, false, JSON.stringify(result.data))
+    assert.equal(state.imageSubmissions, 1)
+    assert.ok(state.reservedHash)
+    assert.match(state.lastImageBody.client_request_key, /^orchestration-image:[a-f0-9]{64}$/)
   } finally { client.close() }
 })
 
-test('missing live price and price above authorization both stop before reservation', async () => {
+test('missing or above-reference image price does not veto submission', async () => {
   for (const scenario of [
     { priceItems: [], expected: /没有可验证实时价格/ },
     { priceItems: [{ provider: 'yinzi', service_type: 'image', model: 'gpt-image-2', group_name: 'test-group', unit_price_usd: 0.08 }], expected: /超过本次授权上限/ },
@@ -422,10 +441,10 @@ test('missing live price and price above authorization both stop before reservat
     const client = makeClient()
     try {
       const result = await client.call('generate_image_once', imageArgs())
-      assert.equal(result.isError, true)
-      assert.match(result.data.message, scenario.expected)
-      assert.equal(state.imageSubmissions, 0)
-      assert.equal(state.reservedHash, null)
+      assert.equal(result.isError, false, JSON.stringify(result.data))
+        assert.equal(state.imageSubmissions, 1)
+      assert.ok(state.reservedHash)
+      assert.equal(result.data.estimated_cost_native, scenario.priceItems[0]?.unit_price_usd ?? null)
     } finally { client.close() }
   }
 })
@@ -455,7 +474,7 @@ test('Yinzi image uses the live CNY catalog with a dynamically selected config i
     assert.equal(result.data.pricing_source, 'mock-yinzi-live')
     assert.equal(state.imageSubmissions, 1)
     const reserveDecision = state.patches.find((item) => item.decision?.idempotency_key === 'live-cny-image-v2')
-    assert.equal(reserveDecision.decision.price_ceiling_basis, 'CNY_explicit')
+    assert.equal(reserveDecision.decision.price_ceiling_basis, 'CNY_advisory')
   } finally { client.close() }
 })
 
@@ -468,14 +487,13 @@ test('a reachable Yinzi image catalog without the requested model never falls ba
   const client = makeClient()
   try {
     const result = await client.call('generate_image_once', imageArgs({ image_config_id: 10, group_name: '', max_unit_price_usd: 0.1, idempotency_key: 'missing-live-image-v3' }))
-    assert.equal(result.isError, true)
-    assert.match(result.data.message, /没有可验证实时价格/)
-    assert.equal(state.imageSubmissions, 0)
-    assert.equal(state.reservedHash, null)
+    assert.equal(result.isError, false, JSON.stringify(result.data))
+    assert.equal(state.imageSubmissions, 1)
+    assert.ok(state.reservedHash)
   } finally { client.close() }
 })
 
-test('the locked public config must match provider, model, service, active state, and saved credential', async () => {
+test('public metadata does not preempt the selected connection executor', async () => {
   const scenarios = [
     { patch: { provider: 'other' }, expected: /provider/ },
     { patch: { model: ['other'], default_model: 'other' }, expected: /不包含请求模型/ },
@@ -488,10 +506,9 @@ test('the locked public config must match provider, model, service, active state
     const client = makeClient()
     try {
       const result = await client.call('generate_image_once', imageArgs())
-      assert.equal(result.isError, true)
-      assert.match(result.data.message, scenario.expected)
-      assert.equal(state.imageSubmissions, 0)
-      assert.equal(state.reservedHash, null)
+      assert.equal(result.isError, false, JSON.stringify(result.data))
+        assert.equal(state.imageSubmissions, 1)
+      assert.ok(state.reservedHash)
     } finally { client.close() }
   }
 })
@@ -504,9 +521,10 @@ test('an unverified config group uses the worst catalog price, never a caller-se
   const client = makeClient()
   try {
     const blocked = await client.call('generate_image_once', imageArgs({ group_name: 'cheap', max_unit_price_usd: 0.07 }))
-    assert.equal(blocked.isError, true)
-    assert.match(blocked.data.message, /0.25 USD/)
-    assert.equal(state.imageSubmissions, 0)
+    assert.equal(blocked.isError, false)
+    assert.equal(blocked.data.estimated_cost_native, 0.25)
+    assert.ok(blocked.data.diagnostics.some(item => item.code === 'estimate_above_reference'))
+    assert.equal(state.imageSubmissions, 1)
   } finally { client.close() }
 
   resetState({ priceItems: [
@@ -523,7 +541,7 @@ test('an unverified config group uses the worst catalog price, never a caller-se
   } finally { second.close() }
 })
 
-test('a verified config group must match the request and its exact live price', async () => {
+test('the actual configured group informs price even when the request hint differs', async () => {
   resetState({
     publicConfig: { id: 2, service_type: 'image', provider: 'yinzi', model: ['gpt-image-2'], default_model: 'gpt-image-2', is_active: true, has_api_key: true, settings: JSON.stringify({ group_name: 'bound-group' }) },
     priceItems: [{ provider: 'yinzi', service_type: 'image', model: 'gpt-image-2', group_name: 'bound-group', unit_price_usd: 0.04, source: 'mock', source_version: 'v3' }],
@@ -531,9 +549,10 @@ test('a verified config group must match the request and its exact live price', 
   const client = makeClient()
   try {
     const mismatch = await client.call('generate_image_once', imageArgs({ group_name: 'other-group' }))
-    assert.equal(mismatch.isError, true)
-    assert.match(mismatch.data.message, /分组不一致/)
-    assert.equal(state.imageSubmissions, 0)
+    assert.equal(mismatch.isError, false)
+    assert.equal(mismatch.data.estimated_cost_native, 0.04)
+    assert.ok(mismatch.data.diagnostics.some(item => item.code === 'group_hint_mismatch'))
+    assert.equal(state.imageSubmissions, 1)
   } finally { client.close() }
 
   resetState({
@@ -591,6 +610,44 @@ test('ambiguous create result remains uncertain and is not automatically resubmi
     assert.equal(duplicate.isError, false)
     assert.equal(duplicate.data.submitted, false)
     assert.equal(state.imageSubmissions, 1)
+  } finally { client.close() }
+})
+
+for (const kind of ['image', 'video']) test(`explicit ${kind} regeneration creates a new request without a separate reopen`, async () => {
+  resetState({nodeKey:kind})
+  const client=makeClient()
+  const args=kind==='image'?imageArgs:videoArgs
+  try {
+    assert.equal((await client.call(`generate_${kind}_once`,args())).isError,false)
+    for(const priorState of ['settled','accepted','uncertain']) {
+      state.patches.push({progress:{submission_state:priorState}})
+      const result=await client.call(`generate_${kind}_once`,args({idempotency_key:`new-${priorState}`}))
+      assert.equal(result.isError,false)
+      assert.equal(result.data.submitted,true)
+    }
+    assert.equal(state[`${kind}Submissions`],4)
+    assert.equal(state.archivedRequests.length,3)
+    const duplicate=await client.call(`generate_${kind}_once`,args({idempotency_key:'new-uncertain'}))
+    assert.equal(duplicate.data.reused,true)
+    assert.equal(state[`${kind}Submissions`],4)
+  } finally { client.close() }
+})
+
+test('legacy bridge reserves once and a fresh user intent creates another attempt', async()=>{
+  resetState()
+  const client=makeClient()
+  const args={method:'POST',path:'/api/v1/images',session_id:'s1',node_key:'image',paid:true,idempotency_key:'bridge-first',body:{prompt:'test'}}
+  try {
+    const first=await client.call('workflow_bridge',args)
+    assert.equal(first.isError,false)
+    assert.equal(state.imageSubmissions,1)
+    const duplicate=await client.call('workflow_bridge',args)
+    assert.equal(duplicate.data.reused,true)
+    assert.equal(state.imageSubmissions,1)
+    const next=await client.call('workflow_bridge',{...args,idempotency_key:'bridge-second'})
+    assert.equal(next.isError,false)
+    assert.equal(state.imageSubmissions,2)
+    assert.equal(state.patches.at(-1).expected_attempt,2)
   } finally { client.close() }
 })
 
@@ -729,7 +786,7 @@ test('image recovery distinguishes local interruption, unknown failure, and expl
   }
 })
 
-test('unconfirmed video generation and invalid locked configs stop before reservation and submission', async () => {
+test('video submission needs no second authorization or public metadata approval', async () => {
   const scenarios = [
     { args: { confirmed_paid_action: false }, expected: /confirmed_paid_action/ },
     { patch: { service_type: 'text' }, expected: /不是视频服务/ },
@@ -744,15 +801,14 @@ test('unconfirmed video generation and invalid locked configs stop before reserv
     const client = makeClient()
     try {
       const result = await client.call('generate_video_once', videoArgs(scenario.args))
-      assert.equal(result.isError, true)
-      assert.match(result.data.message, scenario.expected)
-      assert.equal(state.videoSubmissions, 0)
-      assert.equal(state.reservedHash, null)
+      assert.equal(result.isError, false, JSON.stringify(result.data))
+        assert.equal(state.videoSubmissions, 1)
+      assert.ok(state.reservedHash)
     } finally { client.close() }
   }
 })
 
-test('video capability, duration, resolution, reference count, and prompt limits are enforced before paid submission', async () => {
+test('video capability hints never reject the user parameters, including legacy strict mode', async () => {
   const scenarios = [
     { args: { duration: 15 }, expected: /请求时长 15 秒不符合/ },
     { args: { resolution: '1080p' }, expected: /分辨率/ },
@@ -765,15 +821,15 @@ test('video capability, duration, resolution, reference count, and prompt limits
     const client = makeClient()
     try {
       const result = await client.call('generate_video_once', videoArgs({ contract_validation_mode: 'strict', ...scenario.args }))
-      assert.equal(result.isError, true)
-      assert.match(result.data.message, scenario.expected)
-      assert.equal(state.videoSubmissions, 0)
-      assert.equal(state.reservedHash, null)
+      assert.equal(result.isError, false, JSON.stringify(result.data))
+        assert.equal(state.videoSubmissions, 1)
+      assert.ok(state.reservedHash)
+      for (const [key, value] of Object.entries(scenario.args)) assert.deepEqual(state.lastVideoBody[key], value)
     } finally { client.close() }
   }
 })
 
-test('video price must use a proven exact capability-family alias and remain within the CNY authorization', async () => {
+test('video prices remain unknown for unrelated aliases and unsupported units; submission continues', async () => {
   const scenarios = [
     { mutate: () => { state.yinziCatalog.video = [] }, expected: /没有与锁定模型同名或具有同一精确能力合同/ },
     { mutate: () => { state.yinziCatalog.video[0].capabilities.family = 'different-family' }, expected: /没有与锁定模型同名或具有同一精确能力合同/ },
@@ -788,10 +844,9 @@ test('video price must use a proven exact capability-family alias and remain wit
     const client = makeClient()
     try {
       const result = await client.call('generate_video_once', videoArgs(scenario.args))
-      assert.equal(result.isError, true)
-      assert.match(result.data.message, scenario.expected)
-      assert.equal(state.videoSubmissions, 0)
-      assert.equal(state.reservedHash, null)
+      assert.equal(result.isError, false, JSON.stringify(result.data))
+        assert.equal(state.videoSubmissions, 1)
+      assert.ok(state.reservedHash)
     } finally { client.close() }
   }
 })
@@ -844,7 +899,7 @@ test('video uses the selected model independently of discovery aliases', async (
   } finally { client.close() }
 })
 
-test('unattended mode enables one submission without per-call confirmation, and disabling affects new work', async () => {
+test('explicit new work remains available after unattended mode is disabled', async () => {
   resetState({ nodeKey: 'video' })
   const client = makeClient()
   try {
@@ -860,10 +915,10 @@ test('unattended mode enables one submission without per-call confirmation, and 
     await client.call('set_workflow_preferences', { unattended_mode: false })
     const duplicate = await client.call('generate_video_once', args)
     assert.equal(duplicate.data.reconciliation_required, true)
+    await client.call('node_action', {session_id:'s1',node_key:'video',action:'retry'})
     const next = await client.call('generate_video_once', { ...args, idempotency_key: 'new-work', prompt: 'new work' })
-    assert.equal(next.isError, true)
-    assert.match(next.data.message, /confirmed_paid_action/)
-    assert.equal(state.videoSubmissions, 1)
+    assert.equal(next.isError, false)
+    assert.equal(state.videoSubmissions, 2)
   } finally { client.close() }
 })
 
@@ -886,38 +941,40 @@ test('custom video site uses a config-bound user quote without another site cata
   } finally { client.close() }
 })
 
-test('video quote mismatches and excess cost fail before reservation; valid catalog stays authoritative', async () => {
+test('unusable video quotes are ignored and valid prices remain estimates', async () => {
   const quote = { video_config_id: 12, model: 'seedance-2.5-720p', unit_price: 0.8, billing_unit: 'per_second', source: 'user_reported' }
   for (const scenario of [{ quote: { ...quote, video_config_id: 3 } }, { quote: { ...quote, model: 'another-model' } }, { quote: { ...quote, unit_price: -1 } }, { quote, ceiling: 4.7 }]) {
     resetState({ nodeKey: 'video' }); state.videoConfig.base_url = 'https://other-video.example/v1'
     const client = makeClient()
     try {
       const result = await client.call('generate_video_once', videoArgs({ duration: 6, max_cost_cny: scenario.ceiling ?? 4.8, cost_quote_cny: scenario.quote }))
-      assert.equal(result.isError, true); assert.equal(state.videoSubmissions, 0); assert.equal(state.reservedHash, null)
+      assert.equal(result.isError, false, JSON.stringify(result.data)); assert.equal(state.videoSubmissions, 1); assert.ok(state.reservedHash)
     } finally { client.close() }
   }
   resetState({ nodeKey: 'video' }); state.videoConfig.base_url = 'https://api.yinziapi.top/v1'
   const client = makeClient()
   try {
     const result = await client.call('generate_video_once', videoArgs({ max_cost_cny: 3, cost_quote_cny: { ...quote, unit_price: 1, billing_unit: 'per_request' } }))
-    assert.equal(result.isError, true); assert.equal(state.videoSubmissions, 0)
+    assert.equal(result.isError, false, JSON.stringify(result.data)); assert.equal(state.videoSubmissions, 1)
     assert.deepEqual(state.catalogCalls, ['12'])
   } finally { client.close() }
 })
 
-test('unattended mode preserves an explicit cost ceiling and uncertain submissions', async () => {
+test('above-reference cost remains visible and uncertain submissions remain idempotent', async () => {
   resetState({ nodeKey: 'video', preferences: { unattended_mode: true } })
   const client = makeClient()
   try {
     const over = await client.call('generate_video_once', videoArgs({ confirmed_paid_action: undefined, max_cost_cny: 1 }))
-    assert.equal(over.isError, true)
-    assert.equal(state.videoSubmissions, 0)
+    assert.equal(over.isError, false)
+    assert.equal(state.videoSubmissions, 1)
+    assert.ok(over.data.diagnostics.some(item => item.code === 'estimate_above_reference'))
+    await client.call('node_action', {session_id:'s1',node_key:'video',action:'retry'})
     state.videoCreateError = { status: 504, message: 'timeout' }
-    const args = videoArgs({ confirmed_paid_action: undefined, max_cost_cny: undefined })
+    const args = videoArgs({ confirmed_paid_action: undefined, max_cost_cny: undefined, idempotency_key:'new-uncertain-attempt' })
     assert.equal((await client.call('generate_video_once', args)).isError, true)
-    assert.equal(state.videoSubmissions, 1)
+    assert.equal(state.videoSubmissions, 2)
     assert.equal((await client.call('generate_video_once', args)).data.reconciliation_required, true)
-    assert.equal(state.videoSubmissions, 1)
+    assert.equal(state.videoSubmissions, 2)
   } finally { client.close() }
 })
 
@@ -930,9 +987,9 @@ test('an unbound smart-routing config uses the worst proven video price instead 
   const client = makeClient()
   try {
     const result = await client.call('generate_video_once', videoArgs({ group_name: 'cheap', max_cost_cny: 3.5 }))
-    assert.equal(result.isError, true)
-    assert.match(result.data.message, /4 CNY/)
-    assert.equal(state.videoSubmissions, 0)
+    assert.equal(result.isError, false, JSON.stringify(result.data))
+    assert.equal(state.videoSubmissions, 1)
+    assert.equal(result.data.estimated_cost_cny, 4)
   } finally { client.close() }
 })
 
@@ -942,9 +999,9 @@ test('per-second video prices use worst-case duration exposure and never masquer
   const blocked = makeClient()
   try {
     const result = await blocked.call('generate_video_once', videoArgs({ max_cost_cny: 3.5 }))
-    assert.equal(result.isError, true)
-    assert.match(result.data.message, /3.5999999999999996 CNY|3.6 CNY/)
-    assert.equal(state.videoSubmissions, 0)
+    assert.equal(result.isError, false, JSON.stringify(result.data))
+    assert.equal(state.videoSubmissions, 1)
+    assert.equal(result.data.estimated_cost_cny, 3.6)
   } finally { blocked.close() }
 })
 
@@ -1165,4 +1222,36 @@ test('independent review: retry racing with recovered linkage must stop old reco
    assert.equal(response.data.ignored,true)
    assert.equal(state.actions.length,0,'old generation should not complete newly retried node')
  } finally {client.close()}
+})
+
+test('offline catalogs, ratio billing and missing flags still submit with truthful unknown cost', async () => {
+  for (const kind of ['image', 'video']) {
+    for (const unavailable of [true, false]) {
+      resetState({nodeKey:kind, catalogError:unavailable, priceItems:[]})
+      state.yinziCatalog = {image:[],video:[]}
+      if (!unavailable) state.yinziCatalog[kind] = [{model:kind === 'image' ? 'gpt-image-2' : 'seedance-2.5-720p',prices:[{currency:'CNY',billing_mode:'ratio',billing_unit:'per_token',effective_price:null}]}]
+      const client=makeClient()
+      try {
+        const args=kind === 'image' ? imageArgs({confirmed_paid_action:undefined,max_unit_price_usd:undefined,max_unit_price_cny:undefined,group_name:undefined}) : videoArgs({confirmed_paid_action:undefined,max_cost_cny:undefined,group_name:undefined})
+        const result=await client.call(`generate_${kind}_once`,args)
+        assert.equal(result.isError,false,JSON.stringify(result.data))
+        assert.equal(result.data.submitted,true)
+        assert.equal(result.data[kind === 'image' ? 'estimated_cost_native' : 'estimated_cost_cny'],null)
+        assert.equal(state.preferences.unattended_mode,false)
+        assert.equal(state[`${kind}Submissions`],1)
+      } finally {client.close()}
+    }
+  }
+})
+
+test('a legitimate zero quote stays distinct from unknown price',async()=>{
+  resetState({nodeKey:'video'})
+  state.yinziCatalog.video[0].prices[0].effective_price=0
+  const client=makeClient()
+  try {
+    const result=await client.call('generate_video_once',videoArgs({max_cost_cny:undefined,confirmed_paid_action:undefined}))
+    assert.equal(result.isError,false)
+    assert.equal(result.data.estimated_cost_cny,0)
+    assert.equal(result.data.diagnostics.some(item=>item.code==='price_unknown'),false)
+  } finally {client.close()}
 })

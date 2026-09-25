@@ -3,6 +3,7 @@ const multer = require('multer');
 const response = require('../response');
 const uploadService = require('../services/uploadService');
 const storageLayout = require('../services/storageLayout');
+const { uploadMetadata } = require('../utils/uploadMetadata');
 
 const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'];
 const maxSize = 16 * 1024 * 1024; // 16MB，单张图片上限
@@ -12,13 +13,6 @@ const memoryStorage = multer.memoryStorage();
 const upload = multer({
   storage: memoryStorage,
   limits: { fileSize: maxSize },
-  fileFilter: (req, file, cb) => {
-    const ct = file.mimetype || 'application/octet-stream';
-    if (!allowedTypes.includes(ct)) {
-      return cb(new Error('只支持图片格式 (jpg, png, gif, webp)'));
-    }
-    cb(null, true);
-  },
 });
 
 // Seedance 2.0 音色参考音频上传（支持常见音频格式）
@@ -36,13 +30,6 @@ const audioMaxSize = 10 * 1024 * 1024; // 10MB
 const audioUpload = multer({
   storage: memoryStorage,
   limits: { fileSize: audioMaxSize },
-  fileFilter: (req, file, cb) => {
-    const ct = file.mimetype || 'application/octet-stream';
-    if (!allowedAudioTypes.includes(ct)) {
-      return cb(new Error('只支持音频格式 (mp3, wav, m4a, ogg)'));
-    }
-    cb(null, true);
-  },
 });
 
 const referenceMediaLimits = Object.freeze({
@@ -53,19 +40,32 @@ const referenceMediaLimits = Object.freeze({
 const referenceMediaUpload = multer({
   storage: memoryStorage,
   limits: { fileSize: referenceMediaLimits.video },
-  fileFilter: (req, file, cb) => {
-    const mediaType = String(file.mimetype || '').split('/')[0];
-    if (!referenceMediaLimits[mediaType]) {
-      return cb(new Error('参考媒体仅支持图片、视频或音频文件'));
-    }
-    cb(null, true);
-  },
 });
 
+// Multer's fileFilter runs before bytes are available. Script clients commonly
+// use octet-stream (or omit MIME), so inspect the buffered content first.
+function normalizedSingleUpload(parser, accepts, message) {
+  const receive = parser.single('file');
+  return (req, res, next) => receive(req, res, (error) => {
+    if (error) return next(error);
+    if (!req.file?.buffer) return next();
+    try {
+      const metadata = uploadMetadata(req.file.buffer, req.file.originalname, req.file.mimetype);
+      req.file.mimetype = metadata.mime;
+      req.file.media_metadata = metadata;
+      if (!accepts(metadata.mime)) return next(new Error(message));
+      return next();
+    } catch (metadataError) { return next(metadataError); }
+  });
+}
+
+const multerSingle = normalizedSingleUpload(upload, (mime) => allowedTypes.includes(mime), '只支持图片格式 (jpg, png, gif, webp)');
+const multerAudioSingle = normalizedSingleUpload(audioUpload, (mime) => allowedAudioTypes.includes(mime), '只支持音频格式 (mp3, wav, m4a, ogg)');
+const multerReferenceMediaSingle = normalizedSingleUpload(referenceMediaUpload, (mime) => !!referenceMediaLimits[mime.split('/')[0]], '参考媒体仅支持图片、视频或音频文件');
+
 function routes(cfg, log, db) {
-  const singleUpload = upload.single('file');
   return {
-    multerSingle: singleUpload,
+    multerSingle,
     uploadImage: (req, res) => {
       if (!req.file || !req.file.buffer) {
         return response.badRequest(res, '请选择文件');
@@ -105,6 +105,7 @@ function routes(cfg, log, db) {
           deduplicated: result.deduplicated,
           filename: req.file.originalname,
           size: req.file.size,
+          mime_type: result.mime_type,
         });
       } catch (err) {
         log.error('upload image', { error: err.message });
@@ -139,7 +140,7 @@ function routes(cfg, log, db) {
           deduplicated: result.deduplicated,
           filename: req.file.originalname,
           size: req.file.size,
-          mime_type: req.file.mimetype,
+          mime_type: result.mime_type,
           media_type: mediaType,
         });
       } catch (err) {
@@ -153,8 +154,8 @@ function routes(cfg, log, db) {
 module.exports = {
   routes,
   upload,
-  multerSingle: upload.single('file'),
-  multerAudioSingle: audioUpload.single('file'),
-  multerReferenceMediaSingle: referenceMediaUpload.single('file'),
+  multerSingle,
+  multerAudioSingle,
+  multerReferenceMediaSingle,
   MAX_IMAGE_SIZE_MB: MAX_SIZE_MB,
 };

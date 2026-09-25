@@ -65,7 +65,7 @@ export function modelCompatibilityLabel(option = {}) {
 export function modelWarnings(option = {}) {
   const warnings = Array.isArray(option.warnings) ? option.warnings : []
   return warnings.map((warning) => ({
-    expensive_bypass: '高价破甲通道，需单独确认',
+    expensive_bypass: '此通道参考费用较高，仍可直接选择和生成',
     fixed_duration_product: '固定时长产品',
     unknown_contract: '本地能力提示未登记（仍可提交）',
     model_not_in_catalog: '当前 Key 目录未返回此模型（仍可提交）',

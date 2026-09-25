@@ -376,7 +376,7 @@ function canReuseModelCatalogSnapshot(error) {
 function discoveryFromStoredSnapshot(config, error) {
   const stored = config?.model_catalog_snapshot;
   if (!stored || typeof stored !== 'object' || !Array.isArray(stored.models) || !stored.models.length) {
-    throw error;
+    return { models: config?.model ? (Array.isArray(config.model) ? config.model : [config.model]) : [], snapshot: { stale_snapshot: true, fallback_reason: String(error?.message || '') }, discovery_outcome: 'unavailable', warnings: ['模型目录暂不可用；仍可按指定模型提交'] };
   }
   const fallbackReason = String(error?.message || '模型目录刷新失败');
   const snapshot = {
@@ -403,7 +403,6 @@ async function discoverVideoCatalogForConfig(db, config, run = null, fetchImpl =
   try {
     discovery = await aiConfigService.discoverModels(config, { db, fetchImpl });
   } catch (error) {
-    if (!canReuseModelCatalogSnapshot(error)) throw error;
     discovery = discoveryFromStoredSnapshot(config, error);
   }
   let pricing = null;
@@ -415,7 +414,7 @@ async function discoverVideoCatalogForConfig(db, config, run = null, fetchImpl =
       pricing = null;
     }
   }
-  return aiConfigService.mergeDiscoveredCatalog(discovery, pricing, {
+  const catalog = aiConfigService.mergeDiscoveredCatalog(discovery, pricing, {
     provider: config.provider,
     service_type: 'video',
     group: run?.policy?.video_group || '',
@@ -423,6 +422,12 @@ async function discoverVideoCatalogForConfig(db, config, run = null, fetchImpl =
     include_public_catalog: provider === 'yinzi',
     smart_routing: provider === 'yinzi' && isYinziSmartRoutingConfig(config),
   });
+  return { ...catalog, configured_model: configuredConnectionVideoModel(config) || null };
+}
+
+function configuredConnectionVideoModel(config) {
+  const models = Array.isArray(config?.model) ? config.model : [config?.model];
+  return String(config?.default_model || models.find(model => String(model || '').trim()) || '').trim();
 }
 
 function routingCatalogRun(db, run, shot) {
@@ -604,6 +609,13 @@ function configuredVideoModelForShot(run, shot) {
   return projectMode === 'fixed' ? String(policy.video_model || '').trim() : '';
 }
 
+function dispatchableReferenceBundle(bundle, request = {}) {
+  return Boolean(bundle && (bundle.status === 'approved'
+    || (request.explicit_retry === true
+      && Number(request.bundle_artifact_id) === Number(bundle.id)
+      && ['draft', 'reviewing'].includes(bundle.status))));
+}
+
 function assertVideoDispatchContract({ run, shot, route, bundle, request, persistedModel = null }) {
   const routeModel = String(route?.model || '').trim();
   const configuredModel = configuredVideoModelForShot(run, shot);
@@ -642,7 +654,7 @@ function assertVideoDispatchContract({ run, shot, route, bundle, request, persis
   const errors = [];
 
   if (!routeModel) errors.push('resolved route model is empty');
-  if (!bundle || bundle.status !== 'approved') errors.push('reference bundle is not approved');
+  if (!dispatchableReferenceBundle(bundle, request)) errors.push('reference bundle is not selected for this attempt');
   if (Number(request?.bundle_artifact_id || 0) !== Number(bundle?.id || 0)) errors.push('reference bundle id changed');
   for (const [label, value] of [
     ['configured model', configuredModel],
@@ -799,10 +811,7 @@ function compactSemanticText(value, maxChars, label = 'prompt field') {
     used += separatorLength + unit.length;
   }
   if (!selected.length) {
-    throw codedError(
-      'PROVIDER_PROMPT_UNCOMPACTABLE',
-      `${label} contains no complete semantic unit that fits its ${maxChars}-character budget`
-    );
+    return { text: normalized, compacted: false, source_chars: normalized.length, over_budget: true };
   }
   return {
     text: selected.join('；'),
@@ -1119,12 +1128,6 @@ function buildProviderPromptPackage(db, run, shot, bundle, providerPrompt, expli
   const prompt = fullPrompt.length <= maxChars
     ? fullPrompt
     : renderProviderPromptSections(sections, sectionBudgets);
-  if (prompt.length > maxChars) {
-    throw codedError(
-      'PROVIDER_PROMPT_TOO_LONG',
-      `视频提示词压缩后仍有 ${prompt.length} 字符，超过当前模型 ${maxChars} 字符上限，已在付费提交前停止`
-    );
-  }
   return {
     prompt,
     receipt: {
@@ -1136,6 +1139,7 @@ function buildProviderPromptPackage(db, run, shot, bundle, providerPrompt, expli
       duration_adjusted: durationAdjusted,
       full_chars: fullPrompt.length,
       final_chars: prompt.length,
+      over_local_limit: prompt.length > maxChars,
       compacted: semanticAssetCompaction || prompt !== fullPrompt,
       section_chars: providerPromptSectionReceipt(prompt, sections),
       prompt_snapshot: {
@@ -1511,8 +1515,8 @@ function createDefaultAdapters(db, cfg, log) {
       const configId = Number(run?.policy?.video_config_id || 0);
       if (!Number.isSafeInteger(configId) || configId <= 0) return fetchYinziCatalog();
       const config = aiConfigService.getConfig(db, configId);
-      if (!config || config.service_type !== 'video' || config.is_active === false) {
-        const error = new Error(`视频配置 #${configId} 不存在、不是视频配置或已停用`);
+      if (!config) {
+        const error = new Error(`视频配置 #${configId} 不存在`);
         error.code = 'VIDEO_CONFIG_UNAVAILABLE';
         throw error;
       }
@@ -2068,6 +2072,21 @@ function createProductionMediaService(db, cfg, log, injected = {}) {
     };
   }
 
+  async function routingCatalogForRun(run, shot) {
+    const config = videoConfigForRun(db, run, shot);
+    let catalog;
+    try { catalog = await adapters.fetchVideoCatalog(run); }
+    catch (error) {
+      // Keep this connection and its configured model when optional catalog
+      // discovery fails. The actual generation request supplies the verdict.
+      catalog = { video: [], discovery_outcome: 'unavailable', warnings: [String(error.message || error)] };
+    }
+    return catalogWithStoredVideoPrices(db, {
+      ...(Array.isArray(catalog) ? { video: catalog } : catalog || {}),
+      configured_model: configuredConnectionVideoModel(config) || catalog?.configured_model || null,
+    }, run);
+  }
+
   async function resolveShotVideoRoute(run, shot, options = {}) {
     const catalogRun = routingCatalogRun(db, run, shot);
     let routePolicy = catalogRun.policy || {};
@@ -2078,20 +2097,12 @@ function createProductionMediaService(db, cfg, log, injected = {}) {
     const explicitlyConfiguredModel = configuredVideoModelForShot(run, shot);
     // Once a user has approved a bundle, an automatic route is a snapshot for
     // that bundle rather than a fresh price-based lottery on every poll.  We
-    // still fetch the live credential-scoped catalog: if the model disappeared
-    // or an explicit model/shot override differs, normal routing runs and the
-    // binding comparison correctly asks for a new approval.
+    // still fetch metadata, but its temporary absence cannot revoke an
+    // already selected model. Explicit model/shot overrides remain primary.
     if (hintedModel
       && (!explicitlyConfiguredModel
         || explicitlyConfiguredModel.toLowerCase() === hintedModel.toLowerCase())) {
-      const hintedCatalog = catalogWithStoredVideoPrices(
-        db,
-        await adapters.fetchVideoCatalog(catalogRun),
-        catalogRun,
-      );
-      const hintedPresent = (Array.isArray(hintedCatalog?.video) ? hintedCatalog.video : [])
-        .some((item) => String(item?.model || '').trim().toLowerCase() === hintedModel.toLowerCase());
-      if (hintedPresent) {
+      const hintedCatalog = await routingCatalogForRun(catalogRun, shot);
         routePolicy = {
           ...routePolicy,
           video_routing_mode: 'fixed',
@@ -2101,19 +2112,15 @@ function createProductionMediaService(db, cfg, log, injected = {}) {
         const decorated = decorateVideoRouteWithConfig(route, videoConfigForRun(db, catalogRun, shot));
         decorated.route_selection_source = 'approved_bundle_snapshot';
         return decorated;
-      }
-      // Do not preserve a route that the live directory no longer exposes.
-      // Fall through to automatic selection so the changed model is visible as
-      // a binding change instead of being silently submitted.
     }
-    const catalog = catalogWithStoredVideoPrices(db, await adapters.fetchVideoCatalog(catalogRun), catalogRun);
+    const catalog = await routingCatalogForRun(catalogRun, shot);
     const route = selectShotVideoRoute({ shot, catalog, policy: routePolicy });
     return decorateVideoRouteWithConfig(route, videoConfigForRun(db, catalogRun, shot));
   }
 
   async function listVideoRoutingOptions(run, shot) {
     const catalogRun = routingCatalogRun(db, run, shot);
-    const catalog = catalogWithStoredVideoPrices(db, await adapters.fetchVideoCatalog(catalogRun), catalogRun);
+    const catalog = await routingCatalogForRun(catalogRun, shot);
     return {
       pricing_version: String(catalog?.pricing_version || ''),
       fetched_at: catalog?.fetched_at || null,
@@ -2126,10 +2133,9 @@ function createProductionMediaService(db, cfg, log, injected = {}) {
     };
   }
 
-  async function ensureVideoPromptPlan(run, shot, attempt, evidence) {
+  async function ensureVideoPromptPlan(run, shot, attempt, evidence, options = {}) {
     const basePrompt = String(shot.content?.video_prompt || '').trim();
     if (!evidence.length) return { state: 'ready', plan: { provider_prompt: basePrompt }, action: null };
-    if (typeof adapters.generateText !== 'function') throw new Error('Video retry planning requires a configured text model');
     const latestPlan = repo.getLatestAction(db, run.id, {
       stage: 'shot_video', scope_type: 'shot', scope_id: shot.scope_id, kind: 'video_prompt_plan',
     });
@@ -2138,6 +2144,17 @@ function createProductionMediaService(db, cfg, log, injected = {}) {
       && JSON.stringify(latestPlan.result?.evidence || []) === JSON.stringify(evidence)) {
       return { state: 'ready', plan: latestPlan.result, action: latestPlan, reused: true };
     }
+    if (options.explicitRetry) {
+      // Regeneration uses the authored prompt and recorded corrections directly;
+      // optional text planning must not become another paid prerequisite.
+      const corrections = evidence.map(item => String(item.reason || '').trim()).filter(Boolean);
+      return { state: 'ready', plan: {
+        provider_prompt: [basePrompt, corrections.length ? `Revision requirements:\n${corrections.join('\n')}` : ''].filter(Boolean).join('\n\n'),
+        failure_memory: evidence,
+        planning_source: 'explicit_retry_saved_prompt',
+      }, action: null };
+    }
+    if (typeof adapters.generateText !== 'function') throw new Error('Video retry planning requires a configured text model');
     const rawPrompts = textStages.videoRetryPlannerPrompts(shot.content, evidence);
     const resolvedPrompt = promptRuntime.resolvePair(db, 'production.video_retry.system', rawPrompts);
     let prompts = resolvedPrompt.prompts;
@@ -2292,12 +2309,7 @@ function createProductionMediaService(db, cfg, log, injected = {}) {
       && target.media_path
       && !rejectedReferenceOptedIn
       && fallbackReferenceArtifacts.length === 0) {
-      const error = codedError(
-        'IMAGE_RETRY_REFERENCE_AUTHORITIES_MISSING',
-        'Storyboard retry has no approved image authority after excluding the rejected frame'
-      );
-      error.retryEvidence = retryEvidence;
-      throw error;
+      log?.warn?.('Storyboard retry has no remaining approved reference; proceeding with the revision prompt', { run_id: run.id, scope_id: source.scope_id });
     }
     const referenceArtifacts = mergeImageReferenceArtifacts(
       [...(uploadedSubjectReference ? [uploadedSubjectReference] : []), ...revisionReference],
@@ -2403,8 +2415,9 @@ function createProductionMediaService(db, cfg, log, injected = {}) {
         },
       });
     }
+    const explicitRetryGrant = action?.status === 'cancelled' && action.result?.retry_authorized === true;
     if (action?.status === 'cancelled'
-      && (action.result?.retry_authorized || (rejectedTarget && isVerifiedDuplicateCancellation(action)))) action = null;
+      && (explicitRetryGrant || (rejectedTarget && isVerifiedDuplicateCancellation(action)))) action = null;
     const selection = selectGenerationAction(action, source, rejectedTarget, {
       cancelReserved(staleAction) {
         return repo.updateAction(db, staleAction.id, {
@@ -2441,7 +2454,7 @@ function createProductionMediaService(db, cfg, log, injected = {}) {
     if (!action) {
       const attempt = repo.nextActionAttempt(db, run.id, stage, source.scope_type, source.scope_id, 'image_generate');
       const sourceAttempt = sourceGenerationAttemptCount(db, run.id, stage, source, 'image_generate') + 1;
-      if (sourceAttempt > Number(run.budget?.max_image_revisions || 2) + 1) {
+      if (sourceAttempt > Number(run.budget?.max_image_revisions || 2) + 1 && !explicitRetryGrant) {
         return { kind: 'blocked', reason: 'image_revision_limit', source, target };
       }
       let built;
@@ -2466,7 +2479,11 @@ function createProductionMediaService(db, cfg, log, injected = {}) {
     if (['submitted', 'waiting'].includes(action.status)) {
       let generation;
       try { generation = action.generation_id ? await adapters.getImage(action.generation_id) : null; }
-      catch (error) { return { kind: 'active', action, source, target, pollError: error }; }
+      catch (error) {
+        const current = repo.getAction(db, action.id);
+        if (current?.result?.retry_start_requested_at) return { kind: 'superseded', action: current, source, target };
+        return { kind: 'active', action, source, target, pollError: error };
+      }
       if (repo.getAction(db,action.id)?.result?.retry_start_requested_at) return {kind:'superseded',action,source,target};
       if (!generation || ['pending', 'processing'].includes(generation.status)) {
         return { kind: 'active', action, generation, source, target, superseded: actionSourceChanged };
@@ -2514,6 +2531,13 @@ function createProductionMediaService(db, cfg, log, injected = {}) {
           min_height: 256,
           expected_aspect_ratio: normalizeProductionAspectRatio(run.policy?.aspect_ratio),
         });
+        action = repo.getAction(db, action.id) || action;
+        if (action.result?.retry_start_requested_at) {
+          action = repo.updateAction(db, action.id, {
+            status: 'completed', result: { ...action.result, receipt, generation_id: generation.id },
+          });
+          return { kind: 'superseded', action, source, target };
+        }
         const artifact = repo.createArtifact(db, {
           run_id: run.id, stage, scope_type: source.scope_type, scope_id: source.scope_id, title: source.title,
           content: {
@@ -2555,6 +2579,11 @@ function createProductionMediaService(db, cfg, log, injected = {}) {
         action = repo.updateAction(db, action.id, { status: 'completed', result: { ...(action.result || {}), artifact_id: artifact.id, receipt } });
         return { kind: 'artifact', action, artifact, source, target };
       } catch (error) {
+        action = repo.getAction(db, action.id) || action;
+        if (action.result?.retry_start_requested_at) {
+          action = repo.updateAction(db, action.id, { status: 'failed', error_code: error.code || 'IMAGE_VALIDATION_FAILED', error_message: error.message });
+          return { kind: 'superseded', action, source, target };
+        }
         action = repo.updateAction(db, action.id, { status: 'failed', error_code: error.code || 'IMAGE_VALIDATION_FAILED', error_message: error.message });
         return { kind: 'failed', reason: 'image_validation_failed', action, source, target, error };
       }
@@ -2622,6 +2651,7 @@ function createProductionMediaService(db, cfg, log, injected = {}) {
           status: 'waiting', task_id: created.task_id, generation_id: created.id,
           result: { source_artifact_id: item.source.id },
         });
+        if (action.result?.retry_start_requested_at) return { kind: 'superseded', action, source: item.source, target: item.target };
         return { kind: 'active', action, source: item.source, target: item.target };
       } catch (error) {
         const action = repo.updateAction(db, item.action.id, {
@@ -2629,12 +2659,17 @@ function createProductionMediaService(db, cfg, log, injected = {}) {
           error_code: error.code || 'IMAGE_CREATE_FAILED', error_message: error.message,
           ...(error.code === 'IMAGE_CREATE_AMBIGUOUS' ? {} : { cost_status: 'released' }),
         });
+        if (action.result?.retry_start_requested_at) return { kind: 'superseded', action, source: item.source, target: item.target };
         return { kind: 'failed', reason: action.status === 'ambiguous' ? 'ambiguous_image_create' : 'image_create_failed', action, source: item.source, target: item.target, error };
       }
     }));
     for (const result of submissionResults) {
       if (result.status === 'fulfilled') records.push(result.value);
       else records.push({ kind: 'failed', reason: 'image_create_failed', error: result.reason });
+    }
+
+    if (records.some(item => item.kind === 'superseded')) {
+      return imageResult('progressed', { reason: 'retry_pending', actions: records.map(item => item.action).filter(Boolean) });
     }
 
     const active = records.filter((item) => item.kind === 'active' && item.action?.status === 'waiting');
@@ -2746,6 +2781,7 @@ function createProductionMediaService(db, cfg, log, injected = {}) {
   }
 
   async function applyReferenceVideoBudget(run, capability, videoRefs) {
+    try {
     const planned = planReferenceVideoBudget(videoRefs, {
       max_total_seconds: capability?.max_reference_video_seconds_total,
       safety_margin_seconds: capability?.reference_video_safety_margin_seconds,
@@ -2832,6 +2868,10 @@ function createProductionMediaService(db, cfg, log, injected = {}) {
         frame_rounding_correction_seconds: frameRoundingCorrection,
       },
     };
+    } catch (error) {
+      log?.warn?.('Reference adaptation unavailable; retaining original references', { run_id: run.id, message: error.message });
+      return { videos: videoRefs, receipt: { enforced: false, advisory: true, reason: 'adaptation_unavailable', warning: error.message } };
+    }
   }
 
   async function desiredReferenceBundle(run, shot) {
@@ -3815,7 +3855,7 @@ function createProductionMediaService(db, cfg, log, injected = {}) {
   function createFixedDurationExecutionParent(run, shot, bundle, route, request) {
     const count = Math.max(2, Number(route.execution_unit_count) || 2);
     const unitDuration = Math.max(1, Number(route.provider_duration || route.duration) || 1);
-    const parentKey = `shot_video_execution:shot:${shot.scope_id}:source-r${shot.revision}:bundle-${bundle.id}:${routingBindingSignature(route)}`;
+    const parentKey = `shot_video_execution:shot:${shot.scope_id}:source-r${shot.revision}:bundle-${bundle.id}:${routingBindingSignature(route)}${request.retry_of_action_id ? `:retry-of-${request.retry_of_action_id}` : ''}`;
     const existing = repo.getActionByKey(db, run.id, parentKey);
     if (existing) return existing;
     const plan = {
@@ -3871,6 +3911,7 @@ function createProductionMediaService(db, cfg, log, injected = {}) {
   }
 
   async function submitFixedDurationExecutionSegment({ run, shot, bundle, parent, plan, segment, tailFrame = null }) {
+    if (repo.getAction(db, parent.id)?.result?.retry_start_requested_at) return { state: 'progressed', reason: 'retry_pending', action: repo.getAction(db, parent.id), shot };
     const segmentActions = repo.listActions(db, run.id, { page_size: 200 }).items
       .filter((item) => item.parent_action_id === parent.id
         && item.kind === 'video_generate'
@@ -3959,6 +4000,7 @@ function createProductionMediaService(db, cfg, log, injected = {}) {
         error_message: error.message, cost_status: 'released',
         result: { fixed_execution_plan_id: plan.plan_id, segment_index: segment.index, dispatch_receipt: dispatchReceipt },
       });
+      if (fixedExecutionRetried(parent, [failed])) return { state: 'progressed', reason: 'retry_pending', action: failed, shot };
       return { state: 'waiting_review', reason: 'fixed_duration_segment_create_failed', action: failed, shot };
     }
     const waiting = repo.updateAction(db, action.id, {
@@ -3974,11 +4016,17 @@ function createProductionMediaService(db, cfg, log, injected = {}) {
         }),
       },
     });
+    if (fixedExecutionRetried(parent, [waiting])) return { state: 'progressed', reason: 'retry_pending', action: waiting, shot };
     repo.updateRun(db, run.id, { status: 'waiting_provider', waiting_reason: `video_execution_segment_${segment.index}` });
     return { state: 'waiting_provider', action: waiting, shot, execution_segment: segment };
   }
 
+  function fixedExecutionRetried(parent, children = []) {
+    return [parent, ...children].some(action => repo.getAction(db, action.id)?.result?.retry_start_requested_at);
+  }
+
   async function advanceFixedDurationExecution(run, shot, bundle, parent) {
+    if (fixedExecutionRetried(parent)) return { state: 'progressed', reason: 'retry_pending', action: repo.getAction(db, parent.id), shot };
     const plan = fixedDurationExecutionPlanForAction(parent);
     if (!plan) return null;
     const children = repo.listActions(db, run.id, { page_size: 200 }).items
@@ -4023,6 +4071,7 @@ function createProductionMediaService(db, cfg, log, injected = {}) {
       }
       if (['reserved', 'submitted', 'waiting'].includes(child.status)) {
         const generation = child.generation_id ? await adapters.getVideo(child.generation_id) : null;
+        if (fixedExecutionRetried(parent, [child])) return { state: 'progressed', reason: 'retry_pending', action: repo.getAction(db, child.id), shot };
         if (!generation || ['pending', 'processing'].includes(generation.status)) {
           repo.updateRun(db, run.id, { status: 'waiting_provider', waiting_reason: `video_execution_segment_${segment.index}` });
           return { state: 'waiting_provider', reason: `video_execution_segment_${segment.index}`, action: child, generation, shot };
@@ -4043,12 +4092,14 @@ function createProductionMediaService(db, cfg, log, injected = {}) {
           duration_tolerance: Math.max(1.2, Number(segment.duration) * 0.25),
           expected_aspect_ratio: normalizeProductionAspectRatio(run.policy?.aspect_ratio),
         });
+        if (fixedExecutionRetried(parent, [child])) return { state: 'progressed', reason: 'retry_pending', action: repo.getAction(db, child.id), shot };
         const tailFrame = Number(segment.index) < Number(plan.execution_unit_count)
           ? await adapters.extractContinuityFrame(receipt.relative_path, {
             run_id: run.id, shot_scope_id: shot.scope_id,
             source_action_id: child.id, source_hash: receipt.sha256,
           })
           : null;
+        if (fixedExecutionRetried(parent, [child])) return { state: 'progressed', reason: 'retry_pending', action: repo.getAction(db, child.id), shot };
         child = repo.updateAction(db, child.id, {
           status: 'completed', error_code: null, error_message: null,
           result: { ...(child.result || {}), receipt, local_path: receipt.relative_path, ...(tailFrame ? { tail_frame: tailFrame } : {}) },
@@ -4062,15 +4113,22 @@ function createProductionMediaService(db, cfg, log, injected = {}) {
       return { state: 'waiting_provider', reason: 'video_execution_segments', action: parent, shot };
     }
     if (parent.result?.artifact_id) {
-      return { state: 'progressed', reason: 'fixed_duration_execution_converged', action: parent, artifact: repo.getArtifact(db, parent.result.artifact_id) };
+      const priorArtifact = repo.getArtifact(db, parent.result.artifact_id);
+      const priorChildren = priorArtifact?.content?.fixed_duration_execution?.child_action_ids || [];
+      if (priorArtifact && !['invalidated', 'superseded', 'rejected', 'failed'].includes(priorArtifact.status)
+        && JSON.stringify(priorChildren) === JSON.stringify(completed.map(item => item.id))) {
+        return { state: 'progressed', reason: 'fixed_duration_execution_converged', action: parent, artifact: priorArtifact };
+      }
     }
     const paths = completed.map((item) => item.result?.receipt?.relative_path || item.result?.local_path).filter(Boolean);
     const merged = await adapters.mergeVideoSegments(paths, { aspect_ratio: normalizeProductionAspectRatio(run.policy?.aspect_ratio) });
+    if (fixedExecutionRetried(parent, completed)) return { state: 'progressed', reason: 'retry_pending', action: repo.getAction(db, parent.id), shot };
     const mergedReceipt = await adapters.validateVideo(merged.relative_path, {
       expected_duration: Number(plan.planned_duration),
       duration_tolerance: Math.max(2, Number(plan.provider_duration) * 0.25),
       expected_aspect_ratio: normalizeProductionAspectRatio(run.policy?.aspect_ratio),
     });
+    if (fixedExecutionRetried(parent, completed)) return { state: 'progressed', reason: 'retry_pending', action: repo.getAction(db, parent.id), shot };
     const artifact = repo.createArtifact(db, {
       run_id: run.id, stage: 'shot_video', scope_type: 'shot', scope_id: shot.scope_id,
       title: shot.title,
@@ -4122,17 +4180,18 @@ function createProductionMediaService(db, cfg, log, injected = {}) {
       if (artifactMatchesSource(target, shot)) continue;
       const rejectedTarget = target && ['rejected', 'failed', 'invalidated'].includes(target.status);
       const fixedExecutionParent = fixedDurationExecutionParent(run.id, shot);
-      if (fixedExecutionParent) {
+      const retryExecutionParent = fixedExecutionParent?.result?.retry_start_requested_at ? fixedExecutionParent : null;
+      if (fixedExecutionParent && !retryExecutionParent) {
         const fixedBundleId = Number(fixedExecutionParent.request?.bundle_artifact_id || 0);
         const fixedBundle = fixedBundleId > 0
           ? repo.getArtifact(db, fixedBundleId)
           : currentArtifacts(db, run.id, 'reference_bundle').find((item) => item.scope_id === shot.scope_id);
-        if (!fixedBundle || fixedBundle.status !== 'approved') {
+        if (!dispatchableReferenceBundle(fixedBundle, fixedExecutionParent.request?.request_template)) {
           return { state: 'waiting_review', reason: 'fixed_duration_reference_bundle_missing', action: fixedExecutionParent, shot };
         }
         return advanceFixedDurationExecution(repo.getRun(db, run.id), shot, fixedBundle, fixedExecutionParent);
       }
-      let action = repo.getLatestAction(db, run.id, {
+      let action = retryExecutionParent || repo.getLatestAction(db, run.id, {
         stage: 'shot_video', scope_type: 'shot', scope_id: shot.scope_id, kind: 'video_generate',
       });
       if (action && !action.parent_action_id && ['failed', 'cancelled'].includes(action.status)
@@ -4180,6 +4239,7 @@ function createProductionMediaService(db, cfg, log, injected = {}) {
         }
       }
       const explicitRetryGrant = action?.status === 'cancelled' && action.result?.retry_authorized === true;
+      const retryOfActionId = explicitRetryGrant ? action.id : null;
       if (explicitRetryGrant) action = null;
       const selection = selectGenerationAction(action, shot, rejectedTarget, {
         cancelReserved(staleAction) {
@@ -4263,7 +4323,7 @@ function createProductionMediaService(db, cfg, log, injected = {}) {
         duration = Number(route?.duration || shot.content.duration);
         if (!model) throw new Error(`镜头 ${shot.scope_id} 没有可用的视频模型`);
         if (!bundle) throw new Error(`Shot ${shot.scope_id} is missing a reference bundle`);
-        if (bundleState.state === 'refreshed' || bundle.status !== 'approved') {
+        if (!explicitRetryGrant && (bundleState.state === 'refreshed' || bundle.status !== 'approved')) {
           const reason = bundleState.state === 'refreshed'
             ? 'reference_bundle_stale'
             : 'reference_bundle_review_required';
@@ -4295,7 +4355,7 @@ function createProductionMediaService(db, cfg, log, injected = {}) {
         }
         const key = actionKey('shot_video', shot, attempt);
         const retryEvidence = rejectedVideoEvidence(db, run, shot);
-        const promptPlan = await ensureVideoPromptPlan(run, shot, attempt, retryEvidence);
+        const promptPlan = await ensureVideoPromptPlan(run, shot, attempt, retryEvidence, { explicitRetry: explicitRetryGrant });
         if (promptPlan.state === 'planned') {
           repo.updateRun(db, run.id, {
             status: 'running', waiting_reason: null, error_code: null, error_message: null,
@@ -4316,11 +4376,17 @@ function createProductionMediaService(db, cfg, log, injected = {}) {
         const dispatchStateChanged = Number(dispatchRun.version) !== validationVersion;
         const validatedBundle = validatedBundleState.artifact;
         if (dispatchStateChanged
-          || validatedBundleState.state === 'refreshed'
+          || (!explicitRetryGrant && validatedBundleState.state === 'refreshed')
           || !validatedBundle
-          || validatedBundle.status !== 'approved'
+          || (!explicitRetryGrant && validatedBundle.status !== 'approved')
           || Number(validatedBundle.id) !== Number(bundle.id)) {
           const reviewBundle = currentBundle || validatedBundle || bundle;
+          if (explicitRetryGrant) {
+            // A concurrent edit needs a fresh main-flow snapshot, not another
+            // human confirmation. The cancelled original retains the grant.
+            repo.updateRun(db, run.id, { current_stage: 'shot_video', status: 'running', waiting_reason: null, error_code: null, error_message: null });
+            return { state: 'progressed', reason: 'video_dispatch_refresh_pending', artifact: reviewBundle, shot };
+          }
           repo.updateRun(db, run.id, {
             current_stage: 'reference_bundle',
             current_scope_type: 'shot',
@@ -4391,6 +4457,8 @@ function createProductionMediaService(db, cfg, log, injected = {}) {
           video_config_updated_at: dispatchConfigIdentity?.updated_at || null,
           video_config_fingerprint: dispatchConfigIdentity?.fingerprint || null,
           contract_validation_mode: 'advisory',
+          explicit_retry: explicitRetryGrant,
+          retry_of_action_id: retryOfActionId,
           model,
           duration,
           aspect_ratio: dispatchRun.policy?.aspect_ratio || '16:9',
@@ -4580,7 +4648,7 @@ function createProductionMediaService(db, cfg, log, injected = {}) {
           || actionSourceChanged
           || !bundle
           || bundleState.state === 'refreshed'
-          || bundle.status !== 'approved'
+          || !dispatchableReferenceBundle(bundle, action.request)
           || !Number.isInteger(capturedBundleId)
           || capturedBundleId !== Number(bundle.id);
         if (staleBundle) {
@@ -4732,7 +4800,7 @@ function createProductionMediaService(db, cfg, log, injected = {}) {
           .find((item) => item.scope_id === shot.scope_id);
         const finalConfiguredModel = configuredVideoModelForShot(finalRun, shot);
         const finalRouteChanged = !finalBundle
-          || finalBundle.status !== 'approved'
+          || !dispatchableReferenceBundle(finalBundle, action.request)
           || Number(finalBundle.id) !== capturedBundleId
           || (finalConfiguredModel && finalConfiguredModel !== dispatchedModel);
         if (finalRouteChanged) {

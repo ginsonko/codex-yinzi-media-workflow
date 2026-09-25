@@ -17,12 +17,16 @@ function fnv1a64(value) {
 }
 
 /**
- * Identical submissions from two tabs share a short-lived logical key. The
- * server also hashes the complete body, so a key can never reuse changed work.
+ * One explicit submit intent owns a key. Transport recovery keeps that key;
+ * a new click after a receipt gets a new identity even when its body matches.
  */
-export function batchRequestKey(payload, timestamp = Date.now()) {
-  const bucket = Math.floor(Number(timestamp) / 120000)
-  return `web-batch:${bucket}:${fnv1a64(JSON.stringify(stableValue(payload)))}`
+export function batchRequestKey(payload, intentId = crypto.randomUUID()) {
+  return `web-batch:${intentId}:${fnv1a64(JSON.stringify(stableValue(payload)))}`
+}
+
+export function batchSubmission(payload, pending = null) {
+  const signature = JSON.stringify(stableValue(payload))
+  return pending?.signature === signature ? pending : { signature, key: batchRequestKey(payload) }
 }
 
 export function batchItemCanRetry(item = {}) {

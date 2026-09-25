@@ -55,7 +55,7 @@ describe('YinziAPI video request mapping', () => {
     assert.deepEqual(body.references.map((ref) => ref.role), ['reference', 'reference']);
   });
 
-  it('maps a single first frame to a generic reference and clamps AIZZZ Seedance to five seconds', () => {
+  it('maps a single first frame to a generic reference and preserves the requested duration', () => {
     const refs = buildYinziReferences(
       { model: 'mg-seedance2.0 -480p mini', first_frame_url: 'first' },
       { first: 'https://cdn/first.png' }
@@ -64,22 +64,22 @@ describe('YinziAPI video request mapping', () => {
       model: 'mg-seedance2.0 -480p mini', prompt: 'move', duration: 4, references: refs,
     });
     assert.deepEqual(refs, [{ type: 'image', role: 'reference', url: 'https://cdn/first.png' }]);
-    assert.equal(body.seconds, 5);
-    assert.equal(body.duration, 5);
+    assert.equal(body.seconds, 4);
+    assert.equal(body.duration, 4);
   });
 
-  it('uses the fixed thirty-second execution unit for Seedance 2.5 direct submissions', () => {
+  it('preserves positive durations and only defaults an omitted or invalid duration', () => {
     const body = buildYinziVideoRequest({
       model: 'seedance-2.5-720p', prompt: 'safe short beat', duration: 4, references: [],
     });
-    assert.equal(body.seconds, 30);
-    assert.equal(body.duration, 30);
+    assert.equal(body.seconds, 4);
+    assert.equal(body.duration, 4);
     assert.equal(buildYinziVideoRequest({
       model: 'seedance-2.5-720p', prompt: 'safe short beat', duration: 0, references: [],
     }).seconds, 30);
     assert.equal(buildYinziVideoRequest({
       model: 'seedance-2.5-720p', prompt: 'safe short beat', duration: 16, references: [],
-    }).seconds, 30);
+    }).seconds, 16);
   });
 
   it('maps classic first and last frames without mixing generic references', () => {
@@ -93,7 +93,7 @@ describe('YinziAPI video request mapping', () => {
     ]);
   });
 
-  it('preserves typed file references and clamps the target duration to fifteen seconds', () => {
+  it('preserves typed file references and preserves the requested target duration', () => {
     const refs = buildYinziReferences(
       {
         model: 'mg-seedance2.0 -480p mini',
@@ -110,7 +110,7 @@ describe('YinziAPI video request mapping', () => {
     const body = buildYinziVideoRequest({
       model: 'mg-seedance2.0 -480p mini', prompt: 'move', duration: 99, references: refs,
     });
-    assert.equal(body.seconds, 15);
+    assert.equal(body.seconds, 99);
     assert.deepEqual(body.references, [
       { type: 'image', role: 'reference', file_id: 'file-image' },
       { type: 'video', role: 'reference', file_id: 'file-video' },
@@ -228,7 +228,7 @@ describe('YinziAPI asynchronous lifecycle', () => {
     assert.equal(wrongModel.resolution_source, 'unknown');
   });
 
-  it('uses the exact Yinzi display alias as a fixed thirty-second unit without claiming a server contract', async () => {
+  it('uses the exact Yinzi display alias without replacing the requested duration without claiming a server contract', async () => {
     const context = resolveYinziCapabilityContext({}, 'Seedance 2.5-720', {
       capability_model: 'Seedance 2.5-720',
       capability_snapshot: null,
@@ -261,8 +261,8 @@ describe('YinziAPI asynchronous lifecycle', () => {
         },
       });
       assert.equal(result.task_id, 'display-alias-task');
-      assert.equal(submittedBody.duration, 30);
-      assert.equal(submittedBody.seconds, 30);
+      assert.equal(submittedBody.duration, 60);
+      assert.equal(submittedBody.seconds, 60);
       assert.equal(result.contract_validation.contract_status, 'missing');
       assert.equal(result.contract_validation.capability_source, 'builtin_legacy_fallback');
       assert.ok(result.contract_validation.warnings.includes('legacy_capability_fallback'));
@@ -343,7 +343,7 @@ describe('YinziAPI asynchronous lifecycle', () => {
         reference_urls: Array.from({ length: 5 }, (_, index) => `https://media.test/ref-${index}.png`),
       });
       assert.equal(result.task_id, 'dynamic-capability-task');
-      assert.equal(submittedBody.duration, 6);
+      assert.equal(submittedBody.duration, 5);
       assert.equal(submittedBody.references.length, 6);
       assert.equal(submittedBody.references[0].role, 'first_frame');
       assert.equal(result.contract_validation.catalog_verified, true);
@@ -452,7 +452,7 @@ describe('YinziAPI asynchronous lifecycle', () => {
       assert.deepEqual(result.submission_receipt.reference_summary, {image:2,video:1});
       assert.deepEqual(states.map(s=>s.receipt.phase), ['post_started','transport_error']);
       assert.ok(states.every(s=>s.receipt.reference_summary.image===2 && s.receipt.reference_summary.video===1));
-      assert.match(result.error, /不会自动重试/);
+      assert.match(result.error, /明确重试创建新尝试/);
     } finally {
       global.fetch = originalFetch;
     }
@@ -568,23 +568,24 @@ describe('YinziAPI asynchronous lifecycle', () => {
     } finally { global.fetch = originalFetch; }
   });
 
-  it('rejects unsupported AIZZZ first/last semantics before submitting', async () => {
+  it('adapts first and last frame roles without refusing the request', async () => {
     const originalFetch = global.fetch;
     let calls = 0;
     global.fetch = async () => {
       calls += 1;
-      throw new Error('must not submit');
+      return new Response(JSON.stringify({id:'advisory-task'}),{status:200,headers:{'content-type':'application/json'}});
     };
     try {
       const result = await callYinziVideoApi(null, {
         base_url: 'https://api.yinziapi.top/v1', api_key: 'not-a-real-key', endpoint: '/videos',
       }, log, {
         model: 'mg-seedance2.0 -480p mini', prompt: 'test', duration: 5,
-        aspect_ratio: '16:9', first_frame_url: 'first.png', last_frame_url: 'last.png', video_gen_id: 2,
+        aspect_ratio: '16:9', first_frame_url: 'https://media.test/first.png', last_frame_url: 'https://media.test/last.png', video_gen_id: 2,
       });
-      assert.equal(calls, 0);
-      assert.equal(result.submission_status, 'not_sent');
-      assert.match(result.error, /未创建上游任务/);
+      assert.equal(calls, 1);
+      assert.equal(result.task_id, 'advisory-task');
+      assert.equal(result.contract_validation.mode, 'advisory');
+      assert.equal(result.submission_status, 'accepted');
     } finally {
       global.fetch = originalFetch;
     }
@@ -764,24 +765,24 @@ describe('YinziAPI asynchronous lifecycle', () => {
     }
   });
 
-  it('rejects a fake strict first frame mixed with generic AIZZZ references before upload or POST', async () => {
+  it('submits first frames and generic references despite local capability hints', async () => {
     const originalFetch = global.fetch;
     let calls = 0;
     global.fetch = async () => {
       calls += 1;
-      throw new Error('must not upload or submit');
+      return new Response(JSON.stringify({id:'advisory-task'}),{status:200,headers:{'content-type':'application/json'}});
     };
     try {
       const result = await callYinziVideoApi(null, {
         base_url: 'https://api.yinziapi.top/v1', api_key: 'not-a-real-key', endpoint: '/videos',
       }, log, {
         model: 'mg-seedance2.0 -480p mini', prompt: 'test', duration: 5,
-        aspect_ratio: '16:9', first_frame_url: 'strict.png',
-        reference_urls: ['storyboard.png'], video_gen_id: 22,
+        aspect_ratio: '16:9', first_frame_url: 'https://media.test/strict.png',
+        reference_urls: ['https://media.test/storyboard.png'], video_gen_id: 22,
       });
-      assert.equal(calls, 0);
-      assert.match(result.error, /不能同时把 first_frame 当作严格首帧/);
-      assert.match(result.error, /未创建上游任务/);
+      assert.equal(calls, 1);
+      assert.equal(result.task_id, 'advisory-task');
+      assert.equal(result.contract_validation.mode, 'advisory');
     } finally {
       global.fetch = originalFetch;
     }
@@ -926,6 +927,8 @@ describe('YinziAPI asynchronous lifecycle', () => {
         'https://media.test/reference.png',
         'https://media.test/last.png',
       ]);
+      assert.match(submittedBody.prompt, /开场画面以 第 1 张参考图/);
+      assert.match(submittedBody.prompt, /收尾画面以 第 3 张参考图/);
     } finally {
       global.fetch = originalFetch;
     }
@@ -983,7 +986,7 @@ describe('YinziAPI asynchronous lifecycle', () => {
     }
   });
 
-  it('uses the auto-routed cc model and clamps a legacy two-second request to five seconds', async () => {
+  it('uses the auto-routed cc model and preserves a two-second request', async () => {
     const db = new Database(':memory:');
     const originalLog = console.log;
     const originalWarn = console.warn;
@@ -1024,8 +1027,8 @@ describe('YinziAPI asynchronous lifecycle', () => {
       });
       assert.equal(result.task_id, 'task-short-two-seconds');
       assert.equal(submittedBody.model, 'cc-seedance2.0 480p-fast-nsp');
-      assert.equal(submittedBody.duration, 5);
-      assert.equal(submittedBody.seconds, 5);
+      assert.equal(submittedBody.duration, 2);
+      assert.equal(submittedBody.seconds, 2);
       assert.deepEqual(submittedBody.references.map((item) => item.type), ['image']);
     } finally {
       global.fetch = originalFetch;
@@ -1033,12 +1036,12 @@ describe('YinziAPI asynchronous lifecycle', () => {
     }
   });
 
-  it('rejects any video reference for a cc route before upload or submission', async () => {
+  it('submits video references even when the cc capability hint says zero', async () => {
     const originalFetch = global.fetch;
     let calls = 0;
     global.fetch = async () => {
       calls += 1;
-      throw new Error('provider must not be called');
+      return new Response(JSON.stringify({id:'advisory-task'}),{status:200,headers:{'content-type':'application/json'}});
     };
     try {
       const result = await callYinziVideoApi(null, {
@@ -1048,21 +1051,22 @@ describe('YinziAPI asynchronous lifecycle', () => {
         prompt: 'A short close-up.',
         duration: 2,
         reference_urls: ['https://media.test/frame.png'],
-        reference_video_urls: ['local-director-preview.webm'],
+        reference_video_urls: ['https://media.test/director-preview.webm'],
         storage_local_path: 'C:/media-that-must-not-be-read',
         video_gen_id: 62,
       });
-      assert.equal(calls, 0);
-      assert.match(result.error, /0 个参考视频/);
+      assert.equal(calls, 1);
+      assert.equal(result.task_id, 'advisory-task');
+      assert.equal(result.contract_validation.mode, 'advisory');
     } finally {
       global.fetch = originalFetch;
     }
   });
 
-  it('rejects media over the 4/3/1 limits before any POST', async () => {
+  it('submits media above local reference count hints', async () => {
     const originalFetch = global.fetch;
     let calls = 0;
-    global.fetch = async () => { calls += 1; throw new Error('must not submit'); };
+    global.fetch = async () => { calls += 1; return new Response(JSON.stringify({id:'advisory-task'}),{status:200,headers:{'content-type':'application/json'}}); };
     try {
       const result = await callYinziVideoApi(null, {
         base_url: 'https://api.yinziapi.top/v1', api_key: 'not-a-real-key', endpoint: '/videos',
@@ -1071,8 +1075,9 @@ describe('YinziAPI asynchronous lifecycle', () => {
         reference_urls: Array.from({ length: 5 }, (_, i) => `https://media.test/image-${i}.png`),
         video_gen_id: 4,
       });
-      assert.equal(calls, 0);
-      assert.match(result.error, /最多支持 4 个参考图片/);
+      assert.equal(calls, 1);
+      assert.equal(result.task_id, 'advisory-task');
+      assert.equal(result.contract_validation.mode, 'advisory');
     } finally {
       global.fetch = originalFetch;
     }
@@ -1192,14 +1197,20 @@ describe('YinziAPI asynchronous lifecycle', () => {
     }
   });
 
-  it('prepares every local image before the first provider call', async () => {
+  it('submits original image bytes when local preparation fails and retains provider errors', async () => {
     const originalFetch = global.fetch;
     const storage = fs.mkdtempSync(path.join(os.tmpdir(), 'yinzi-image-preflight-'));
     await sharp({ create: { width: 320, height: 180, channels: 3, background: '#315f73' } })
       .png().toFile(path.join(storage, 'valid.png'));
     fs.writeFileSync(path.join(storage, 'invalid.png'), Buffer.from('not an image'));
     let calls = 0;
-    global.fetch = async () => { calls += 1; throw new Error('provider must not be called'); };
+    global.fetch = async (_url, options) => {
+      calls += 1;
+      const body = JSON.parse(options.body);
+      assert.equal(body.references.length, 2);
+      assert.ok(body.references[1].data_url.endsWith(Buffer.from('not an image').toString('base64')));
+      return new Response(JSON.stringify({error:{message:'upstream invalid image'}}),{status:400,headers:{'content-type':'application/json'}});
+    };
     try {
       const result = await callYinziVideoApi(null, {
         base_url: 'https://api.yinziapi.top/v1', api_key: 'not-a-real-key', endpoint: '/videos',
@@ -1207,8 +1218,10 @@ describe('YinziAPI asynchronous lifecycle', () => {
         model: 'mg-seedance2.0 -480p mini', prompt: 'test', duration: 5, aspect_ratio: '16:9',
         reference_urls: ['valid.png', 'invalid.png'], storage_local_path: storage, video_gen_id: 11,
       });
-      assert.equal(calls, 0);
-      assert.match(result.error, /image|unsupported|format/i);
+      assert.equal(calls, 1);
+      assert.equal(result.submission_status, 'rejected');
+      assert.ok(result.contract_validation.warnings.includes('image_preparation_unavailable'));
+      assert.match(result.error, /upstream invalid image/);
     } finally {
       global.fetch = originalFetch;
       fs.rmSync(storage, { recursive: true, force: true });
@@ -1278,12 +1291,20 @@ describe('YinziAPI asynchronous lifecycle', () => {
     }
   });
 
-  it('fails closed before upload or video submission when a local reference video cannot be probed', async () => {
+  it('uploads original video bytes when local probing fails and preserves the upstream result', async () => {
     const originalFetch = global.fetch;
     const storage = fs.mkdtempSync(path.join(os.tmpdir(), 'yinzi-bad-reference-'));
     fs.writeFileSync(path.join(storage, 'broken.webm'), Buffer.from('not a video'));
     let calls = 0;
-    global.fetch = async () => { calls += 1; throw new Error('must not call provider'); };
+    global.fetch = async (url, options) => {
+      calls += 1;
+      if(String(url).endsWith('/files')) {
+        assert.equal(await options.body.get('file').text(), 'not a video');
+        return new Response(JSON.stringify({id:'file-original'}),{status:200,headers:{'content-type':'application/json'}});
+      }
+      assert.equal(JSON.parse(options.body).references[0].file_id,'file-original');
+      return new Response(JSON.stringify({id:'task-original'}),{status:200,headers:{'content-type':'application/json'}});
+    };
     try {
       const result = await callYinziVideoApi(null, {
         base_url: 'https://api.yinziapi.top/v1', api_key: 'not-a-real-key', endpoint: '/videos',
@@ -1291,27 +1312,29 @@ describe('YinziAPI asynchronous lifecycle', () => {
         model: 'mg-seedance2.0 -480p mini', prompt: 'test', duration: 5, aspect_ratio: '16:9',
         reference_video_urls: ['broken.webm'], storage_local_path: storage, video_gen_id: 8,
       });
-      assert.equal(calls, 0);
-      assert.match(result.error, /FFprobe|reference video/i);
+      assert.equal(calls, 2);
+      assert.equal(result.submission_status, 'accepted');
+      assert.ok(result.contract_validation.warnings.includes('video_preparation_unavailable'));
     } finally {
       global.fetch = originalFetch;
       fs.rmSync(storage, { recursive: true, force: true });
     }
   });
 
-  it('rejects a prompt above the confirmed 4,096-character provider boundary before any upload', async () => {
+  it('submits a prompt above local length hints and reports warnings', async () => {
     const originalFetch = global.fetch;
     let calls = 0;
-    global.fetch = async () => { calls += 1; throw new Error('provider must not be called'); };
+    global.fetch = async () => { calls += 1; return new Response(JSON.stringify({id:'advisory-task'}),{status:200,headers:{'content-type':'application/json'}}); };
     try {
       const result = await callYinziVideoApi(null, {
         base_url: 'https://api.yinziapi.top/v1', api_key: 'not-a-real-key', endpoint: '/videos',
       }, log, {
         model: 'mg-seedance2.0 -480p mini', prompt: 'X'.repeat(4097), duration: 5,
-        aspect_ratio: '16:9', reference_urls: ['missing.png'], video_gen_id: 81,
+        aspect_ratio: '16:9', reference_urls: ['https://media.test/source.png'], video_gen_id: 81,
       });
-      assert.equal(calls, 0);
-      assert.match(result.error, /4097 characters.*4096-character model limit/i);
+      assert.equal(calls, 1);
+      assert.equal(result.task_id, 'advisory-task');
+      assert.equal(result.contract_validation.mode, 'advisory');
     } finally {
       global.fetch = originalFetch;
     }

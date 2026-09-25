@@ -143,13 +143,14 @@ describe('advanced settings contracts', () => {
       billing_unit: 'per_second', units: 5, price,
     }).reused, true);
     costs.transition(db, 'cost:a', 'uncertain', { note: '创建结果不明确' });
-    assert.throws(() => costs.reserve(db, {
+    const above = costs.reserve(db, {
       run_id: run.id, idempotency_key: 'cost:b', provider: 'yinzi', service_type: 'video', model: 'video-test',
       billing_unit: 'per_second', units: 6, price,
-    }), (error) => error.code === 'COST_BUDGET_EXHAUSTED');
+    });
+    assert.ok(above.entry.price_snapshot.warnings.includes('estimate_above_reference'));
     const summary = costs.listRunCosts(db, run.id).summary;
     assert.equal(summary.uncertain_usd, 0.5);
-    assert.equal(summary.remaining_usd, 0.5);
+    assert.equal(summary.remaining_usd, 0);
   });
 
   it('creates an action and its money reservation atomically, then follows action settlement', () => {
@@ -158,14 +159,15 @@ describe('advanced settings contracts', () => {
       provider: 'yinzi', service_type: 'image', model: 'image-test',
       billing_unit: 'per_image', unit_price_usd: 0.3,
     });
-    assert.throws(() => repo.reserveAction(db, {
+    const above = repo.reserveAction(db, {
       run_id: run.id, action_key: 'too-expensive', stage: 'asset_images', scope_type: 'character', scope_id: '1',
       kind: 'image_generate', request: {}, cost: {
         provider: 'yinzi', service_type: 'image', model: 'image-test', billing_unit: 'per_image', units: 2, price,
       },
-    }), (error) => error.code === 'COST_BUDGET_EXHAUSTED');
-    assert.equal(db.prepare('SELECT COUNT(*) AS n FROM production_actions WHERE run_id = ?').get(run.id).n, 0);
-    assert.equal(db.prepare('SELECT COUNT(*) AS n FROM cost_ledger WHERE run_id = ?').get(run.id).n, 0);
+    });
+    assert.ok(above.action.id);
+    assert.equal(db.prepare('SELECT COUNT(*) AS n FROM production_actions WHERE run_id = ?').get(run.id).n, 1);
+    assert.equal(db.prepare('SELECT COUNT(*) AS n FROM cost_ledger WHERE run_id = ?').get(run.id).n, 1);
 
     const reserved = repo.reserveAction(db, {
       run_id: run.id, action_key: 'within-budget', stage: 'asset_images', scope_type: 'character', scope_id: '1',
@@ -180,8 +182,8 @@ describe('advanced settings contracts', () => {
     assert.equal(db.prepare('SELECT status FROM cost_ledger WHERE action_id = ?').get(reserved.id).status, 'settled');
   });
 
-  it('records unknown prices without pretending they cost zero when no money cap exists', () => {
-    const run = makeRun({ budget: {} });
+  it('records unknown prices even with an old cap and allow_unknown_price false', () => {
+    const run = makeRun({ budget: {max_cost_usd:0, allow_unknown_price:false} });
     const action = repo.reserveAction(db, {
       run_id: run.id, action_key: 'unpriced-compatible', stage: 'script', scope_type: 'run', scope_id: '',
       kind: 'text_generate', request: {}, cost: {

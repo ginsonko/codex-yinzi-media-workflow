@@ -31,7 +31,7 @@
         <template v-if="mode === 'video'">
           <div class="form-section">
             <label class="form-label">视频模型</label>
-            <el-select v-model="selectedVideoModel" filterable class="full-width" placeholder="使用默认视频模型">
+            <el-select v-model="selectedVideoModel" filterable allow-create default-first-option class="full-width" placeholder="使用默认视频模型，或输入模型名">
               <el-option v-for="item in videoModels" :key="item.model" :label="item.model" :value="item.model" />
             </el-select>
             <div v-if="videoCapability" class="capability-line">
@@ -55,9 +55,9 @@
 
             <div class="reference-group">
               <div class="reference-group-title">
-                <span><el-icon><Picture /></el-icon> 图片 {{ imageReferences.length }}/{{ limits.images }}</span>
+                <span><el-icon><Picture /></el-icon> 图片 {{ imageReferences.length }}<small v-if="limits.images != null"> · 目录参考 {{ limits.images }}</small></span>
                 <el-tooltip content="添加参考图" placement="top">
-                  <el-button circle size="small" :disabled="isUploading || imageReferences.length >= limits.images" @click="imageInput?.click()">
+                  <el-button circle size="small" :disabled="isUploading" @click="imageInput?.click()">
                     <el-icon><Plus /></el-icon>
                   </el-button>
                 </el-tooltip>
@@ -75,9 +75,9 @@
 
             <div v-if="mode === 'video'" class="reference-group">
               <div class="reference-group-title">
-                <span><el-icon><VideoPlay /></el-icon> 视频 {{ videoReferences.length }}/{{ limits.videos }}</span>
+                <span><el-icon><VideoPlay /></el-icon> 视频 {{ videoReferences.length }}<small v-if="limits.videos != null"> · 目录参考 {{ limits.videos }}</small></span>
                 <el-tooltip content="添加参考视频" placement="top">
-                  <el-button circle size="small" :disabled="isUploading || videoReferences.length >= limits.videos" @click="videoInput?.click()">
+                  <el-button circle size="small" :disabled="isUploading" @click="videoInput?.click()">
                     <el-icon><Plus /></el-icon>
                   </el-button>
                 </el-tooltip>
@@ -95,9 +95,9 @@
 
             <div v-if="mode === 'video'" class="reference-group">
               <div class="reference-group-title">
-                <span><el-icon><Headset /></el-icon> 音频 {{ audioReferences.length }}/{{ limits.audios }}</span>
+                <span><el-icon><Headset /></el-icon> 音频 {{ audioReferences.length }}<small v-if="limits.audios != null"> · 目录参考 {{ limits.audios }}</small></span>
                 <el-tooltip content="添加参考音频" placement="top">
-                  <el-button circle size="small" :disabled="isUploading || audioReferences.length >= limits.audios" @click="audioInput?.click()">
+                  <el-button circle size="small" :disabled="isUploading" @click="audioInput?.click()">
                     <el-icon><Plus /></el-icon>
                   </el-button>
                 </el-tooltip>
@@ -136,7 +136,7 @@
           </div>
           <div v-if="mode === 'video'">
             <label class="form-label">时长（秒）</label>
-            <el-input-number v-model="duration" :min="durationBounds.min" :max="durationBounds.max" :step="1" controls-position="right" />
+            <el-input-number v-model="duration" :min="1" :step="1" controls-position="right" />
           </div>
         </div>
 
@@ -150,6 +150,10 @@
         >
           {{ generating ? '生成中' : (mode === 'image' ? '生成图片' : '生成视频') }}
         </el-button>
+        <div v-if="submission && !generating" class="pending-submission-note" role="status">
+          <p class="field-note">上次提交尚未收到回执。按原参数再次提交会恢复原请求；也可按当前参数直接新建一次。原任务和费用记录仍保留。</p>
+          <el-button plain :disabled="!prompt.trim() || isUploading" @click="generate(true)">直接新建一次</el-button>
+        </div>
       </section>
 
       <section class="result-panel">
@@ -180,6 +184,7 @@
               <small v-if="item.fileSize" class="result-size">文件大小：{{ formatBytes(item.fileSize) }}</small>
               <small v-if="item.assetError" class="asset-register-error">素材库登记失败：{{ item.assetError }}</small>
               <small v-else-if="item.assetRegistered" class="asset-register-ok">已保存到素材库</small>
+              <el-button size="small" type="primary" :loading="retrying.has(item.id)" @click="retryGeneration(item)">重新生成一次</el-button>
               <el-button v-if="item.download_url" size="small" type="primary" plain @click="downloadItem(item)">下载原文件</el-button><el-button v-else-if="item.local_path" size="small" plain @click="saveAsset(item)">保存到素材库</el-button><el-button v-if="item.can_retry_download" size="small" plain @click="retryDownload(item)">重试下载（不重新生成）</el-button>
             </div>
           </article>
@@ -207,7 +212,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { ArrowLeft, CircleClose, Delete, FolderOpened, Headset, Loading, MagicStick, Picture, Plus, VideoPlay } from '@element-plus/icons-vue'
@@ -225,6 +230,7 @@ const style = ref('')
 const aspectRatio = ref('16:9')
 const duration = ref(5)
 const generating = ref(false)
+const retrying = reactive(new Set())
 const uploadingType = ref('')
 const results = ref([])
 const previewUrl = ref(null)
@@ -247,27 +253,16 @@ const libraryPage = ref(1)
 const libraryTotal = ref(0)
 const libraryType = ref('image')
 const librarySource = ref('upload')
-let submission = null
-try { submission = JSON.parse(sessionStorage.getItem('yinzi-pending-manual-submit') || 'null') } catch {}
+const submission = ref(null)
+try { submission.value = JSON.parse(sessionStorage.getItem('yinzi-pending-manual-submit') || 'null') } catch {}
 
 const videoCapability = computed(() => videoModels.value.find((item) => item.model === selectedVideoModel.value)?.capabilities || null)
 const limits = computed(() => ({
-  images: videoCapability.value?.max_images ?? 4,
-  videos: videoCapability.value?.max_videos ?? 3,
-  audios: videoCapability.value?.max_audios ?? 1,
-}))
-const durationBounds = computed(() => ({
-  // Keep the direct-create form aligned with the provider's automatic
-  // submission boundary. Raw manual-contract fields may be wider than the
-  // 5-15s workflow range and must not expose a known-invalid 4s choice.
-  min: videoCapability.value?.auto_duration_min ?? videoCapability.value?.duration_min ?? 1,
-  max: videoCapability.value?.auto_duration_max ?? videoCapability.value?.duration_max ?? 15,
+  images: videoCapability.value?.max_images ?? null,
+  videos: videoCapability.value?.max_videos ?? null,
+  audios: videoCapability.value?.max_audios ?? null,
 }))
 const isUploading = computed(() => Boolean(uploadingType.value))
-
-watch(durationBounds, (bounds) => {
-  duration.value = Math.min(bounds.max, Math.max(bounds.min, duration.value))
-}, { immediate: true })
 
 onMounted(async () => {
   const [catalogResult, configsResult] = await Promise.allSettled([
@@ -305,7 +300,6 @@ function selectLibraryAsset(asset) {
   if (mode.value === 'image' && type !== 'image') return ElMessage.info('图片生成请选择图片参考')
   const collection = collectionFor(type)
   if (!asset.url || asset.available === false) return ElMessage.warning('该文件尚未准备好，请先完成下载')
-  if (collection.value.length >= limits.value[`${type}s`]) return ElMessage.warning(`参考${mediaTypeLabel(type)}已达到上限`)
   const reference = asset.local_path || asset.url
   if (collection.value.some(item => (item.local_path || item.url) === reference)) return ElMessage.info('该素材已经添加')
   collection.value.push({ asset_id: asset.id, filename: asset.name, local_path: asset.local_path, url: asset.url, mime_type: asset.mime_type })
@@ -323,11 +317,6 @@ async function onReferenceFiles(type, event) {
   input.value = ''
   if (!files.length) return
   const collection = collectionFor(type)
-  const maximum = limits.value[`${type}s`]
-  if (collection.value.length + files.length > maximum) {
-    ElMessage.error(`最多可添加 ${maximum} 个参考${type === 'image' ? '图' : type === 'video' ? '视频' : '音频'}`)
-    return
-  }
   uploadingType.value = type
   try {
     for (const file of files) {
@@ -357,14 +346,30 @@ async function retryDownload(item) {
   try { await request.post(`/media-batches/${item.batch_id}/items/${item.id}/retry-download`); await loadHistory() }
   catch (error) { ElMessage.error(error.message || '重试下载失败') }
 }
+async function retryGeneration(item) {
+  if (!item?.batch_id || !item?.id || retrying.has(item.id)) return
+  retrying.add(item.id)
+  try {
+    await mediaBatchAPI.retry(item.batch_id, item.id, {
+      expected_attempt: item.attempt,
+      request_key: `manual-retry:${item.batch_id}:${item.id}:${item.attempt}`,
+    })
+    await loadHistory()
+    ElMessage.success('已开始新尝试，原任务和费用记录仍保留')
+  } catch (error) { ElMessage.error(error.message || '暂未收到重试回执，可继续核对同一请求') }
+  finally { retrying.delete(item.id) }
+}
+let historyRead = 0
 async function loadHistory() {
+  const read = ++historyRead
   try {
     const list = await mediaBatchAPI.list({ origin: 'manual', limit: 12, offset: (historyPage.value - 1) * 12 })
     const batches = await Promise.all((list.items || []).map(batch => mediaBatchAPI.get(batch.id)))
+    if (read !== historyRead) return
     results.value = batches.flatMap(batch => (batch.items || []).map(item => ({ ...item, type: item.kind, prompt: item.request?.prompt || batch.prompt, url: item.local_path ? resolveMediaUrl(item.local_path) : null, error: item.download_error || item.error_message, assetRegistered: Boolean(item.asset_id), fileSize: item.file_size })))
     historyTotal.value = list.total || 0
     historyError.value = ''
-  } catch (error) { historyError.value = error.message || '暂时无法读取进度，后台任务仍保留' }
+  } catch (error) { if (read === historyRead) historyError.value = error.message || '暂时无法读取进度，后台任务仍保留' }
 }
 function taskState(item) {
   if (item.download_status === 'waiting_provider') return '服务端成片尚未就绪，正在恢复取回'
@@ -373,7 +378,7 @@ function taskState(item) {
   if (item.generation_status === 'completed') return '生成完成，正在保存原文件'
   return ({ queued: '已排队', submitting: '正在提交', processing: '后台生成中', needs_review: '需要处理', failed: '生成失败' })[item.status] || '等待进展'
 }
-async function generate() {
+async function generate(fresh = false) {
   if (!prompt.value.trim() || generating.value) return
   const settings = { _origin: 'manual', style: style.value || undefined, aspect_ratio: aspectRatio.value,
     reference_image_urls: imageReferences.value.map(item => item.local_path || item.url),
@@ -381,13 +386,13 @@ async function generate() {
       reference_video_urls: videoReferences.value.map(item => item.local_path || item.url), reference_audio_urls: audioReferences.value.map(item => item.local_path || item.url) } : {}) }
   const body = { kind: mode.value, title: `手动${mode.value === 'video' ? '视频' : '图片'} · ${prompt.value.slice(0,40)}`, prompt: prompt.value, model: mode.value === 'video' ? selectedVideoModel.value || undefined : undefined, concurrency: 1, settings, items: [{}] }
   const signature = JSON.stringify(body)
-  // Reuse the request key after a lost response. Changing the request explicitly starts a different job.
-  if (!submission || submission.signature !== signature) submission = { signature, key: `manual:${crypto.randomUUID()}` }
-  try { sessionStorage.setItem('yinzi-pending-manual-submit', JSON.stringify(submission)) } catch {}
+  // Transport recovery keeps its key; an explicit fresh click starts a new attempt.
+  if (fresh === true || !submission.value || submission.value.signature !== signature) submission.value = { signature, key: `manual:${crypto.randomUUID()}` }
+  try { sessionStorage.setItem('yinzi-pending-manual-submit', JSON.stringify(submission.value)) } catch {}
   generating.value = true
   try {
-    await mediaBatchAPI.create({ ...body, idempotency_key: submission.key })
-    submission = null; try { sessionStorage.removeItem('yinzi-pending-manual-submit') } catch {}
+    await mediaBatchAPI.create({ ...body, idempotency_key: submission.value.key })
+    submission.value = null; try { sessionStorage.removeItem('yinzi-pending-manual-submit') } catch {}
     historyPage.value = 1
     await loadHistory(); ElMessage.success('任务已交给后台，可以切换页面，稍后回来查看')
   } catch (error) { ElMessage.error(error.message || '暂未收到提交回执，再次点击会核对同一任务') }

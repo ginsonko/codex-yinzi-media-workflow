@@ -578,7 +578,7 @@
                       </div>
                     </div>
                     <div class="asset-cover-actions">
-                      <el-button type="primary" size="small" :loading="generatingCharIds.has(char.id)" @click="onGenerateCharacterImage(char)">
+                      <el-button type="primary" size="small" :loading="isMediaSubmitting(char.id, GEN_RESOURCE.CHAR_IMAGE)" @click="onGenerateCharacterImage(char)">
                         <el-icon v-if="!generatingCharIds.has(char.id)"><MagicStick /></el-icon>
                         AI 生成
                       </el-button>
@@ -676,7 +676,7 @@
                     </div>
                     <div class="asset-cover-actions">
                       <el-tooltip :content="propUseQuadGrid ? '四视图道具（前/侧/后/顶，纯色无缝背景）' : '单图道具（纯色无缝背景）'" placement="top">
-                        <el-button type="primary" size="small" :loading="generatingPropIds.has(prop.id)" @click="onGeneratePropImage(prop, propUseQuadGrid)">
+                        <el-button type="primary" size="small" :loading="isMediaSubmitting(prop.id, GEN_RESOURCE.PROP_IMAGE)" @click="onGeneratePropImage(prop, propUseQuadGrid)">
                           <el-icon v-if="!generatingPropIds.has(prop.id)"><MagicStick /></el-icon>
                           AI 生成
                         </el-button>
@@ -777,7 +777,7 @@
                     </div>
                     <div class="asset-cover-actions">
                       <el-tooltip :content="sceneUseQuadGrid ? '四宫格场景（正/侧/俯/仰）' : '单图场景'" placement="top">
-                        <el-button type="primary" size="small" :loading="generatingSceneIds.has(scene.id)" @click="onGenerateSceneImage(scene, sceneUseQuadGrid)">
+                        <el-button type="primary" size="small" :loading="isMediaSubmitting(scene.id, GEN_RESOURCE.SCENE_IMAGE)" @click="onGenerateSceneImage(scene, sceneUseQuadGrid)">
                           <el-icon v-if="!generatingSceneIds.has(scene.id)"><MagicStick /></el-icon>
                           AI 生成
                         </el-button>
@@ -880,22 +880,24 @@
                 type="success"
                 plain
                 size="large"
-                :loading="batchImageRunning"
-                :disabled="!currentEpisodeId || batchImageRunning || batchVideoRunning || pipelineRunning || storyboardGenerating || universalOmniPolishRunning"
-                @click="startBatchImageGeneration"
+                :loading="batchImagePreparing || batchImageSubmitting > 0"
+                :disabled="!currentEpisodeId || batchImagePreparing || batchImageSubmitting > 0"
+                @click="startBatchImageGeneration(false)"
               >
-                批量生成分镜图
+                补齐缺失分镜图
               </el-button>
               <el-button
                 type="warning"
                 plain
                 size="large"
-                :loading="batchVideoRunning"
-                :disabled="!currentEpisodeId || batchImageRunning || batchVideoRunning || pipelineRunning || storyboardGenerating || universalOmniPolishRunning"
-                @click="startBatchVideoGeneration"
+                :loading="batchVideoPreparing || batchVideoSubmitting > 0"
+                :disabled="!currentEpisodeId || batchVideoPreparing || batchVideoSubmitting > 0"
+                @click="startBatchVideoGeneration(false)"
               >
-                批量生成分镜视频
+                补齐缺失分镜视频
               </el-button>
+              <el-button size="large" plain :disabled="!currentEpisodeId || batchImagePreparing || batchImageSubmitting > 0" @click="startBatchImageGeneration(true)">重新生成全部分镜图</el-button>
+              <el-button size="large" plain :disabled="!currentEpisodeId || batchVideoPreparing || batchVideoSubmitting > 0" @click="startBatchVideoGeneration(true)">重新生成全部分镜视频</el-button>
               <el-button v-if="batchImageRunning" size="large" type="danger" plain @click="batchImageStopping = true">停止图片</el-button>
               <el-button v-if="batchVideoRunning" size="large" type="danger" plain @click="batchVideoStopping = true">停止视频</el-button>
             </div>
@@ -1293,7 +1295,7 @@
                         {{ getSbFirstImage(sb.id).prompt }}
                       </div>
                       <div class="sb-fl-slot-actions">
-                        <el-button type="primary" size="small" :loading="generatingSbFirstImageIds.has(sb.id)" @click="onGenerateSbFrameImage(sb, 'first')">生成</el-button>
+                        <el-button type="primary" size="small" :loading="isMediaSubmitting(sb.id, GEN_RESOURCE.SB_FIRST_IMAGE)" @click="onGenerateSbFrameImage(sb, 'first')">生成</el-button>
                         <el-tooltip v-if="canUsePrevTailAsFirst(sb)" content="直接使用上一分镜的尾帧图片（高清原图）替换本首帧，画面更清晰" placement="top">
                           <el-button size="small" :loading="usingPrevTailAsFirstIds.has(sb.id)" @click="onUsePrevTailAsFirst(sb)">上镜尾帧</el-button>
                         </el-tooltip>
@@ -1322,7 +1324,7 @@
                         {{ getSbLastImage(sb.id).prompt }}
                       </div>
                       <div class="sb-fl-slot-actions">
-                        <el-button type="primary" size="small" :loading="generatingSbLastImageIds.has(sb.id)" @click="onGenerateSbFrameImage(sb, 'last')">生成</el-button>
+                        <el-button type="primary" size="small" :loading="isMediaSubmitting(sb.id, GEN_RESOURCE.SB_LAST_IMAGE)" @click="onGenerateSbFrameImage(sb, 'last')">生成</el-button>
                         <el-checkbox
                           v-model="lastFrameUseFirstLayoutLock"
                           class="sb-fl-first-lock-opt"
@@ -1380,14 +1382,14 @@
                   </template>
                   <template v-else-if="sb.error_msg || sb.errorMsg">
                     <div class="sb-image-error" :title="sb.error_msg || sb.errorMsg">{{ sb.error_msg || sb.errorMsg }}</div>
-                    <el-button type="primary" size="small" class="sb-gen-btn" :loading="generatingSbImageIds.has(sb.id)" @click="onGenerateSbImage(sb)">
+                    <el-button type="primary" size="small" class="sb-gen-btn" :loading="isMediaSubmitting(sb.id, GEN_RESOURCE.SB_IMAGE)" @click="onGenerateSbImage(sb)">
                       <el-icon><Refresh /></el-icon>
                       重试
                     </el-button>
                     <el-button size="small" :loading="uploadingSbImageId === sb.id" @click="onUploadSbImageClick(sb)">上传</el-button>
                   </template>
                   <template v-else>
-                    <el-button type="primary" size="small" class="sb-gen-btn" :loading="generatingSbImageIds.has(sb.id)" @click="onGenerateSbImage(sb)">
+                    <el-button type="primary" size="small" class="sb-gen-btn" :loading="isMediaSubmitting(sb.id, GEN_RESOURCE.SB_IMAGE)" @click="onGenerateSbImage(sb)">
                       <el-icon><MagicStick /></el-icon>
                       生成分镜参考图
                     </el-button>
@@ -1418,7 +1420,7 @@
               </div>
               <div v-if="hasSbImage(sb) || storyboardUseFirstLastFrame" class="sb-image-actions">
                 <template v-if="storyboardUseFirstLastFrame">
-                  <el-button size="small" :loading="generatingSbFirstImageIds.has(sb.id) || generatingSbLastImageIds.has(sb.id)" @click="onGenerateSbFramePair(sb)">{{ hasSbFirstLastPair(sb) ? '重新生成首尾帧' : '一键生成首尾帧' }}</el-button>
+                  <el-button size="small" :loading="isMediaSubmitting(sb.id, GEN_RESOURCE.SB_FIRST_IMAGE) || isMediaSubmitting(sb.id, GEN_RESOURCE.SB_LAST_IMAGE)" @click="onGenerateSbFramePair(sb)">{{ hasSbFirstLastPair(sb) ? '重新生成首尾帧' : '一键生成首尾帧' }}</el-button>
                   <el-tooltip content="高清放大仅作用于首帧" placement="top">
                     <el-button size="small" :loading="upscalingSbIds.has(sb.id)" :disabled="!getSbLocalImage(sb)" @click="onUpscaleSbImage(sb)">
                       <el-icon><ZoomIn /></el-icon>超分(首帧)
@@ -1426,7 +1428,7 @@
                   </el-tooltip>
                 </template>
                 <template v-else>
-                <el-button size="small" :loading="generatingSbImageIds.has(sb.id)" @click="onGenerateSbImage(sb)">重新生成</el-button>
+                <el-button size="small" :loading="isMediaSubmitting(sb.id, GEN_RESOURCE.SB_IMAGE)" @click="onGenerateSbImage(sb)">重新生成</el-button>
                 <el-button size="small" :loading="uploadingSbImageId === sb.id" @click="onUploadSbImageClick(sb)">上传</el-button>
                 <el-tooltip content="高清放大（2x超分辨率）" placement="top">
                   <el-button
@@ -1470,7 +1472,7 @@
                   <el-icon class="is-loading"><Loading /></el-icon>
                   正在生成视频...
                 </span>
-                <template v-else>
+                <template>
                   <div v-if="getSbVideoError(sb.id)" class="sb-video-error">
                     {{ getSbVideoError(sb.id) }}
                   </div>
@@ -1478,11 +1480,11 @@
                     type="primary"
                     size="small"
                     class="sb-generate-video-btn"
-                    :loading="isSbVideoGenerating(sb.id)"
-                    :disabled="!sbCanSubmitVideo(sb) || isSbVideoGenerating(sb.id)"
+                    :loading="isMediaSubmitting(sb.id, GEN_RESOURCE.SB_VIDEO)"
+                    :disabled="!sbCanSubmitVideo(sb) || isMediaSubmitting(sb.id, GEN_RESOURCE.SB_VIDEO)"
                     @click="onGenerateSbVideo(sb)"
                   >
-                    生成分镜视频
+                    {{ isSbVideoGenerating(sb.id) ? '开始新一次生成' : '生成分镜视频' }}
                   </el-button>
                 </template>
               </div>
@@ -1503,7 +1505,7 @@
                 </div>
               </div>
               <div v-if="getSbVideo(sb.id)" class="sb-video-actions">
-                <el-button size="small" :loading="isSbVideoGenerating(sb.id)" :disabled="!sbCanSubmitVideo(sb) || isSbVideoGenerating(sb.id)" @click="onGenerateSbVideo(sb)">重新生成</el-button>
+                <el-button size="small" :loading="isMediaSubmitting(sb.id, GEN_RESOURCE.SB_VIDEO)" :disabled="!sbCanSubmitVideo(sb) || isMediaSubmitting(sb.id, GEN_RESOURCE.SB_VIDEO)" @click="onGenerateSbVideo(sb)">重新生成</el-button>
                 <el-tooltip v-if="getNextStoryboard(sb.id)" content="提取本视频尾帧，设为下一个分镜的首帧" placement="top">
                   <el-button size="small" :loading="linkingTailFrameIds.has(sb.id)" @click="onLinkTailFrameToNext(sb)">尾帧衔接</el-button>
                 </el-tooltip>
@@ -3182,6 +3184,9 @@ const regenSbImagesForAsset = reactive(new Set())
 const regenSbImagesProgress = ref({})
 // 批量生成分镜图
 const batchImageRunning = ref(false)
+const batchImageSubmitting = ref(0)
+const batchImagePreparing = ref(false)
+let batchImageRun = 0
 const batchImageStopping = ref(false)
 const batchImageProgress = ref({ current: 0, total: 0, failed: 0 })
 const inferringParams = ref(false)
@@ -3192,6 +3197,9 @@ const splitByAudioLoading = ref(false)
 const batchImageErrors = ref([])
 // 批量生成分镜视频
 const batchVideoRunning = ref(false)
+const batchVideoSubmitting = ref(0)
+const batchVideoPreparing = ref(false)
+let batchVideoRun = 0
 const batchVideoStopping = ref(false)
 const batchVideoProgress = ref({ current: 0, total: 0, failed: 0 })
 const batchVideoErrors = ref([])
@@ -3825,6 +3833,12 @@ function buildSbGenMeta(sb, resourceType, labelPrefix) {
   }
 }
 
+function isMediaSubmitting(resourceId, resourceType) {
+  return genStore.isSubmitting({
+    dramaId: dramaId.value, episodeId: currentEpisodeId.value, resourceType, resourceId,
+  })
+}
+
 /** 分镜视频是否正在生成（单条点击、批量、一键成片、任务恢复均覆盖） */
 function isSbVideoGenerating(sbId) {
   if (generatingSbVideoIds.has(sbId)) return true
@@ -3868,13 +3882,18 @@ async function recoverAndSyncEpisodeTasks(epId) {
 }
 
 /** 只刷新单条分镜的图片/视频，避免每次单图操作都全量请求所有分镜 */
+const storyboardMediaReads = new Map()
 async function loadSingleStoryboardMedia(sbId) {
   if (!sbId) return
+  const read = (storyboardMediaReads.get(sbId) || 0) + 1
+  storyboardMediaReads.set(sbId, read)
+  const episodeId = currentEpisodeId.value
   try {
     const [imgRes, vidRes] = await Promise.all([
       imagesAPI.list({ storyboard_id: sbId, page: 1, page_size: 100 }),
       videosAPI.list({ storyboard_id: sbId, page: 1, page_size: 50 })
     ])
+    if (storyboardMediaReads.get(sbId) !== read || currentEpisodeId.value !== episodeId) return
     sbImages.value = {
       ...sbImages.value,
       [sbId]: (imgRes && imgRes.items) ? imgRes.items : []
@@ -4209,6 +4228,8 @@ async function onGenerateSbFrameImage(sb, slot) {
     isLast ? GEN_RESOURCE.SB_LAST_IMAGE : GEN_RESOURCE.SB_FIRST_IMAGE,
     isLast ? '尾帧' : '首帧'
   )
+  if (genStore.isSubmitting(meta)) return
+  meta.submitting = true
   sb.errorMsg = ''
   sb.error_msg = ''
   loadingSet.add(sb.id)
@@ -4261,9 +4282,11 @@ async function onGenerateSbFrameImage(sb, slot) {
       reference_images: refImagesForCreate,
       use_first_frame_layout_lock: isLast ? !!lastFrameUseFirstLayoutLock.value : undefined,
     })
+    genStore.finishSubmission(meta)
     ElMessage.success(isLast ? '尾帧生成任务已提交' : '首帧生成任务已提交')
     if (res?.task_id) {
       const pollRes = await pollTask(res.task_id, () => loadSingleStoryboardMedia(sb.id), meta)
+      if (!genStore.isCurrentAttempt(meta)) return
       if (pollRes?.status === 'failed') {
         sb.errorMsg = pollRes.error || '生成失败'
       } else {
@@ -4293,20 +4316,20 @@ async function onGenerateSbFrameImage(sb, slot) {
       }
     }
   } catch (e) {
+    genStore.markFailed(meta, e.message || '提交失败')
+    if (!genStore.isCurrentAttempt(meta)) return
     sb.errorMsg = e.message || '生成失败'
     ElMessage.error(e.message || '生成失败')
   } finally {
-    loadingSet.delete(sb.id)
-    genStore.markDone(meta)
+    genStore.finishSubmission(meta)
+    if (genStore.isCurrentAttempt(meta)) loadingSet.delete(sb.id)
+    if (!meta.taskId && genStore.isRunning(meta)) genStore.markDone(meta)
   }
 }
 
 async function onGenerateSbFramePair(sb) {
-  const hasFirst = !!(getSbFirstImage(sb.id) || (sb.image_url || sb.composed_image))
-  if (!hasFirst) {
-    await onGenerateSbFrameImage(sb, 'first')
-    if (!getSbFirstImage(sb.id) && !(sb.image_url || sb.composed_image)) return
-  }
+  await onGenerateSbFrameImage(sb, 'first')
+  if (!getSbFirstImage(sb.id) && !(sb.image_url || sb.composed_image)) return
   await onGenerateSbFrameImage(sb, 'last')
 }
 
@@ -4314,9 +4337,10 @@ async function onGenerateSbFramePair(sb) {
 
 async function onGenerateSbImage(sb) {
   if (!dramaId.value || !sb?.id) return
+  if (isMediaSubmitting(sb.id, GEN_RESOURCE.SB_IMAGE)) return
   sb.errorMsg = ''
   sb.error_msg = ''
-  const meta = buildSbGenMeta(sb, GEN_RESOURCE.SB_IMAGE, '分镜图')
+  const meta = { ...buildSbGenMeta(sb, GEN_RESOURCE.SB_IMAGE, '分镜图'), submitting: true }
   generatingSbImageIds.add(sb.id)
   genStore.markRunning(meta)
   try {
@@ -4343,9 +4367,11 @@ async function onGenerateSbImage(sb) {
       frame_type: gridMode.value !== 'single' ? gridMode.value : undefined,
       aspect_ratio: projectAspectRatio.value || '16:9',
     })
+    genStore.finishSubmission(meta)
     ElMessage.success('分镜图生成任务已提交')
     if (res?.task_id) {
       const pollRes = await pollTask(res.task_id, () => loadSingleStoryboardMedia(sb.id), meta)
+      if (!genStore.isCurrentAttempt(meta)) return
       if (pollRes?.status === 'failed') {
         sb.errorMsg = pollRes.error || '生成失败'
       } else {
@@ -4355,12 +4381,15 @@ async function onGenerateSbImage(sb) {
       await loadSingleStoryboardMedia(sb.id)
     }
   } catch (e) {
+    genStore.markFailed(meta, e.message || '提交失败')
+    if (!genStore.isCurrentAttempt(meta)) return
     console.error(e)
     sb.errorMsg = e.message || '生成失败'
     ElMessage.error(e.message || '生成失败')
   } finally {
-    generatingSbImageIds.delete(sb.id)
-    genStore.markDone(meta)
+    genStore.finishSubmission(meta)
+    if (genStore.isCurrentAttempt(meta)) generatingSbImageIds.delete(sb.id)
+    if (!meta.taskId && genStore.isRunning(meta)) genStore.markDone(meta)
   }
 }
 
@@ -4743,76 +4772,62 @@ function scrollToStoryboard(sbId) {
 }
 
 /** 对关联分镜批量重新生成图片 */
+const relatedImageRuns = new Map()
 async function onRegenAffectedSbImages(assetKey, affectedBoards) {
   if (!affectedBoards.length || regenSbImagesForAsset.has(assetKey)) return
-  try {
-    await ElMessageBox.confirm(
-      `将为 ${affectedBoards.length} 个关联分镜重新生成图片（#${affectedBoards.map((s) => s.storyboard_number).join('、#')}），原有图片将被覆盖，是否继续？`,
-      '重新生成关联分镜图',
-      { confirmButtonText: '确认生成', cancelButtonText: '取消', type: 'warning' }
-    )
-  } catch {
-    return
-  }
+  const run = (relatedImageRuns.get(assetKey) || 0) + 1
+  relatedImageRuns.set(assetKey, run)
   regenSbImagesForAsset.add(assetKey)
-  // 用 Map 存进度以便响应式更新
-  if (!regenSbImagesProgress.value) regenSbImagesProgress.value = {}
+  regenSbImagesProgress.value ||= {}
   regenSbImagesProgress.value[assetKey] = { current: 0, total: affectedBoards.length }
   let failed = 0
   try {
     for (let i = 0; i < affectedBoards.length; i++) {
-      regenSbImagesProgress.value[assetKey] = { current: i + 1, total: affectedBoards.length }
+      if (relatedImageRuns.get(assetKey) !== run) break
+      regenSbImagesForAsset.add(assetKey)
       const sb = affectedBoards[i]
+      const useFirstLast = storyboardUseFirstLastFrame.value && !isSbUniversalMode(sb.id)
+      const meta = { ...buildSbGenMeta(sb, useFirstLast ? GEN_RESOURCE.SB_FIRST_IMAGE : GEN_RESOURCE.SB_IMAGE, '关联分镜图'), submitting: true }
+      genStore.markRunning(meta)
       try {
-        const useFirstLast = storyboardUseFirstLastFrame.value && !isSbUniversalMode(sb.id)
-        let prompt = sb.polished_prompt || sb.image_prompt || sb.description || ''
-        let frameTypeForCreate = undefined
-        if (useFirstLast) {
-          // 首尾帧模式下，关联资源触发的批量重新生成也必须走专业首帧提示词
-          prompt = await ensureProfessionalFramePrompt(sb, 'first')
-          frameTypeForCreate = 'storyboard_first'
-        }
+        const prompt = useFirstLast
+          ? await ensureProfessionalFramePrompt(sb, 'first')
+          : sb.polished_prompt || sb.image_prompt || sb.description || ''
         const res = await imagesAPI.create({
           storyboard_id: sb.id,
           drama_id: dramaId.value,
           prompt,
           style: getSelectedStyle(),
-          frame_type: frameTypeForCreate,
+          frame_type: useFirstLast ? 'storyboard_first' : undefined,
           aspect_ratio: projectAspectRatio.value || '16:9',
         })
+        genStore.finishSubmission(meta)
+        regenSbImagesForAsset.delete(assetKey)
         if (res?.task_id) {
-          const pollRes = await new Promise((resolve) => {
-            const maxAttempts = 180
-            let attempts = 0
-            const tick = async () => {
-              attempts++
-              try {
-                const t = await taskAPI.get(res.task_id)
-                if (t.status === 'completed') { await loadSingleStoryboardMedia(sb.id); return resolve({ status: 'completed' }) }
-                if (t.status === 'failed') return resolve({ status: 'failed', error: t.error || '任务失败' })
-              } catch (_) {}
-              if (attempts < maxAttempts) setTimeout(tick, 2000)
-              else resolve({ status: 'timeout' })
-            }
-            setTimeout(tick, 2000)
-          })
-          if (pollRes?.status !== 'completed') failed++
+          const result = await pollTask(res.task_id, () => loadSingleStoryboardMedia(sb.id), meta)
+          if (result?.status !== 'completed') failed++
         } else {
           await loadSingleStoryboardMedia(sb.id)
         }
-        if (useFirstLast) {
-          delete sbSelectedImgId.value[sb.id]
-        }
-      } catch (_) {
+        if (useFirstLast && genStore.isCurrentAttempt(meta)) delete sbSelectedImgId.value[sb.id]
+      } catch (error) {
+        genStore.markFailed(meta, error.message || '提交失败')
         failed++
+      } finally {
+        genStore.finishSubmission(meta)
+        if (!meta.taskId && genStore.isRunning(meta)) genStore.markDone(meta)
+        if (relatedImageRuns.get(assetKey) === run) regenSbImagesForAsset.delete(assetKey)
       }
-      if (i < affectedBoards.length - 1) await new Promise((r) => setTimeout(r, 500))
+      if (relatedImageRuns.get(assetKey) === run) regenSbImagesProgress.value[assetKey] = { current: i + 1, total: affectedBoards.length }
     }
-    if (failed === 0) ElMessage.success(`已重新生成 ${affectedBoards.length} 张关联分镜图`)
-    else ElMessage.warning(`完成，${failed}/${affectedBoards.length} 条失败`)
+    if (relatedImageRuns.get(assetKey) !== run) return
+    if (failed === 0) ElMessage.success('已重新生成 ' + affectedBoards.length + ' 张关联分镜图')
+    else ElMessage.warning('完成，' + failed + '/' + affectedBoards.length + ' 条失败')
   } finally {
-    regenSbImagesForAsset.delete(assetKey)
-    if (regenSbImagesProgress.value) delete regenSbImagesProgress.value[assetKey]
+    if (relatedImageRuns.get(assetKey) === run) {
+      regenSbImagesForAsset.delete(assetKey)
+      if (regenSbImagesProgress.value) delete regenSbImagesProgress.value[assetKey]
+    }
   }
 }
 
@@ -6191,13 +6206,6 @@ function canUseUniversalOmniVideoApi(cfg) {
   return false
 }
 
-async function confirmUniversalNonSeedance2Video() {
-  await ElMessageBox.confirm(
-    '你当前视频模型不支持多图参考，全能模式将降级：优先用分镜主图，否则仅传场景参考图。是否继续？',
-    '全能模式与模型不匹配',
-    { confirmButtonText: '继续', cancelButtonText: '取消', type: 'warning' }
-  )
-}
 
 function onEditSbImagePrompt(sb) {
   if (!sb?.id) return
@@ -6467,102 +6475,63 @@ async function onRegenerateLayoutDescription(sb) {
 
 async function onGenerateSbVideo(sb) {
   if (!dramaId.value || !sb?.id || !sbCanSubmitVideo(sb)) return
-  const universal = isSbUniversalMode(sb.id)
-  let universalOmniApi = universal
-  if (universal) {
-    const videoCfg = await getActiveVideoAiConfig()
-    if (!canUseUniversalOmniVideoApi(videoCfg)) {
-      try {
-        await confirmUniversalNonSeedance2Video()
-      } catch {
-        return
-      }
-      universalOmniApi = false
-    }
-  }
-  const omniRefs = universalOmniApi ? collectSbOmniReferenceAbsoluteUrls(sb) : []
-  const sceneOnlyRefs = universal && !universalOmniApi ? collectSbSceneOnlyReferenceAbsoluteUrls(sb) : []
-  const hasClassicFrame = !!getSbFirstFrameUrl(sb)
-  let hasAnyImage = false
-  if (universalOmniApi) {
-    hasAnyImage = omniRefs.length > 0
-  } else if (universal) {
-    hasAnyImage = hasClassicFrame || sceneOnlyRefs.length > 0
-  } else {
-    hasAnyImage = hasClassicFrame
-  }
-  if (!hasAnyImage) {
-    if (!universal) {
-      await ElMessageBox.alert(
-        '当前为传统模式，生视频需要分镜参考图。请先生成或上传分镜图片后再试。',
-        '传统模式缺少分镜图',
-        { confirmButtonText: '知道了', type: 'warning' }
-      )
-      return
-    }
-    try {
-      await ElMessageBox.confirm(
-        universalOmniApi
-          ? '当前没有可用的参考图（场景/角色/道具等；不含经典分镜主图），将按纯文案提交 Omni-Video（模型以 AI 配置为准），效果可能不稳定。确认继续？'
-          : '当前没有分镜主图且无场景参考图，将仅按文字提示词生成视频，效果可能不稳定。确认继续？',
-        universalOmniApi ? '全能模式无参考图' : '全能降级无参考图',
-        { confirmButtonText: '继续生成', cancelButtonText: '取消', type: 'warning' }
-      )
-    } catch {
-      return
-    }
-  }
-  generatingSbVideoIds.add(sb.id)
-  const meta = buildSbGenMeta(sb, GEN_RESOURCE.SB_VIDEO, '分镜视频')
+  if (isMediaSubmitting(sb.id, GEN_RESOURCE.SB_VIDEO)) return
+  const meta = { ...buildSbGenMeta(sb, GEN_RESOURCE.SB_VIDEO, '分镜视频'), submitting: true }
   genStore.markRunning(meta)
-  sbVideoErrors.value[sb.id] = ''
-  // 清除前端选中状态 + 清除后端手动指定的 video_url，让合成时自动取最新生成的视频
-  if (sbSelectedVideoId.value[sb.id] != null) {
-    const next = { ...sbSelectedVideoId.value }
-    delete next[sb.id]
-    sbSelectedVideoId.value = next
-  }
-  storyboardsAPI.update(sb.id, { video_url: null }).catch(() => {})
+  storyboardMediaReads.set(sb.id, (storyboardMediaReads.get(sb.id) || 0) + 1)
   try {
+    const universal = isSbUniversalMode(sb.id)
+    const omniRefs = universal ? collectSbOmniReferenceAbsoluteUrls(sb) : []
+    const hasClassicFrame = !!getSbFirstFrameUrl(sb)
+    if (universal) {
+      const videoCfg = await getActiveVideoAiConfig()
+      if (!canUseUniversalOmniVideoApi(videoCfg)) {
+        ElMessage.info('目录尚未确认多图能力，将按当前配置和所选参考提交，以实际回执为准')
+      }
+    }
+    if (!hasClassicFrame && !omniRefs.length) {
+      ElMessage.info('当前未提供参考图，将按现有提示词提交')
+    }
+    generatingSbVideoIds.add(sb.id)
+    sbVideoErrors.value[sb.id] = ''
+    // 清除前端选中状态 + 清除后端手动指定的 video_url，让合成时自动取最新生成的视频
+    if (sbSelectedVideoId.value[sb.id] != null) {
+      const next = { ...sbSelectedVideoId.value }
+      delete next[sb.id]
+      sbSelectedVideoId.value = next
+    }
+    storyboardsAPI.update(sb.id, { video_url: null }).catch(() => {})
     let absoluteUrl = ''
     let referenceUrls = undefined
-    if (universalOmniApi) {
+    if (universal) {
       referenceUrls = omniRefs.length ? omniRefs : undefined
       absoluteUrl = omniRefs[0] || ''
-    } else if (universal) {
-      const firstFrameUrl = await getMainImageUrlForVideo(sb)
-      absoluteUrl = toAbsoluteImageUrl(firstFrameUrl)
-      if (absoluteUrl) {
-        referenceUrls = sceneOnlyRefs.length ? sceneOnlyRefs : [absoluteUrl]
-      } else {
-        referenceUrls = sceneOnlyRefs.length ? sceneOnlyRefs : undefined
-        absoluteUrl = sceneOnlyRefs[0] || ''
-      }
     } else {
       const firstFrameUrl = await getMainImageUrlForVideo(sb)
       absoluteUrl = toAbsoluteImageUrl(firstFrameUrl)
       referenceUrls = absoluteUrl ? [absoluteUrl] : undefined
     }
-    const { first: vFirst, last: vLast } = sbVideoFirstLastUrls(sb, universalOmniApi, null)
-    if (!universalOmniApi && vLast && referenceUrls && !referenceUrls.includes(vLast)) {
+    const { first: vFirst, last: vLast } = sbVideoFirstLastUrls(sb, universal, null)
+    if (!universal && vLast && referenceUrls && !referenceUrls.includes(vLast)) {
       referenceUrls = [...referenceUrls, vLast]
     }
-    const preferClassicPrompt = universal && !universalOmniApi
     const res = await videosAPI.create({
       drama_id: dramaId.value,
       storyboard_id: sb.id,
-      prompt: buildSbVideoPromptForApi(sb, { preferClassicPrompt }),
-      image_url: universalOmniApi ? undefined : ((vFirst || absoluteUrl) || undefined),
-      first_frame_url: universalOmniApi ? undefined : (vFirst || absoluteUrl || undefined),
-      last_frame_url: universalOmniApi ? undefined : vLast,
+      prompt: buildSbVideoPromptForApi(sb),
+      image_url: universal ? undefined : ((vFirst || absoluteUrl) || undefined),
+      first_frame_url: universal ? undefined : (vFirst || absoluteUrl || undefined),
+      last_frame_url: universal ? undefined : vLast,
       reference_image_urls: referenceUrls,
       style: getSelectedStyle(),
       aspect_ratio: projectAspectRatio.value || '16:9',
       resolution: videoResolution.value || undefined,
       duration: getSbVideoDurationForApi(sb),
     })
+    genStore.finishSubmission(meta)
     if (res?.task_id) {
       const pollRes = await pollTask(res.task_id, () => loadSingleStoryboardMedia(sb.id), meta)
+      if (!genStore.isCurrentAttempt(meta)) return
       if (pollRes?.status === 'failed') {
         sbVideoErrors.value[sb.id] = pollRes.error || '视频生成失败'
       } else if (pollRes?.status === 'completed') {
@@ -6574,12 +6543,17 @@ async function onGenerateSbVideo(sb) {
       ElMessage.success('视频生成已提交，请稍后查看')
     }
   } catch (e) {
+    genStore.markFailed(meta, e.message || '提交失败')
+    if (!genStore.isCurrentAttempt(meta)) return
     sbVideoErrors.value[sb.id] = e.message || '提交失败'
     ElMessage.error(e.message || '提交失败')
   } finally {
-    generatingSbVideoIds.delete(sb.id)
-    genStore.markDone(meta)
-    await loadSingleStoryboardMedia(sb.id)
+    genStore.finishSubmission(meta)
+    if (!meta.taskId && genStore.isRunning(meta)) genStore.markDone(meta)
+    if (genStore.isCurrentAttempt(meta)) {
+      generatingSbVideoIds.delete(sb.id)
+      await loadSingleStoryboardMedia(sb.id)
+    }
   }
 }
 
@@ -6794,8 +6768,10 @@ async function onInsertStoryboardBefore(sb) {
   }
 }
 
-async function startBatchImageGeneration() {
-  if (!currentEpisodeId.value || batchImageRunning.value || pipelineRunning.value) return
+async function startBatchImageGeneration(regenerate = false) {
+  if (!currentEpisodeId.value || batchImagePreparing.value || batchImageSubmitting.value > 0) return
+  const run = ++batchImageRun
+  batchImagePreparing.value = true
   batchImageErrors.value = []
   batchImageStopping.value = false
   batchImageRunning.value = true
@@ -6805,7 +6781,8 @@ async function startBatchImageGeneration() {
       await loadStoryboardMedia()
     }
     const boards = store.storyboards || []
-    const todo = boards.filter((sb) => !hasSbImage(sb))
+    const todo = boards.filter((sb) => regenerate || !hasSbImage(sb))
+    batchImagePreparing.value = false
     if (todo.length === 0) {
       ElMessage.info('所有分镜均已有图片，无需重新生成')
       return
@@ -6818,9 +6795,13 @@ async function startBatchImageGeneration() {
     let queueIdx = 0
     const worker = async () => {
       while (queueIdx < todo.length) {
-        if (batchImageStopping.value) break
+        if (batchImageStopping.value || run !== batchImageRun) break
         const sb = todo[queueIdx++]
         const useFirstLast = storyboardUseFirstLastFrame.value && !isSbUniversalMode(sb.id)
+        const meta = { ...buildSbGenMeta(sb, useFirstLast ? GEN_RESOURCE.SB_FIRST_IMAGE : GEN_RESOURCE.SB_IMAGE, '分镜图'), submitting: true }
+        genStore.markRunning(meta)
+        batchImageSubmitting.value++
+        let submitted = false
         try {
           let prompt = sb.polished_prompt || sb.image_prompt || sb.description || ''
           let frameTypeForCreate = gridMode.value !== 'single' ? gridMode.value : undefined
@@ -6837,8 +6818,12 @@ async function startBatchImageGeneration() {
             frame_type: frameTypeForCreate,
             aspect_ratio: projectAspectRatio.value || '16:9',
           })
+          submitted = true
+          batchImageSubmitting.value--
+          genStore.finishSubmission(meta)
           if (res?.task_id) {
-            const pollRes = await pollTask(res.task_id, () => loadSingleStoryboardMedia(sb.id))
+            const pollRes = await pollTask(res.task_id, () => loadSingleStoryboardMedia(sb.id), meta)
+            if (run !== batchImageRun || !genStore.isCurrentAttempt(meta)) continue
             if (pollRes?.status === 'failed') {
               batchImageErrors.value.push(`#${sb.storyboard_number ?? sb.id}: ${pollRes.error || '生成失败'}`)
               batchImageProgress.value = { ...batchImageProgress.value, failed: batchImageProgress.value.failed + 1 }
@@ -6847,33 +6832,45 @@ async function startBatchImageGeneration() {
             await loadSingleStoryboardMedia(sb.id)
           }
           // 成功后清理手动选中，让服务器 first_frame_image_id 成为权威（与单条生成首帧的清理逻辑一致）
-          if (useFirstLast) {
+          if (useFirstLast && genStore.isCurrentAttempt(meta)) {
             delete sbSelectedImgId.value[sb.id]
           }
         } catch (e) {
+          genStore.markFailed(meta, e.message || '提交失败')
+          if (run !== batchImageRun) continue
           batchImageErrors.value.push(`#${sb.storyboard_number ?? sb.id}: ${e.message || '提交失败'}`)
           batchImageProgress.value = { ...batchImageProgress.value, failed: batchImageProgress.value.failed + 1 }
+        } finally {
+          if (!submitted) batchImageSubmitting.value--
+          genStore.finishSubmission(meta)
+          if (!meta.taskId && genStore.isRunning(meta)) genStore.markDone(meta)
         }
+        if (run !== batchImageRun) break
         doneCount++
         batchImageProgress.value = { ...batchImageProgress.value, current: doneCount }
       }
     }
     await Promise.allSettled(Array.from({ length: Math.min(concurrency, todo.length) }, () => worker()))
-    if (!batchImageStopping.value) {
+    if (run === batchImageRun && !batchImageStopping.value) {
       // 最终统一恢复选中状态，确保所有首帧生成后服务器绑定立即生效（与单条生成路径一致）
       restoreSelectionsFromBackend()
       if (batchImageProgress.value.failed === 0) ElMessage.success(`分镜图批量生成完成（共 ${todo.length} 条）`)
       else ElMessage.warning(`批量完成，${batchImageProgress.value.failed}/${todo.length} 条失败`)
-    } else {
+    } else if (run === batchImageRun) {
       ElMessage.info('批量生成已停止')
     }
   } finally {
-    batchImageRunning.value = false
+    if (run === batchImageRun) {
+      batchImagePreparing.value = false
+      batchImageRunning.value = false
+    }
   }
 }
 
-async function startBatchVideoGeneration() {
-  if (!currentEpisodeId.value || batchVideoRunning.value || pipelineRunning.value) return
+async function startBatchVideoGeneration(regenerate = false) {
+  if (!currentEpisodeId.value || batchVideoPreparing.value || batchVideoSubmitting.value > 0) return
+  const run = ++batchVideoRun
+  batchVideoPreparing.value = true
   batchVideoErrors.value = []
   batchVideoStopping.value = false
   batchVideoRunning.value = true
@@ -6883,16 +6880,9 @@ async function startBatchVideoGeneration() {
       await loadStoryboardMedia()
     }
     const boards = store.storyboards || []
-    // 只处理：有参考图（经典=分镜主图；全能=场景/角色/道具，不含经典主图）且 还没有已完成视频 的分镜
-    const todo = boards.filter((sb) => {
-      const vidList = sbVideos.value[sb.id] || []
-      if (vidList.some((v) => v.status === 'completed' && recordHasPlayableVideoUrl(v))) return false
-      if (isSbUniversalMode(sb.id)) {
-        if (!sbCanSubmitVideo(sb)) return false
-        return collectSbOmniReferenceAbsoluteUrls(sb).length > 0
-      }
-      return !!getSbFirstFrameUrl(sb)
-    })
+    const todo = boards.filter((sb) => sbCanSubmitVideo(sb) && (regenerate
+      || !(sbVideos.value[sb.id] || []).some((video) => video.status === 'completed' && recordHasPlayableVideoUrl(video))))
+    batchVideoPreparing.value = false
     if (todo.length === 0) {
       ElMessage.info('没有需要生成视频的分镜（分镜缺少图片，或视频已全部生成）')
       return
@@ -6907,20 +6897,14 @@ async function startBatchVideoGeneration() {
     let videoQueueIdx = 0
     const videoWorker = async () => {
       while (videoQueueIdx < todo.length) {
-        if (batchVideoStopping.value) break
+        if (batchVideoStopping.value || run !== batchVideoRun) break
         const sb = todo[videoQueueIdx++]
         const universal = isSbUniversalMode(sb.id)
         const omniRefs = universal ? collectSbOmniReferenceAbsoluteUrls(sb) : []
-        if (!universal && !getSbFirstFrameUrl(sb)) {
-          videoDoneCount++
-          batchVideoProgress.value = { ...batchVideoProgress.value, current: videoDoneCount }
-          continue
-        }
-        if (universal && !omniRefs.length) {
-          videoDoneCount++
-          batchVideoProgress.value = { ...batchVideoProgress.value, current: videoDoneCount }
-          continue
-        }
+        const meta = { ...buildSbGenMeta(sb, GEN_RESOURCE.SB_VIDEO, '分镜视频'), submitting: true }
+        genStore.markRunning(meta)
+        batchVideoSubmitting.value++
+        let submitted = false
         try {
           generatingSbVideoIds.add(sb.id)
           // 批量生成时清除手动指定的视频，确保合成时使用最新生成记录
@@ -6971,9 +6955,12 @@ async function startBatchVideoGeneration() {
             resolution: videoResolution.value || undefined,
             duration: getSbVideoDurationForApi(sb),
           })
+          submitted = true
+          batchVideoSubmitting.value--
+          genStore.finishSubmission(meta)
           if (res?.task_id) {
-            const meta = buildSbGenMeta(sb, GEN_RESOURCE.SB_VIDEO, '分镜视频')
             const pollRes = await pollTask(res.task_id, () => loadSingleStoryboardMedia(sb.id), meta)
+            if (run !== batchVideoRun || !genStore.isCurrentAttempt(meta)) continue
             if (pollRes?.status === 'failed') {
               batchVideoErrors.value.push(`#${sb.storyboard_number ?? sb.id}: ${pollRes.error || '生成失败'}`)
               batchVideoProgress.value = { ...batchVideoProgress.value, failed: batchVideoProgress.value.failed + 1 }
@@ -6991,25 +6978,34 @@ async function startBatchVideoGeneration() {
             }
           }
         } catch (e) {
+          genStore.markFailed(meta, e.message || '提交失败')
+          if (run !== batchVideoRun) continue
           batchVideoErrors.value.push(`#${sb.storyboard_number ?? sb.id}: ${e.message || '提交失败'}`)
           batchVideoProgress.value = { ...batchVideoProgress.value, failed: batchVideoProgress.value.failed + 1 }
           if (contiguity) prevVideoItem = null
         } finally {
-          generatingSbVideoIds.delete(sb.id)
+          if (!submitted) batchVideoSubmitting.value--
+          genStore.finishSubmission(meta)
+          if (!meta.taskId && genStore.isRunning(meta)) genStore.markDone(meta)
+          if (genStore.isCurrentAttempt(meta)) generatingSbVideoIds.delete(sb.id)
         }
+        if (run !== batchVideoRun) break
         videoDoneCount++
         batchVideoProgress.value = { ...batchVideoProgress.value, current: videoDoneCount }
       }
     }
     await Promise.allSettled(Array.from({ length: Math.min(videoConcurrency, todo.length) }, () => videoWorker()))
-    if (!batchVideoStopping.value) {
+    if (run === batchVideoRun && !batchVideoStopping.value) {
       if (batchVideoProgress.value.failed === 0) ElMessage.success(`分镜视频批量生成完成（共 ${todo.length} 条）`)
       else ElMessage.warning(`批量完成，${batchVideoProgress.value.failed}/${todo.length} 条失败`)
-    } else {
+    } else if (run === batchVideoRun) {
       ElMessage.info('批量生成已停止')
     }
   } finally {
-    batchVideoRunning.value = false
+    if (run === batchVideoRun) {
+      batchVideoPreparing.value = false
+      batchVideoRunning.value = false
+    }
   }
 }
 
@@ -7105,15 +7101,16 @@ function resolvePollMeta(meta = {}) {
 }
 
 function pollTask(taskId, onDone, meta = {}) {
-  return genStore.pollTask(taskId, resolvePollMeta(meta), onDone, { ElMessage })
+  Object.assign(meta, resolvePollMeta(meta))
+  return genStore.pollTask(taskId, meta, onDone, { ElMessage })
 }
 
 /** 一键生成视频：暂停时等待，返回 { paused: true } 表示被暂停中断 */
 function pollTaskWithPause(taskId, onDone, meta = {}) {
-  const resolvedMeta = resolvePollMeta(meta)
+  const resolvedMeta = { ...resolvePollMeta(meta), taskId }
   const trackInStore = resolvedMeta.resourceType !== 'unknown' && resolvedMeta.resourceId != null
   if (trackInStore && taskId) {
-    genStore.markRunning({ ...resolvedMeta, taskId })
+    genStore.markRunning(resolvedMeta)
   }
   const maxAttempts = 450  // 450 × 2s = 15 分钟
   const interval = 2000
@@ -7143,7 +7140,7 @@ function pollTaskWithPause(taskId, onDone, meta = {}) {
           return
         }
         if (t.status === 'completed') {
-          if (onDone) await onDone()
+          if (onDone && (!trackInStore || genStore.isCurrentAttempt(resolvedMeta))) await onDone()
           finishStore('completed')
           resolve({ status: 'completed', result: t.result })
           return

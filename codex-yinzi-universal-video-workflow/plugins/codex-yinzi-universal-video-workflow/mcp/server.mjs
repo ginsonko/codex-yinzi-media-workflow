@@ -347,27 +347,28 @@ async function workflowBridge(args) {
   const requestHash = createHash('sha256').update(JSON.stringify({ method, path: args.path, body: sanitize(args.body || {}), idempotency_key: args.idempotency_key || null })).digest('hex')
   const priorState = node.progress?.submission_state
   if (node.request_hash && node.request_hash === requestHash && ['submitting', 'accepted', 'uncertain', 'settled'].includes(priorState) && args.reconcile !== true) {
-    throw new Error(`同一请求已经处于 ${priorState}；请查询或 reconcile 现有任务，不要重复提交`)
+    return { submitted: false, reused: true, reconciliation_required: true, request_hash: requestHash, node }
   }
-  await api('POST', `/api/v1/orchestration-sessions/${encodeURIComponent(args.session_id)}/nodes/${encodeURIComponent(node.id)}/actions/start`, {
-    actor: 'codex', force: Boolean(args.force), request_hash: requestHash,
+  const reserve = await api('POST', `/api/v1/orchestration-sessions/${encodeURIComponent(args.session_id)}/nodes/${encodeURIComponent(node.id)}/external-request`, {
+    actor: 'codex', request_hash: requestHash,
     progress: { state: 'local_started', submission_state: 'submitting', message: '正在调用已关联的本地工作流执行器' },
     decision: { bridge_method: method, bridge_path: args.path, paid: Boolean(args.paid), idempotency_key: args.idempotency_key || null },
   })
+  if (!reserve.reserved) return { submitted: false, reused: true, reconciliation_required: true, request_hash: requestHash, node: reserve.node }
   try {
     const result = await api(method, args.path, args.body || {}, Number(args.timeout_ms) || 120000)
     const correlation = result?.task_id || result?.id || result?.run?.id || result?.session?.id || null
     const updated = await api('PATCH', `/api/v1/orchestration-sessions/${encodeURIComponent(args.session_id)}/nodes/${encodeURIComponent(node.id)}`, {
-      actor: 'codex', request_hash: requestHash,
+      actor: 'codex', expected_attempt: reserve.node?.attempt, request_hash: requestHash,
       progress: { state: 'provider_ack', submission_state: correlation ? 'accepted' : 'settled', message: correlation ? '本地执行器已返回任务标识' : '本地执行器已完成同步响应', correlation_id: correlation },
       output_refs: correlation ? [{ type: 'workflow_result', id: String(correlation), role: 'executor_receipt' }] : [],
-      decision: { bridge_method: method, bridge_path: args.path, paid: Boolean(args.paid), response_summary: sanitize(result) },
+      decision: { ...(reserve.node?.decision || {}), bridge_method: method, bridge_path: args.path, paid: Boolean(args.paid), idempotency_key: args.idempotency_key || null, response_summary: sanitize(result) },
     })
     return { request_hash: requestHash, correlation_id: correlation, result, node: updated.node }
   } catch (error) {
     await api('PATCH', `/api/v1/orchestration-sessions/${encodeURIComponent(args.session_id)}/nodes/${encodeURIComponent(node.id)}`, {
-      actor: 'codex', request_hash: requestHash,
-      progress: { state: 'provider_unknown', submission_state: 'uncertain', message: '调用未得到可确认结果；先查询恢复，不要直接重发' },
+      actor: 'codex', expected_attempt: reserve.node?.attempt, request_hash: requestHash,
+      progress: { state: 'provider_unknown', submission_state: 'uncertain', message: '调用结果未知；可找回原结果，也可使用新的请求标识重新生成，原记录保留' },
       error: { code: 'BRIDGE_RESULT_UNCERTAIN', message: error.message, retryable: 'unknown', next_actions: ['reconcile_image', 'retry', 'inspect', 'manual'] },
     })
     throw error
@@ -385,6 +386,7 @@ function exactModelName(value) {
 }
 
 function finiteNumber(value) {
+  if (value == null || value === '' || typeof value === 'boolean') return null
   const number = Number(value)
   return Number.isFinite(number) ? number : null
 }
@@ -420,9 +422,9 @@ function sameProvenVideoOffer(requestedModel, capability, catalogItem) {
 
 async function paidAuthorization(args) {
   if (!args.idempotency_key) throw new Error('付费调用需要稳定 idempotency_key')
-  const preferences = await api('GET', '/api/v1/creative-preferences')
-  if (args.confirmed_paid_action !== true && preferences?.unattended_mode !== true) throw new Error('请依据已有用户授权设置 confirmed_paid_action=true，或由用户开启挂机模式')
-  return { unattended: preferences?.unattended_mode === true, source: preferences?.unattended_mode === true ? 'unattended_mode' : 'existing_user_authorization' }
+  // The host already owns user intent. A generation request must not require
+  // a second permission flag or change the user's global unattended preference.
+  return { source: 'host_generation_request' }
 }
 
 function priceExposureCny(price, duration) {
@@ -435,11 +437,14 @@ function priceExposureCny(price, duration) {
   return null
 }
 
-function userVideoQuote(args, video) {
+function userVideoQuote(args, video, diagnostics = []) {
   const quote = args.cost_quote_cny
   if (quote == null) return null
-  if (quote.source !== 'user_reported' || quote.video_config_id !== video.video_config_id || exactModelName(quote.model) !== exactModelName(video.model)) throw new Error('用户报价必须绑定当前配置和精确模型，并标明 user_reported 来源')
-  if (typeof quote.unit_price !== 'number' || !Number.isFinite(quote.unit_price) || quote.unit_price < 0 || !['per_second', 'per_request', 'fixed_duration'].includes(quote.billing_unit)) throw new Error('用户报价需要非负 CNY 单价和明确的计费单位')
+  if (quote.source !== 'user_reported' || quote.video_config_id !== video.video_config_id || exactModelName(quote.model) !== exactModelName(video.model)
+    || typeof quote.unit_price !== 'number' || !Number.isFinite(quote.unit_price) || quote.unit_price < 0 || !['per_second', 'per_request', 'fixed_duration'].includes(quote.billing_unit)) {
+    diagnostics.push({ source: 'pricing', code: 'quote_unusable', message: '附带报价不适用于当前请求；不据此估算，继续提交' })
+    return null
+  }
   return { effective_price: quote.unit_price, currency: 'CNY', billing_unit: quote.billing_unit, source: 'user_reported', catalog_model: video.model }
 }
 
@@ -456,84 +461,44 @@ function mergeOutputRefs(existing = [], additions = []) {
   return merged
 }
 
-async function loadGuardedVideoContract(args, video, authorization) {
-  const publicConfig = await api('GET', `/api/v1/ai-configs/${encodeURIComponent(video.video_config_id)}`)
-  const configuredModels = Array.isArray(publicConfig?.model)
-    ? publicConfig.model.map(String)
-    : [publicConfig?.model].filter(Boolean).map(String)
-  const publicModels = [...configuredModels, String(publicConfig?.default_model || '')].filter(Boolean)
-  if (String(publicConfig?.service_type || '') !== 'video') throw new Error('锁定配置不是视频服务，已在付费提交前停止')
-  if (String(publicConfig?.provider || '') !== video.provider) throw new Error('锁定配置的 provider 与请求不一致，已在付费提交前停止')
-  if (!publicModels.some((item) => exactModelName(item) === exactModelName(video.model))) throw new Error('锁定配置不包含请求视频模型，已在付费提交前停止')
-  if (publicConfig?.is_active === false || publicConfig?.is_enabled === false) throw new Error('锁定视频配置当前未启用，已在付费提交前停止')
-  if (publicConfig?.has_api_key !== true) throw new Error('锁定视频配置没有已保存凭据，已在付费提交前停止')
+async function loadGuardedVideoContract(args, video) {
   const diagnostics = []
+  const publicConfig = await api('GET', `/api/v1/ai-configs/${encodeURIComponent(video.video_config_id)}`)
   const capabilityStates = await api('GET', `/api/v1/ai-configs/${encodeURIComponent(video.video_config_id)}/model-capabilities`).catch(error => {
     diagnostics.push({ source: 'capabilities', message: error.message }); return {}
   })
   const state = (Array.isArray(capabilityStates?.models) ? capabilityStates.models : [])
-    .find((item) => exactModelName(item.model) === exactModelName(video.model))
+    .find(item => exactModelName(item.model) === exactModelName(video.model))
   const capability = state?.capability || {}
-  if (!state?.capability) diagnostics.push({ source: 'capabilities', message: '模型能力尚未登记，使用指定模型和请求参数' })
-  if (video.contract_validation_mode === 'strict' && state?.capability) {
-  if (!capabilityAllowsDuration(capability, video.duration)) {
-    const allowed = capability.allowed_durations?.length
-      ? capability.allowed_durations.join('/')
-      : capability.duration_mode === 'fixed'
-        ? String(capability.fixed_duration_seconds || capability.duration_min)
-        : `${capability.duration_min ?? '?'}-${capability.duration_max ?? '?'}`
-    throw new Error(`请求时长 ${video.duration} 秒不符合锁定能力合同（允许 ${allowed} 秒），未提交`)
-  }
-  if (capability.provider_create_path && capability.provider_create_path !== '/videos') throw new Error('能力合同的创建路径不是 /videos，已在付费提交前停止')
-  if (video.resolution && capability.resolution && String(video.resolution).toLowerCase() !== String(capability.resolution).toLowerCase()) throw new Error('请求分辨率与锁定能力合同不一致，已在付费提交前停止')
-  if (capability.max_prompt_chars && video.prompt.length > Number(capability.max_prompt_chars)) throw new Error(`视频提示词超过模型合同上限 ${capability.max_prompt_chars} 字符，未提交`)
-
-  const imageCount = (video.image_url ? 1 : 0) + (video.first_frame_url ? 1 : 0) + (video.last_frame_url ? 1 : 0) + (video.reference_image_urls?.length || 0)
-  const videoCount = video.reference_video_urls?.length || 0
-  const audioCount = video.reference_audio_urls?.length || 0
-  const totalCount = imageCount + videoCount + audioCount
-  for (const [label, actual, maximum] of [
-    ['图片', imageCount, capability.max_images], ['参考视频', videoCount, capability.max_videos], ['参考音频', audioCount, capability.max_audios], ['全部参考素材', totalCount, capability.max_total_references],
-  ]) {
-    if (finiteNumber(maximum) != null && actual > Number(maximum)) throw new Error(`${label}数量 ${actual} 超过锁定能力合同上限 ${maximum}，未提交`)
-  }
-
-  }
-
-  // Public prices inform the estimate; they do not establish or deny Key access.
-  const suppliedQuote = userVideoQuote(args, video)
+  if (!state?.capability) diagnostics.push({ source: 'capabilities', code: 'unknown_contract', message: '模型能力尚未登记，按指定参数提交' })
+  else if (!capabilityAllowsDuration(capability, video.duration)) diagnostics.push({ source: 'capabilities', code: 'duration_hint_mismatch', message: '请求时长与目录提示不同，交由供应商返回实际结果' })
+  const suppliedQuote = userVideoQuote(args, video, diagnostics)
   let yinziPricing = video.provider === 'yinzi'
   if (publicConfig.base_url) {
     try { yinziPricing = yinziPricing && ['api.yinziapi.top', 'yinziapi.top'].includes(new URL(publicConfig.base_url).hostname) } catch { yinziPricing = false }
   }
-  const catalog = yinziPricing ? await api('GET', `/api/v1/ai-configs/yinzi/catalog?config_id=${encodeURIComponent(video.video_config_id)}`, undefined, Number(args.catalog_timeout_ms) || 30000).catch(error => {
+  const catalog = yinziPricing ? await api('GET', `/api/v1/ai-configs/yinzi/catalog?config_id=${encodeURIComponent(video.video_config_id)}`, undefined, Number(args.catalog_timeout_ms) || 5000).catch(error => {
     diagnostics.push({ source: 'pricing', message: error.message }); return {}
   }) : {}
-  const hasCeiling = args.max_cost_cny != null
-  if (hasCeiling && (typeof args.max_cost_cny !== 'number' || !Number.isFinite(args.max_cost_cny) || args.max_cost_cny < 0)) throw new Error('max_cost_cny 必须是非负有限数字')
-  if (!hasCeiling && !authorization.unattended) throw new Error('请提供已授权的 max_cost_cny，或在用户授权自主花费后开启挂机模式')
-  const offeredModels = (Array.isArray(catalog?.video) ? catalog.video : []).filter((item) => sameProvenVideoOffer(video.model, capability, item))
-  if (!offeredModels.length && hasCeiling && !suppliedQuote) throw new Error('当前实时目录中没有与锁定模型同名或具有同一精确能力合同的价格项；可提供绑定当前配置和模型的用户 CNY 报价以核对预算，未提交')
+  const offeredModels = (Array.isArray(catalog?.video) ? catalog.video : []).filter(item => sameProvenVideoOffer(video.model, capability, item))
   const requestedGroup = String(args.group_name || '').trim()
-  const prices = offeredModels.flatMap((item) => (Array.isArray(item.prices) ? item.prices : []).map((price) => ({ ...price, catalog_model: item.model })))
-    .filter((price) => String(price.currency || '').toUpperCase() === 'CNY' && priceExposureCny(price, video.duration) != null)
+  const prices = offeredModels.flatMap(item => (Array.isArray(item.prices) ? item.prices : []).map(price => ({ ...price, catalog_model: item.model })))
+    .filter(price => String(price.currency || '').toUpperCase() === 'CNY' && priceExposureCny(price, video.duration) != null)
   const settings = parseSettings(publicConfig?.settings)
   const configuredGroup = String(settings.group_name || settings.group || publicConfig?.group_name || '').trim()
-  if (configuredGroup && requestedGroup && configuredGroup !== requestedGroup) throw new Error('请求分组与锁定配置中可验证的分组不一致，已在付费提交前停止')
-  let matching = configuredGroup ? prices.filter((price) => String(price.group || '') === configuredGroup) : prices
-  if (!matching.length && suppliedQuote) {
-    matching = [{ ...suppliedQuote, group: configuredGroup || requestedGroup || null }]
-    diagnostics.push({ source: 'pricing', message: '使用当前请求携带的用户报价进行预算估算，尚未独立验证站点实时价格或实际账单' })
-  }
-  if (!matching.length && hasCeiling) throw new Error(configuredGroup ? '锁定配置分组没有可验证的当前 CNY 视频价格，无法核对指定预算' : '当前锁定视频模型没有可验证的 CNY 价格，无法核对指定预算')
+  if (configuredGroup && requestedGroup && configuredGroup !== requestedGroup) diagnostics.push({ source: 'pricing', code: 'group_hint_mismatch', message: '请求分组提示与配置不同，按实际配置估算；分组提示不改变凭据路由' })
+  let matching = configuredGroup ? prices.filter(price => String(price.group || '') === configuredGroup) : prices
+  if (!matching.length && suppliedQuote) matching = [{ ...suppliedQuote, group: configuredGroup || requestedGroup || null }]
   const selectedPrice = matching.length ? matching.reduce((highest, price) => priceExposureCny(price, video.duration) > priceExposureCny(highest, video.duration) ? price : highest) : {}
   const estimatedCostCny = priceExposureCny(selectedPrice, video.duration)
-  if (hasCeiling && estimatedCostCny > args.max_cost_cny) throw new Error(`当前最坏成本 ${estimatedCostCny} CNY 超过本次授权上限 ${args.max_cost_cny} CNY，未提交`)
+  const maximum = finiteNumber(args.max_cost_cny)
+  if (estimatedCostCny == null) diagnostics.push({ source: 'pricing', code: 'price_unknown', message: '费用无法估算，仍提交请求；实际费用以供应商账单为准' })
+  else if (maximum != null && estimatedCostCny > maximum) diagnostics.push({ source: 'pricing', code: 'estimate_above_reference', message: `估算 ${estimatedCostCny} CNY 高于参考金额 ${maximum} CNY；参考金额不拦截执行` })
   return {
     publicConfig, capability, capabilityState: state || { source: 'unknown', contract_status: 'unknown' }, diagnostics, catalog, selectedPrice, estimatedCostCny,
     configuredGroup: configuredGroup || null, requestedGroup: requestedGroup || null,
-    pricingSource: selectedPrice.source === 'user_reported' ? 'user_reported' : catalog.source,
-    catalogModels: [...new Set(matching.map((item) => item.catalog_model))],
+    pricingSource: estimatedCostCny == null ? 'unpriced' : selectedPrice.source === 'user_reported' ? 'user_reported' : catalog.source,
+    catalogModels: [...new Set(matching.map(item => item.catalog_model))],
   }
 }
 
@@ -551,7 +516,7 @@ async function generateVideo(args) {
     reference_audio_urls: Array.isArray(args.reference_audio_urls) ? args.reference_audio_urls : undefined,
     camera_fixed: args.camera_fixed == null ? undefined : Boolean(args.camera_fixed),
     watermark: args.watermark == null ? false : Boolean(args.watermark),
-    contract_validation_mode: args.contract_validation_mode || 'advisory',
+    contract_validation_mode: 'advisory',
   }
   if (!video.prompt) throw new Error('视频生成缺少 prompt')
   if (!Number.isFinite(video.duration) || video.duration <= 0) throw new Error('视频时长必须为正数')
@@ -576,8 +541,8 @@ async function generateVideo(args) {
   })
   const capabilitySnapshot = sanitize({ source: contract.capabilityState.source, contract_status: contract.capabilityState.contract_status, capability: contract.capability })
   const reserve = await api('POST', `/api/v1/orchestration-sessions/${encodeURIComponent(args.session_id)}/nodes/${encodeURIComponent(args.node_key)}/external-request`, {
-    actor: 'codex', request_hash: requestHash, message: '正在提交一次受预算和幂等保护的视频生成请求',
-    progress: { state: 'local_started', submission_state: 'submitting', message: '已锁定配置、模型、能力、价格和请求哈希；正在创建本地视频任务' },
+    actor: 'codex', request_hash: requestHash, message: '正在提交视频生成请求；费用估算仅供参考，同次请求保持幂等',
+    progress: { state: 'local_started', submission_state: 'submitting', message: '按指定配置和模型创建视频任务；能力与价格信息仅供参考' },
     decision: {
       paid: true, idempotency_key: args.idempotency_key, provider: video.provider, model: video.model, video_config_id: video.video_config_id,
       configured_group: contract.configuredGroup, requested_group: contract.requestedGroup, pricing_snapshot: pricingSnapshot,
@@ -620,7 +585,7 @@ async function generateVideo(args) {
       submitted: true, request_hash: requestHash, generation_id: generationId, task_id: taskId, provider_task_id: providerTaskId,
       provider_submission_status: providerSubmissionStatus, estimated_cost_cny: contract.estimatedCostCny,
       pricing_source: contract.pricingSource, pricing_version: contract.catalog.pricing_version,
-      pricing_model: contract.selectedPrice.catalog_model, pricing_group: contract.selectedPrice.group,
+      pricing_model: contract.selectedPrice.catalog_model, pricing_group: contract.selectedPrice.group, diagnostics: contract.diagnostics,
       node: updated.node,
     }
   } catch (error) {
@@ -813,32 +778,21 @@ async function generateImage(args) {
   if (!image.model || !image.provider || !Number.isInteger(image.image_config_id) || image.image_config_id <= 0) throw new Error('图片生成必须锁定 model、provider 和 image_config_id，避免改配置后仍误用旧模型')
   rejectSecrets(image)
   const publicConfig = await api('GET', `/api/v1/ai-configs/${encodeURIComponent(image.image_config_id)}`)
-  const configuredModels = Array.isArray(publicConfig?.model) ? publicConfig.model.map(String) : [publicConfig?.model].filter(Boolean).map(String)
-  if (!['image', 'storyboard_image'].includes(String(publicConfig?.service_type || ''))) throw new Error('锁定配置不是图片服务，已在付费提交前停止')
-  if (String(publicConfig?.provider || '') !== image.provider) throw new Error('锁定配置的 provider 与请求不一致，已在付费提交前停止')
-  if (![...configuredModels, String(publicConfig?.default_model || '')].includes(image.model)) throw new Error('锁定配置不包含请求模型，已在付费提交前停止')
-  if (publicConfig?.is_active === false || publicConfig?.is_enabled === false) throw new Error('锁定配置当前未启用，已在付费提交前停止')
-  if (publicConfig?.has_api_key !== true) throw new Error('锁定配置没有已保存凭据，已在付费提交前停止')
+  const diagnostics = []
   let configSettings = publicConfig?.settings
   if (typeof configSettings === 'string') {
     try { configSettings = JSON.parse(configSettings) } catch { configSettings = {} }
   }
   const configuredGroup = String(configSettings?.group_name || configSettings?.group || publicConfig?.group_name || '').trim()
-  // Yinzi prices are exposed by the same live catalog that proves the model
-  // exists for the current runtime.  The local model_prices table is optional
-  // (and may be empty after a fresh start), so it must not be the only source
-  // of truth for a Yinzi image request.  Keep the older local-price path for
-  // non-Yinzi providers and for already-imported USD contracts.
+  // Catalogs are optional cost hints. Missing prices or models do not decide
+  // whether the user's explicitly selected connection can submit a request.
   let priceItems = []
   let priceCatalog = null
   let liveCatalogHadImageSection = false
   if (image.provider === 'yinzi') {
-    priceCatalog = await api('GET', `/api/v1/ai-configs/yinzi/catalog?config_id=${encodeURIComponent(image.image_config_id)}`)
-    // A reachable, structured Yinzi image catalog is authoritative even when
-    // it does not contain this exact model.  In that case a stale local price
-    // must not reopen a paid path for a model the current key did not prove.
-    // Older test fixtures and pre-catalog runtimes may omit the image section
-    // entirely; those retain the compatibility fallback below.
+    priceCatalog = await api('GET', `/api/v1/ai-configs/yinzi/catalog?config_id=${encodeURIComponent(image.image_config_id)}`, undefined, Number(args.catalog_timeout_ms) || 5000).catch(error => { diagnostics.push({ source: 'pricing', message: error.message }); return {} })
+    // Do not substitute an unrelated cached price when a current catalog
+    // omits this model. Submission continues with an unknown estimate.
     liveCatalogHadImageSection = Array.isArray(priceCatalog?.image)
       || (image.image_service_type === 'storyboard_image' && Array.isArray(priceCatalog?.storyboard_image))
     const catalogItems = [
@@ -854,8 +808,7 @@ async function generateImage(args) {
         service_type: image.image_service_type,
         model: image.model,
         group_name: item.group_name || item.group || '',
-        unit_price_native: Number.isFinite(Number(item.effective_price)) ? Number(item.effective_price)
-          : Number.isFinite(Number(item.effective_model_price)) ? Number(item.effective_model_price) : null,
+        unit_price_native: finiteNumber(item.effective_price) ?? finiteNumber(item.effective_model_price),
         currency: String(item.currency || 'CNY').toUpperCase(),
         source: item.source || priceCatalog?.source || 'yinzi-catalog',
         source_version: item.source_version || priceCatalog?.pricing_version || null,
@@ -867,18 +820,18 @@ async function generateImage(args) {
   // image model. A local USD contract is still valid evidence for a non-live
   // provider path; it must never override a matching Yinzi catalog item.
   if (!priceItems.length && !(image.provider === 'yinzi' && liveCatalogHadImageSection)) {
-    const prices = await api('GET', `/api/v1/settings/advanced/prices?provider=${encodeURIComponent(image.provider)}&service_type=image&model=${encodeURIComponent(image.model)}`)
+    const prices = await api('GET', `/api/v1/settings/advanced/prices?provider=${encodeURIComponent(image.provider)}&service_type=image&model=${encodeURIComponent(image.model)}`, undefined, 5000).catch(error => { diagnostics.push({ source: 'pricing', message: error.message }); return {} })
     priceItems = (Array.isArray(prices?.items) ? prices.items : []).filter((item) => (
       String(item.provider || '') === image.provider
       && String(item.service_type || '') === 'image'
       && String(item.model || '') === image.model
-      && Number.isFinite(Number(item.unit_price_usd))
+      && finiteNumber(item.unit_price_usd) != null
     ))
   }
   let selectedPrice = null
   let pricingBasis = ''
   if (configuredGroup) {
-    if (args.group_name && configuredGroup !== String(args.group_name)) throw new Error('请求分组与锁定配置中可验证的分组不一致，已在付费提交前停止')
+    if (args.group_name && configuredGroup !== String(args.group_name)) diagnostics.push({ source: 'pricing', code: 'group_hint_mismatch', message: '按实际配置分组估算，不因请求提示不同拦截' })
     selectedPrice = priceItems.find((item) => String(item.group_name || '') === configuredGroup) || null
     pricingBasis = 'verified_config_group'
   } else if (priceItems.length) {
@@ -889,37 +842,35 @@ async function generateImage(args) {
     })
     pricingBasis = priceItems.length === 1 ? 'single_catalog_price' : 'unverified_config_group_worst_case'
   }
-  const selectedNativePrice = Number(selectedPrice?.unit_price_native ?? selectedPrice?.unit_price_usd)
-  if (!selectedPrice || !Number.isFinite(selectedNativePrice)) throw new Error('当前锁定模型/分组没有可验证实时价格，已在付费提交前停止')
-  const nativeCurrency = String(selectedPrice.currency || 'USD').toUpperCase()
-  const explicitCnyCeiling = Number.isFinite(Number(args.max_unit_price_cny)) ? Number(args.max_unit_price_cny) : null
-  const legacyNumericCeiling = Number.isFinite(Number(args.max_unit_price_usd)) ? Number(args.max_unit_price_usd) : null
-  const maximumPrice = explicitCnyCeiling ?? legacyNumericCeiling
-  if (!Number.isFinite(maximumPrice) && !authorization.unattended) throw new Error('图片付费请求需要 max_unit_price_cny 或 max_unit_price_usd 授权上限，未提交')
-  const ceilingBasis = explicitCnyCeiling != null
-    ? `${nativeCurrency.toUpperCase()}_explicit`
-    : `${nativeCurrency.toUpperCase()}_legacy_numeric_compatibility`
-  if (maximumPrice != null && selectedNativePrice > maximumPrice) {
-    const ceilingLabel = explicitCnyCeiling != null ? `${maximumPrice} CNY` : `${maximumPrice}（旧 USD 字段的兼容数值，不做汇率换算）`
-    throw new Error(`实时单价 ${selectedNativePrice} ${nativeCurrency} 超过本次授权上限 ${ceilingLabel}，未提交`)
-  }
+  // Never compare amounts in different currencies, or coerce missing prices to zero.
+  const currencies = new Set(priceItems.map(item => String(item.currency || 'USD').toUpperCase()))
+  if (!configuredGroup && currencies.size > 1) selectedPrice = null
+  const selectedNativePrice = finiteNumber(selectedPrice?.unit_price_native ?? selectedPrice?.unit_price_usd)
+  const nativeCurrency = selectedPrice ? String(selectedPrice.currency || 'USD').toUpperCase() : null
+  const maximumPrice = nativeCurrency === 'CNY' ? finiteNumber(args.max_unit_price_cny) : nativeCurrency === 'USD' ? finiteNumber(args.max_unit_price_usd) : null
+  const ceilingBasis = maximumPrice == null ? null : `${nativeCurrency}_advisory`
+  if (selectedNativePrice == null) {
+    pricingBasis = 'unpriced'
+    diagnostics.push({ source: 'pricing', code: 'price_unknown', message: '费用无法估算，仍提交；实际费用以供应商账单为准' })
+  } else if (maximumPrice != null && selectedNativePrice > maximumPrice) diagnostics.push({ source: 'pricing', code: 'estimate_above_reference', message: `估算 ${selectedNativePrice} ${nativeCurrency} 高于参考金额 ${maximumPrice}；参考金额不拦截执行` })
   const unitPriceUsd = nativeCurrency === 'USD' ? selectedNativePrice : null
   const requestHash = createHash('sha256').update(JSON.stringify({ image: sanitize(image), idempotency_key: args.idempotency_key })).digest('hex')
   const reserve = await api('POST', `/api/v1/orchestration-sessions/${encodeURIComponent(args.session_id)}/nodes/${encodeURIComponent(args.node_key)}/external-request`, {
-    actor: 'codex', request_hash: requestHash, message: '正在提交一次受预算保护的图片生成请求',
-    decision: { paid: true, idempotency_key: args.idempotency_key, provider: image.provider, model: image.model, image_config_id: image.image_config_id, configured_group: configuredGroup || null, requested_group: args.group_name || null, pricing_basis: pricingBasis, price_snapshot: sanitize(selectedPrice), native_currency: nativeCurrency, estimated_cost_native: selectedNativePrice, price_ceiling_basis: ceilingBasis, maximum_unit_price_usd: args.max_unit_price_usd ?? null, maximum_unit_price_cny: args.max_unit_price_cny ?? null },
+    actor: 'codex', request_hash: requestHash, message: '正在提交图片生成请求；费用估算仅供参考',
+    decision: { paid: true, idempotency_key: args.idempotency_key, provider: image.provider, model: image.model, image_config_id: image.image_config_id, configured_group: configuredGroup || null, requested_group: args.group_name || null, pricing_basis: pricingBasis, diagnostics, authorization_source: authorization.source, price_snapshot: sanitize(selectedPrice), native_currency: nativeCurrency, estimated_cost_native: selectedNativePrice, price_ceiling_basis: ceilingBasis, maximum_unit_price_usd: args.max_unit_price_usd ?? null, maximum_unit_price_cny: args.max_unit_price_cny ?? null },
   })
   if (!reserve.reserved) return { submitted: false, reused: true, reconciliation_required: reserve.reconciliation_required, request_hash: requestHash, node: reserve.node }
   try {
-    const result = await api('POST', '/api/v1/images', image, Number(args.timeout_ms) || 30000)
+    const clientRequestKey = `orchestration-image:${createHash('sha256').update(JSON.stringify([args.session_id, args.node_key, requestHash])).digest('hex')}`
+    const result = await api('POST', '/api/v1/images', { ...image, client_request_key: clientRequestKey }, Number(args.timeout_ms) || 30000)
     const taskId = result?.task_id || null; const generationId = result?.id || null
     const updated = await api('PATCH', `/api/v1/orchestration-sessions/${encodeURIComponent(args.session_id)}/nodes/${encodeURIComponent(args.node_key)}`, {
       actor: 'codex', expected_attempt: reserve.node?.attempt, request_hash: requestHash,
       progress: { state: 'provider_ack', submission_state: taskId ? 'accepted' : 'uncertain', message: taskId ? '图片执行器已受理，等待真实结果' : '返回中缺少 task_id，需要查询记录对账', correlation_id: taskId },
       output_refs: [...(taskId ? [{ type: 'async_task', id: String(taskId), role: 'provider_task' }] : []), ...(generationId ? [{ type: 'image_generation', id: String(generationId), role: 'generation_record' }] : [])],
-      decision: { paid: true, idempotency_key: args.idempotency_key, provider: image.provider, model: image.model, image_config_id: image.image_config_id, configured_group: configuredGroup || null, requested_group: args.group_name || null, pricing_basis: pricingBasis, price_snapshot: sanitize(selectedPrice), native_currency: nativeCurrency, estimated_cost_native: selectedNativePrice, price_ceiling_basis: ceilingBasis, request: sanitize(image) },
+      decision: { paid: true, idempotency_key: args.idempotency_key, provider: image.provider, model: image.model, image_config_id: image.image_config_id, configured_group: configuredGroup || null, requested_group: args.group_name || null, pricing_basis: pricingBasis, diagnostics, authorization_source: authorization.source, price_snapshot: sanitize(selectedPrice), native_currency: nativeCurrency, estimated_cost_native: selectedNativePrice, price_ceiling_basis: ceilingBasis, request: sanitize(image) },
     })
-    return { submitted: true, request_hash: requestHash, task_id: taskId, generation_id: generationId, estimated_cost_usd: unitPriceUsd, estimated_cost_native: selectedNativePrice, native_currency: nativeCurrency, pricing_basis: pricingBasis, configured_group: configuredGroup || null, requested_group: args.group_name || null, pricing_source: selectedPrice.source, pricing_version: selectedPrice.source_version, node: updated.node }
+    return { submitted: true, request_hash: requestHash, task_id: taskId, generation_id: generationId, estimated_cost_usd: unitPriceUsd, estimated_cost_native: selectedNativePrice, native_currency: nativeCurrency, pricing_basis: pricingBasis, configured_group: configuredGroup || null, requested_group: args.group_name || null, pricing_source: selectedPrice?.source || 'unpriced', pricing_version: selectedPrice?.source_version || null, diagnostics, node: updated.node }
   } catch (error) {
     await api('PATCH', `/api/v1/orchestration-sessions/${encodeURIComponent(args.session_id)}/nodes/${encodeURIComponent(args.node_key)}`, {
       actor: 'codex', expected_attempt: reserve.node?.attempt, request_hash: requestHash, progress: { state: 'provider_unknown', submission_state: 'uncertain', message: '图片创建结果不明确；可以查询原请求，也可以明确重试，原记录会保留' },
@@ -1010,10 +961,10 @@ const tools = [
   { name: 'blender_cancel_job', description: '取消本地 Blender 作业并保留已经生成的文件；不声称取消任何上游付费任务。', inputSchema: { type: 'object', required: ['session_id', 'job_id'], properties: { session_id: { type: 'string' }, job_id: { type: 'string' }, note: { type: 'string' } } } },
   { name: 'update_node', description: '更新节点输入输出、进度、决策、请求哈希或配置版本，不需要伪造终态。', inputSchema: { type: 'object', required: ['session_id', 'node_key', 'patch'], properties: { session_id: { type: 'string' }, node_key: { type: 'string' }, patch: { type: 'object' } } } },
   { name: 'scan_assets', description: '有界扫描用户明确授权的文件/文件夹，生成哈希化素材清单；可自动写回 asset.scan 节点。', inputSchema: { type: 'object', properties: { path: { type: 'string' }, paths: { type: 'array', items: { type: 'string' } }, session_id: { type: 'string' }, node_key: { type: 'string' }, max_files: { type: 'integer' }, max_bytes: { type: 'integer' }, max_depth: { type: 'integer' }, hash_max_bytes: { type: 'integer' }, include_absolute_paths: { type: 'boolean' }, force: { type: 'boolean' } } } },
-  { name: 'workflow_bridge', description: '受审计地调用既有 production-run/asset-import 执行器。写操作必须绑定节点；付费操作使用已有授权或挂机模式，并保留幂等键。', inputSchema: { type: 'object', required: ['method', 'path'], properties: { method: { enum: ['GET', 'POST', 'PATCH'] }, path: { type: 'string' }, body: { type: 'object' }, session_id: { type: 'string' }, node_key: { type: 'string' }, paid: { type: 'boolean' }, confirmed_paid_action: { type: 'boolean' }, idempotency_key: { type: 'string' }, reconcile: { type: 'boolean' }, force: { type: 'boolean' }, timeout_ms: { type: 'integer' } } } },
-  { name: 'generate_image_once', description: '按锁定配置和当前实时目录价格只提交一次图片任务；Yinzi 目录优先使用原生 CNY 价格，同一请求保持幂等；明确重试可在原节点开启新尝试。请提供 max_unit_price_cny；旧 max_unit_price_usd 仅作为不汇率换算的兼容数值上限。', inputSchema: { type: 'object', required: ['session_id', 'node_key', 'idempotency_key', 'image_config_id', 'provider', 'model', 'group_name', 'prompt'], properties: { session_id: { type: 'string' }, node_key: { type: 'string' }, idempotency_key: { type: 'string' }, confirmed_paid_action: { type: 'boolean' }, image_config_id: { type: 'integer' }, provider: { type: 'string' }, model: { type: 'string' }, group_name: { type: 'string' }, prompt: { type: 'string' }, size: { type: 'string' }, aspect_ratio: { type: 'string' }, drama_id: { type: 'integer' }, image_service_type: { enum: ['image', 'storyboard_image'] }, reference_images: { type: 'array', items: { type: 'string' } }, negative_prompt: { type: 'string' }, frame_type: { type: 'string' }, max_unit_price_usd: { type: 'number' }, max_unit_price_cny: { type: 'number' }, timeout_ms: { type: 'integer' } } } },
+  { name: 'workflow_bridge', description: '调用既有 production-run/asset-import 执行器。写操作绑定节点并记录请求；显式生成与重试无需额外确认或挂机模式，新尝试使用新的幂等键。', inputSchema: { type: 'object', required: ['method', 'path'], properties: { method: { enum: ['GET', 'POST', 'PATCH'] }, path: { type: 'string' }, body: { type: 'object' }, session_id: { type: 'string' }, node_key: { type: 'string' }, paid: { type: 'boolean' }, confirmed_paid_action: { type: 'boolean' }, idempotency_key: { type: 'string' }, reconcile: { type: 'boolean' }, force: { type: 'boolean' }, timeout_ms: { type: 'integer' } } } },
+  { name: 'generate_image_once', description: '按用户指定配置生成图片；无需额外授权标志、报价或挂机模式。目录、能力和费用只作提示，未知价格仍提交。相同请求保持幂等；明确重试可从任何旧状态开启新尝试。max_unit_price_cny为可选参考金额；旧USD字段不做汇率换算。', inputSchema: { type: 'object', required: ['session_id', 'node_key', 'idempotency_key', 'image_config_id', 'provider', 'model', 'prompt'], properties: { session_id: { type: 'string' }, node_key: { type: 'string' }, idempotency_key: { type: 'string' }, confirmed_paid_action: { type: 'boolean' }, image_config_id: { type: 'integer' }, provider: { type: 'string' }, model: { type: 'string' }, group_name: { type: 'string' }, prompt: { type: 'string' }, size: { type: 'string' }, aspect_ratio: { type: 'string' }, drama_id: { type: 'integer' }, image_service_type: { enum: ['image', 'storyboard_image'] }, reference_images: { type: 'array', items: { type: 'string' } }, negative_prompt: { type: 'string' }, frame_type: { type: 'string' }, max_unit_price_usd: { type: 'number' }, max_unit_price_cny: { type: 'number' }, timeout_ms: { type: 'integer' } } } },
   { name: 'reconcile_image', description: '查询同一图片 generation/task 并将真实终态写回编排节点；没有关联 ID 时保持 uncertain。', inputSchema: { type: 'object', required: ['session_id', 'node_key'], properties: { session_id: { type: 'string' }, node_key: { type: 'string' }, generation_id: { type: ['string', 'integer'] }, task_id: { type: 'string' } } } },
-  { name: 'generate_video_once', description: '按用户指定配置只提交一次视频。目录不作为鉴权门槛；已有授权或挂机模式下执行，同一次请求保持幂等；明确重试可在原节点开启新尝试。max_cost_cny沿用用户预算；挂机且用户未设限时可省略。', inputSchema: { type: 'object', required: ['session_id', 'node_key', 'idempotency_key', 'video_config_id', 'provider', 'model', 'group_name', 'prompt', 'duration'], properties: { session_id: { type: 'string' }, node_key: { type: 'string' }, idempotency_key: { type: 'string' }, confirmed_paid_action: { type: 'boolean' }, video_config_id: { type: 'integer' }, provider: { type: 'string' }, model: { type: 'string' }, group_name: { type: 'string' }, prompt: { type: 'string' }, duration: { type: 'number' }, aspect_ratio: { type: 'string' }, resolution: { type: 'string' }, drama_id: { type: 'integer' }, storyboard_id: { type: 'integer' }, image_url: { type: 'string' }, first_frame_url: { type: 'string' }, last_frame_url: { type: 'string' }, reference_image_urls: { type: 'array', items: { type: 'string' } }, reference_video_urls: { type: 'array', items: { type: 'string' } }, reference_audio_urls: { type: 'array', items: { type: 'string' } }, camera_fixed: { type: 'boolean' }, watermark: { type: 'boolean' }, prompt_contract: { type: 'object' }, contract_validation_mode: { enum: ['advisory', 'strict'] }, max_cost_cny: { type: 'number' }, timeout_ms: { type: 'integer' }, catalog_timeout_ms: { type: 'integer' } } } },
+  { name: 'generate_video_once', description: '按用户指定配置生成视频；无需额外授权标志、报价或挂机模式。目录、能力和费用只作提示，未知价格仍提交。相同请求保持幂等；明确重试可从任何旧状态开启新尝试。max_cost_cny为可选参考金额。', inputSchema: { type: 'object', required: ['session_id', 'node_key', 'idempotency_key', 'video_config_id', 'provider', 'model', 'prompt', 'duration'], properties: { session_id: { type: 'string' }, node_key: { type: 'string' }, idempotency_key: { type: 'string' }, confirmed_paid_action: { type: 'boolean' }, video_config_id: { type: 'integer' }, provider: { type: 'string' }, model: { type: 'string' }, group_name: { type: 'string' }, prompt: { type: 'string' }, duration: { type: 'number' }, aspect_ratio: { type: 'string' }, resolution: { type: 'string' }, drama_id: { type: 'integer' }, storyboard_id: { type: 'integer' }, image_url: { type: 'string' }, first_frame_url: { type: 'string' }, last_frame_url: { type: 'string' }, reference_image_urls: { type: 'array', items: { type: 'string' } }, reference_video_urls: { type: 'array', items: { type: 'string' } }, reference_audio_urls: { type: 'array', items: { type: 'string' } }, camera_fixed: { type: 'boolean' }, watermark: { type: 'boolean' }, prompt_contract: { type: 'object' }, contract_validation_mode: { enum: ['advisory', 'strict'] }, max_cost_cny: { type: 'number' }, timeout_ms: { type: 'integer' }, catalog_timeout_ms: { type: 'integer' } } } },
   { name: 'reconcile_video', description: '查询同一视频 generation/task，区分上游生成与本地下载，并在需要时只恢复下载、绝不重提视频。', inputSchema: { type: 'object', required: ['session_id', 'node_key'], properties: { session_id: { type: 'string' }, node_key: { type: 'string' }, generation_id: { type: ['string', 'integer'] }, task_id: { type: 'string' }, retry_download: { type: 'boolean' }, timeout_ms: { type: 'integer' } } } },
   { name: 'export_audit', description: '导出完整编排任务审计包。', inputSchema: { type: 'object', required: ['session_id'], properties: { session_id: { type: 'string' } } } },
 ]

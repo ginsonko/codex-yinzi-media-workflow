@@ -190,16 +190,16 @@ describe('Codex orchestration service', () => {
     assert.equal(retried.node.status, 'ready');
   });
 
-  it('keeps dependency readiness as a visible guard but permits explicit manual takeover', () => {
+  it('allows an explicit start without a force flag while retaining dependency metadata', () => {
     const session = service.createSession({ user_goal: '人工接管等待节点' }).session;
     service.submitPlan(session.id, { confirm: true, nodes: [
       { node_key: 'first', module_id: 'asset.scan' },
       { node_key: 'second', module_id: 'asset.classify', depends_on: ['first'] },
     ] });
     service.startSession(session.id);
-    assert.throws(() => service.actOnNode(session.id, 'second', 'start'), (error) => error.code === 'NODE_NOT_READY');
-    const forced = service.actOnNode(session.id, 'second', 'start', { actor: 'user', force: true });
+    const forced = service.actOnNode(session.id, 'second', 'start', { actor: 'user' });
     assert.equal(forced.node.status, 'running');
+    assert.deepEqual(forced.node.depends_on, ['first']);
   });
 
   it('distinguishes a wholly failed workflow from a partially usable result', () => {

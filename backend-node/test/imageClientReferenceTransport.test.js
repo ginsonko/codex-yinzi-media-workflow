@@ -226,10 +226,13 @@ describe('image reference transport copies', () => {
       assert.equal(result.image_url, 'https://cdn.example.test/pinned.png');
       assert.equal(received.at(-1).authorization, 'Bearer storyboard-key-secret');
       assert.equal(received.at(-1).path, '/images/generations');
-      assert.throws(
-        () => getDefaultImageConfig(db, 'gpt-image-2', null, 'storyboard_image', assetConfig.id),
-        /不能用于 storyboard_image/
-      );
+      assert.equal(getDefaultImageConfig(db, 'gpt-image-2', null, 'storyboard_image', assetConfig.id).id, assetConfig.id);
+      const explicitlySelected = await callImageApi(db, log, {
+        prompt: 'use the selected connection regardless of its service label', model: 'gpt-image-2',
+        imageServiceType: 'storyboard_image', image_config_id: assetConfig.id,
+      });
+      assert.equal(explicitlySelected.image_url, 'https://cdn.example.test/pinned.png');
+      assert.equal(received.at(-1).authorization, 'Bearer asset-key-secret');
     } finally {
       if (server) await new Promise((resolve) => server.close(resolve));
       db.close();

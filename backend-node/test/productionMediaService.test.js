@@ -165,12 +165,12 @@ describe('production model catalog snapshot fallback', () => {
   });
 
   it('does not fabricate a catalog when no snapshot exists', () => {
-    assert.throws(
-      () => discoveryFromStoredSnapshot({}, Object.assign(new Error('unauthorized'), {
+    const result = discoveryFromStoredSnapshot({}, Object.assign(new Error('unauthorized'), {
         code: 'MODEL_DISCOVERY_AUTH_FAILED',
-      })),
-      /unauthorized/
-    );
+      }));
+    assert.deepEqual(result.models, []);
+    assert.equal(result.discovery_outcome, 'unavailable');
+    assert.match(result.snapshot.fallback_reason, /unauthorized/);
   });
 
   it('keeps the production picker usable when live models is temporarily unavailable', async () => {
@@ -1036,7 +1036,7 @@ describe('production media executor', () => {
     ]) assert.match(prompt, new RegExp(sentinel));
   });
 
-  it('fails locally when a mandatory oversized semantic unit cannot be packaged intact', () => {
+  it('retains mandatory semantic units above a local prompt hint and reports the excess', () => {
     const run = makeRun('uncompactable-provider-prompt');
     const unbroken = 'X'.repeat(1800);
     const shot = addApproved(run, 'storyboard_plan', 'shot', '1', 'Uncompactable shot', {
@@ -1049,10 +1049,9 @@ describe('production media executor', () => {
       continuity_out: unbroken,
       cut_out: unbroken,
     });
-    assert.throws(
-      () => buildProviderPromptPackage(db, run, shot, { content: { images: [], videos: [], audios: [] } }, shot.content.video_prompt),
-      (error) => error.code === 'PROVIDER_PROMPT_UNCOMPACTABLE'
-    );
+    const result = buildProviderPromptPackage(db, run, shot, { content: { images: [], videos: [], audios: [] } }, shot.content.video_prompt);
+    assert.ok(result.prompt.includes(unbroken));
+    assert.equal(result.receipt.over_local_limit, true);
   });
 
   it('treats a lost synchronous image response as ambiguous but keeps provider rejections definite', async () => {
@@ -1329,17 +1328,11 @@ describe('production media executor', () => {
         video_config_id: newConfig.id,
       },
     });
-    const refreshed = await service.ensureShotVideos(repo.getRun(db, run.id));
-    assert.equal(refreshed.state, 'waiting_review');
-    assert.equal(refreshed.reason, 'reference_bundle_stale');
-    assert.equal(refreshed.artifact.status, 'draft');
-    assert.equal(refreshed.artifact.content.routing_receipt.model, 'cc-seedance2.0 480p-fast-nsp');
-    repo.reviewArtifact(db, refreshed.artifact.id, {
-      reviewer_type: 'human', decision: 'approved', reason: 'new route bundle approved',
-    });
-
     const retried = await service.ensureShotVideos(repo.getRun(db, run.id));
     assert.equal(retried.state, 'waiting_provider');
+    const refreshedBundle = repo.getArtifact(db, retried.action.request.bundle_artifact_id);
+    assert.equal(refreshedBundle.status, 'draft');
+    assert.equal(refreshedBundle.content.routing_receipt.model, 'cc-seedance2.0 480p-fast-nsp');
     assert.equal(requests.length, 2);
     assert.equal(requests[1].model, 'cc-seedance2.0 480p-fast-nsp');
     assert.equal(requests[1].video_config_id, newConfig.id);

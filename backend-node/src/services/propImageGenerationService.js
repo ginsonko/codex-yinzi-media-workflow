@@ -6,6 +6,7 @@ const propService = require('./propService');
 const uploadService = require('./uploadService');
 const storageLayout = require('./storageLayout');
 const { aspectRatioToSize } = require('./imageService');
+const { isLatestTaskAttempt } = require('./imageAttemptOwnership');
 
 function appendPrompt(base, extra) {
   const add = (extra || '').toString().trim();
@@ -80,7 +81,7 @@ async function processPropImageGeneration(db, log, taskId, propId, opts) {
     log.error('Prop image API failed', { prop_id: propId, error: err.message });
     taskService.updateTaskError(db, taskId, errMsg);
     try {
-      db.prepare('UPDATE props SET error_msg = ?, updated_at = ? WHERE id = ?').run(errMsg, new Date().toISOString(), propId);
+      if (isLatestTaskAttempt(db, taskId)) db.prepare('UPDATE props SET error_msg = ?, updated_at = ? WHERE id = ?').run(errMsg, new Date().toISOString(), propId);
     } catch (_) {}
     return;
   }
@@ -88,7 +89,7 @@ async function processPropImageGeneration(db, log, taskId, propId, opts) {
   if (result.error) {
     taskService.updateTaskError(db, taskId, result.error);
     try {
-      db.prepare('UPDATE props SET error_msg = ?, updated_at = ? WHERE id = ?').run(result.error, new Date().toISOString(), propId);
+      if (isLatestTaskAttempt(db, taskId)) db.prepare('UPDATE props SET error_msg = ?, updated_at = ? WHERE id = ?').run(result.error, new Date().toISOString(), propId);
     } catch (_) {}
     return;
   }
@@ -96,7 +97,7 @@ async function processPropImageGeneration(db, log, taskId, propId, opts) {
     const errMsg = '未返回图片地址';
     taskService.updateTaskError(db, taskId, errMsg);
     try {
-      db.prepare('UPDATE props SET error_msg = ?, updated_at = ? WHERE id = ?').run(errMsg, new Date().toISOString(), propId);
+      if (isLatestTaskAttempt(db, taskId)) db.prepare('UPDATE props SET error_msg = ?, updated_at = ? WHERE id = ?').run(errMsg, new Date().toISOString(), propId);
     } catch (_) {}
     return;
   }
@@ -120,24 +121,27 @@ async function processPropImageGeneration(db, log, taskId, propId, opts) {
   } catch (_) {}
 
   const now = new Date().toISOString();
-  // 旧图追加到 extra_images，与上传逻辑保持一致
-  const oldProp = db.prepare('SELECT local_path, image_url, extra_images FROM props WHERE id = ?').get(propId);
-  const oldPath = oldProp?.local_path || oldProp?.image_url || '';
-  let extras = [];
-  try { extras = oldProp?.extra_images ? JSON.parse(oldProp.extra_images) : []; } catch (_) {}
-  if (!Array.isArray(extras)) extras = [];
-  if (oldPath && !extras.includes(oldPath)) extras.push(oldPath);
-  const extraJson = extras.length ? JSON.stringify(extras) : null;
-  try {
-    db.prepare(
-      'UPDATE props SET image_url = ?, local_path = ?, extra_images = ?, updated_at = ? WHERE id = ?'
-    ).run(result.image_url, localPath, extraJson, now, propId);
-  } catch (e) {
-    if ((e.message || '').includes('extra_images')) {
-      db.prepare('UPDATE props SET image_url = ?, local_path = ?, updated_at = ? WHERE id = ?').run(result.image_url, localPath, now, propId);
-    } else {
-      throw e;
+  if (isLatestTaskAttempt(db, taskId)) {
+    // 旧图追加到 extra_images，与上传逻辑保持一致
+    const oldProp = db.prepare('SELECT local_path, image_url, extra_images FROM props WHERE id = ?').get(propId);
+    const oldPath = oldProp?.local_path || oldProp?.image_url || '';
+    let extras = [];
+    try { extras = oldProp?.extra_images ? JSON.parse(oldProp.extra_images) : []; } catch (_) {}
+    if (!Array.isArray(extras)) extras = [];
+    if (oldPath && !extras.includes(oldPath)) extras.push(oldPath);
+    const extraJson = extras.length ? JSON.stringify(extras) : null;
+    try {
+      db.prepare(
+        'UPDATE props SET image_url = ?, local_path = ?, extra_images = ?, updated_at = ? WHERE id = ?'
+      ).run(result.image_url, localPath, extraJson, now, propId);
+    } catch (e) {
+      if ((e.message || '').includes('extra_images')) {
+        db.prepare('UPDATE props SET image_url = ?, local_path = ?, updated_at = ? WHERE id = ?').run(result.image_url, localPath, now, propId);
+      } else {
+        throw e;
+      }
     }
+    try { db.prepare('UPDATE props SET error_msg = NULL WHERE id = ?').run(propId); } catch (_) {}
   }
 
   taskService.updateTaskResult(db, taskId, {
