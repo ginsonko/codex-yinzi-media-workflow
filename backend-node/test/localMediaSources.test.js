@@ -20,6 +20,11 @@ test('song recovery includes the optional ABC score and detects changes',()=>{
   const request={module_id:'local.audio.neural-song',input_path:lyrics,parameters:{score_file:score}};
   const sources=snapshot(request);assert.equal(sources.length,2);assert.equal(sources[1].role,'song_score');verify(sources);
   assert.equal(sourcesFor({...request,sources:[{role:'score',path:score}]}).length,2);
-  fs.writeFileSync(score,'X:2\nK:G\nG A B c|');assert.throws(()=>verify(sources),{code:'INPUT_CHANGED'});
+  fs.writeFileSync(score,'X:2\nK:G\nG A B c|');
+  // Equal-length writes can share a filesystem clock tick on Windows.
+  // Make the metadata change explicit; recovery identity is stat-based.
+  const changedAt=new Date(sources[1].identity.mtime_ms+2000);
+  fs.utimesSync(score,changedAt,changedAt);
+  assert.throws(()=>verify(sources),{code:'INPUT_CHANGED'});
  }finally{fs.rmSync(root,{recursive:true,force:true});}
 });
