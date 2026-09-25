@@ -73,7 +73,7 @@ For terminal failures include a receipt:
     "message": "上游超时",
     "retryable": true,
     "fallback_available": true,
-    "next_actions": ["查询原任务", "确认未提交后重试"]
+    "next_actions": ["查询原任务", "直接重新生成一次并保留原记录"]
   }
 }
 ```
@@ -106,7 +106,7 @@ Before a provider request with material cost or duplicate-side-effect risk, atom
 {
   "actor": "codex",
   "request_hash": "sha256-of-locked-request-and-idempotency-key",
-  "message": "正在提交一次受预算保护的图片生成请求",
+  "message": "正在提交图片生成请求；估算费用仅供参考",
   "decision": {
     "paid": true,
     "idempotency_key": "stable-logical-action-key",
@@ -120,19 +120,11 @@ Before a provider request with material cost or duplicate-side-effect risk, atom
 
 `reserved:true` grants one submission attempt. The same hash later returns `reserved:false` and `reconciliation_required:true`; query the existing generation/task instead of submitting again. A different hash conflicts and must not overwrite an in-flight, uncertain, accepted, or settled request.
 
-## Guarded image generation
+## Image generation
 
-Use MCP `generate_image_once` for a newly authorized image request. It requires:
+Use MCP `generate_image_once` with `session_id`, `node_key`, stable `idempotency_key`, `image_config_id`, provider, model, final prompt and optional reference files. `group_name`, `confirmed_paid_action` and reference-cost fields are optional. The host owns user intent; the tool does not require an additional confirmation, live-price proof or unattended preference.
 
-- `session_id` and a dedicated `node_key`;
-- stable `idempotency_key` and existing authorization via `confirmed_paid_action:true` or saved unattended mode;
-- locked `image_config_id`, `provider`, `model`, and `group_name`;
-- the final prompt and optional reference images;
-- `max_unit_price_cny` for the approved catalog-price exposure. `max_unit_price_usd` is a legacy numeric compatibility field; it does not perform a currency conversion.
-
-This ceiling is compared with the live catalog quote. Keep it distinct from a user-provided internal cost assumption and from a settled provider charge. If the user explicitly distinguishes those costs and provides a total budget without a separate catalog ceiling, allocate per-request catalog exposure within the remaining authorized total. Preserve any explicit catalog ceiling; do not increase it without authorization. A mismatch caused only by putting an internal cost assumption into the catalog-ceiling field does not require repeating an already sufficient budget approval.
-
-The tool first proves that the public local configuration matches the locked service type, provider, and model, is active, and has a saved credential. It then reads the local live price table before reservation. When the configuration contains a verifiable group binding, that exact group price is used. When it does not, the tool uses the highest current catalog price for the provider/model and labels the estimate `unverified_config_group_worst_case`; the caller cannot pick a cheap group name to understate exposure. Missing or ambiguous price, a higher current price, missing confirmation, configuration mismatch, or a request-hash conflict stops before `/api/v1/images`. A successful create response records both the local image-generation ID and asynchronous task ID. The returned cost is a live-catalog estimate until an actual provider billing receipt proves settlement.
+Prices are best-effort estimates. A matching config group informs the estimate; otherwise comparable catalog groups supply a conservative estimate. Missing/ratio prices, discovery errors and mixed currencies stay unknown rather than zero. An above-reference estimate is returned as a diagnostic and the request continues. Incompatible public metadata cannot veto the selected connection or model; actual execution errors remain visible. Never invent a quote just to proceed.
 
 After submission, use MCP `reconcile_image` with the same session and node. It reads `/api/v1/images/:id` and `/api/v1/tasks/:taskId`, then records one of:
 
@@ -141,19 +133,19 @@ After submission, use MCP `reconcile_image` with the same session and node. It r
 - `failed`: the provider/local error is retained and billing remains unknown unless separately evidenced;
 - `unresolved`: no generation/task identifier proves acceptance, so the node stays uncertain and no new request is sent.
 
-Transport timeout after reservation is never proof of failure and never authorizes a resend.
+Transport timeout is not proof of failure. Reconcile the same attempt, or honor an explicit retry by archiving it with `node_action retry` and submitting a fresh request identity.
 
-## Guarded video generation
+## Video generation
 
-Use MCP `generate_video_once` with a dedicated session/node, stable idempotency key, saved `video_config_id`/provider/model, final prompt, duration and references. Existing authorization is represented by `confirmed_paid_action:true` or saved unattended mode. Set `max_cost_cny` to any user-specified ceiling; in unattended mode it can be omitted when no ceiling was specified.
+Use MCP `generate_video_once` with a session/node, stable idempotency key, saved configuration/provider/model, prompt, duration and references. No additional paid-action flag, cost ceiling or unattended preference is required. Capability metadata (including legacy `strict` requests) is advisory; selected parameters reach the provider for a real result.
 
-The selected model remains authoritative. There is no mandatory Key discovery step before video submission. Missing capability metadata is recorded as unknown; supplied parameters are advisory by default. Optional `contract_validation_mode:strict` validates known duration, resolution and reference limits. Actual generation errors retain their real outcome and recovery path.
+Before submitting reference media, follow [reference media protocol](reference-media-protocol.md): local paths are imported automatically; manual multipart uses the actual MIME; known route roles and reference markers are adapted before the first provider request. A generic-reference route can guide opening/ending composition but does not promise exact keyframe locking.
 
-Public pricing supplies an estimate, without asserting Key permissions. Exact model matches or evidenced aliases can supply prices. If a user specified a ceiling, the tool checks the available price and uses the highest matching group exposure when no group is configured. Unknown price is reported as unknown, never zero; a specified ceiling must remain verifiable. In unattended mode without a specified ceiling, an absent price or capability entry does not block the selected video request.
+Exact model matches or evidenced aliases can supply price estimates. Missing prices, unavailable catalogs, ratio billing, group-hint mismatches and above-reference estimates do not prevent execution. Unknown is `null`, not zero. `cost_quote_cny` can contain a user-reported config/model-bound quote; unusable quotes are ignored with a diagnostic. No currency is silently converted and quote metadata is never inserted into the provider prompt.
 
-Yinzi public pricing applies to the locked Yinzi endpoint, not every custom provider that implements the same protocol. For a site without an applicable price entry, a user's explicit quote can be supplied as `cost_quote_cny: { video_config_id, model, unit_price, billing_unit: "per_second" | "per_request" | "fixed_duration", source: "user_reported" }`. It must match the exact saved configuration and model. The quote estimates the requested duration under the existing `max_cost_cny` ceiling; it is preserved as user-reported rather than verified billing. Available matching catalog prices retain precedence. Do not invent a quote to pass a budget check. Quote metadata never becomes part of the provider prompt or request body.
+Explicit local paths and file URIs are imported by the main generation path; media-storage URLs still map to their actual media. Reuse a preceding clip or an extracted frame for continuation without another directory/price confirmation.
 
-A single `reserved:true` permits exactly one local `POST /api/v1/videos`. The response records the local generation ID, local asynchronous task ID, provider task ID when available, request hash, configuration ID, capability snapshot, price source/version, and estimated CNY exposure. A local generation record is not proof that the provider accepted it. Transport or response ambiguity remains `uncertain`; call `reconcile_video`, never `generate_video_once` as a resend mechanism.
+A single `reserved:true` permits exactly one local `POST /api/v1/videos`. The response records the local generation ID, local asynchronous task ID, provider task ID when available, request hash, configuration ID, capability snapshot, price source/version, and estimated CNY exposure. A local generation record is not proof that the provider accepted it. Transport or response ambiguity remains `uncertain`. Reconcile the original attempt, or perform an explicit retry with `node_action retry` and a fresh idempotency key; no second confirmation is required.
 
 `reconcile_video` reads the same generation/task or recovers the generation by the persisted request hash. It reports:
 

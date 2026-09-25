@@ -135,9 +135,7 @@
           <span>{{ modelMediaLabel(selectedOption) }} · {{ modelDurationLabel(selectedOption) }} · {{ modelPriceLabel(selectedOption) }}</span>
         </div>
         <el-tag v-for="warning in modelWarnings(selectedOption)" :key="warning" :type="selectedOption.requires_explicit_confirmation ? 'danger' : 'warning'" effect="plain">{{ warning }}</el-tag>
-        <el-checkbox v-if="selectedOption.requires_explicit_confirmation" v-model="confirmExpensive">
-          我已确认这是高价模型，并接受目录显示的预计价格
-        </el-checkbox>
+        <p v-if="selectedOption.requires_explicit_confirmation">此模型的参考费用较高；提示供选择参考，不影响保存和生成。</p>
       </section>
 
       <section v-if="routing.failed_action" class="retry-receipt">
@@ -197,7 +195,6 @@ const model = ref('')
 const manualModel = ref('')
 const previsMode = ref('auto')
 const search = ref('')
-const confirmExpensive = ref(false)
 
 const options = computed(() => Array.isArray(props.routing?.catalog?.options) ? props.routing.catalog.options : [])
 const selectedOption = computed(() => options.value.find((option) => option.model === model.value)
@@ -241,12 +238,9 @@ const saveHint = computed(() => routeEditDeferred.value
   ? '保存只更新本镜头规则；新分镜确认后才会重建参考包，不会调用视频 API。'
   : '保存后最多生成一个新的参考包草稿；不会自动通过，也不会自动调用视频 API。')
 const saveLabel = computed(() => routeEditDeferred.value ? '保存设置' : '保存并重建参考包')
-const requiresExpensiveConfirmation = computed(() => mode.value === 'fixed'
-  && selectedOption.value?.requires_explicit_confirmation === true)
 const canSubmit = computed(() => {
   if (!props.routing?.shot?.id || props.saving) return false
   if (mode.value === 'fixed' && !model.value.trim()) return false
-  if (requiresExpensiveConfirmation.value && !confirmExpensive.value) return false
   return true
 })
 
@@ -257,20 +251,17 @@ watch(() => [props.modelValue, props.routing], () => {
   manualModel.value = model.value
   previsMode.value = shotVideoPrevisMode(props.routing)
   search.value = ''
-  confirmExpensive.value = false
 }, { immediate: true, deep: true })
 
 function selectModel(option) {
   model.value = option.model
   manualModel.value = option.model
-  confirmExpensive.value = false
 }
 
 function useManualModel() {
   const value = manualModel.value.trim()
   if (!value) return
   model.value = value
-  confirmExpensive.value = false
 }
 
 function submit() {
@@ -279,7 +270,6 @@ function submit() {
     mode: mode.value,
     model: model.value,
     previs_mode: previsMode.value,
-    confirm_expensive: requiresExpensiveConfirmation.value && confirmExpensive.value,
   }))
 }
 

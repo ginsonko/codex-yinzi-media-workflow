@@ -38,6 +38,7 @@ function createDb() {
       submission_receipt_json TEXT,
       provider_task_id TEXT,
       provider_prompt_receipt_json TEXT,
+      contract_validation_receipt_json TEXT,
       task_id TEXT,
       completed_at TEXT,
       error_msg TEXT,
@@ -90,6 +91,64 @@ function insertGeneration(db, patch = {}) {
 }
 
 describe('video delivery recovery', () => {
+  it('uses the saved submitted prompt after restart and falls back for historical records', async () => {
+    const db = createDb();
+    const userPrompt = '角色走向镜头。';
+    const submittedPrompt = `${userPrompt}\n参考素材：@图片1。`;
+    const saved = insertGeneration(db, {
+      prompt: userPrompt, generation_status: 'processing', download_status: 'pending',
+      contract_validation_receipt_json: JSON.stringify({ submitted_prompt: submittedPrompt }),
+      provider_task_id: 'saved-prompt-task',
+    });
+    const historical = insertGeneration(db, {
+      prompt: userPrompt, generation_status: 'processing', download_status: 'pending',
+      provider_task_id: 'historical-prompt-task',
+    });
+    const originalConfig = videoClient.getDefaultVideoConfig;
+    const originalPoll = videoClient.pollVideoTask;
+    const originalCreate = videoClient.callVideoApi;
+    const originalFetch = global.fetch;
+    const captured = [];
+    let creates = 0;
+    videoClient.getDefaultVideoConfig = () => ({
+      provider: 'yinzi', api_protocol: 'yinzi', base_url: 'https://provider.test/v1', api_key: 'test-only',
+    });
+    videoClient.callVideoApi = async () => { creates += 1; throw new Error('must not submit during poll recovery'); };
+    global.fetch = async (url, init) => {
+      assert.ok(!init.method || init.method === 'GET');
+      const body = String(url).includes('/assets/')
+        ? { data: { prompt: submittedPrompt, prompt_truncated: false } }
+        : { status: 'completed', artifacts: [{ id: 'saved-prompt-asset', type: 'video', role: 'primary' }] };
+      return new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    };
+    videoClient.pollVideoTask = async (...args) => {
+      captured.push({ task: args[3], expected: args[7] });
+      if (args[3] === 'saved-prompt-task') {
+        const polled = await originalPoll(...args.slice(0, 5), 1, 0, args[7]);
+        assert.equal(polled.provider_prompt_receipt.status, 'verified');
+        assert.equal(polled.provider_prompt_receipt.submitted_chars, submittedPrompt.length);
+      }
+      // Complete this bounded recovery test without starting a local download.
+      return { error: 'mock terminal result after receipt inspection' };
+    };
+    try {
+      await videoService.resumePollForVideoGeneration(db, log, saved);
+      await videoService.resumePollForVideoGeneration(db, log, historical);
+      assert.deepEqual(captured, [
+        { task: 'saved-prompt-task', expected: submittedPrompt },
+        { task: 'historical-prompt-task', expected: userPrompt },
+      ]);
+      assert.equal(creates, 0);
+      assert.equal(db.prepare('SELECT prompt FROM video_generations WHERE id = ?').get(saved).prompt, userPrompt);
+    } finally {
+      videoClient.getDefaultVideoConfig = originalConfig;
+      videoClient.pollVideoTask = originalPoll;
+      videoClient.callVideoApi = originalCreate;
+      global.fetch = originalFetch;
+      db.close();
+    }
+  });
+
   it('preserves reference evidence through terminal updates but resets it for a new dispatch', () => {
     const db=createDb();
     try {

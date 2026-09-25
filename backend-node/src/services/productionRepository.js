@@ -374,14 +374,6 @@ function updateRun(db, runId, patch, expectedVersion = null) {
           ? (value.max_cost_microusd == null || value.max_cost_microusd === '' ? null : Math.max(0, Math.floor(Number(value.max_cost_microusd))))
           : costLedger.toMicrousd(value.max_cost_usd);
         if (requestedLimit != null && !Number.isFinite(requestedLimit)) throw new Error('任务金额上限必须是非负有限数字');
-        const summary = costLedger.sumRun(db, runId);
-        const committed = summary.settled_microusd + summary.reserved_microusd + summary.uncertain_microusd;
-        if (requestedLimit != null && requestedLimit < committed) {
-          const error = new Error(`任务金额上限不能低于当前已结算、已预留和待对账金额 ${costLedger.fromMicrousd(committed).toFixed(6)} USD`);
-          error.code = 'COST_BUDGET_BELOW_COMMITTED';
-          error.details = { requested_microusd: requestedLimit, committed_microusd: committed };
-          throw error;
-        }
         delete value.max_cost_microusd;
         value.max_cost_usd = requestedLimit == null ? null : costLedger.fromMicrousd(requestedLimit);
       }
@@ -1192,21 +1184,24 @@ function reserveAction(db, input) {
     const current = getRun(db, input.run_id);
     const usage = { video_attempts_reserved: 0, video_seconds_reserved: 0, ...current.usage };
     const budget = current.budget || {};
+    const usageWarnings = [];
     if (isPaidVideo) {
       const attemptsAfter = Number(usage.video_attempts_reserved || 0) + 1;
       const secondsAfter = Number(usage.video_seconds_reserved || 0) + seconds;
       if (attemptsAfter > Number(budget.max_video_attempts || 0)) {
-        const error = new Error('视频提交次数将超过预算'); error.code = 'VIDEO_ATTEMPT_BUDGET'; throw error;
+        usageWarnings.push('video_attempts_above_reference');
       }
       if (secondsAfter > Number(budget.max_video_seconds || 0)) {
-        const error = new Error('视频生成总时长将超过预算'); error.code = 'VIDEO_SECONDS_BUDGET'; throw error;
+        usageWarnings.push('video_seconds_above_reference');
       }
       usage.video_attempts_reserved = attemptsAfter;
       usage.video_seconds_reserved = secondsAfter;
       updateRun(db, input.run_id, { usage });
     }
     const timestamp = nowIso();
-    const request = input.request || {};
+    const request = { ...(input.request || {}), ...(usageWarnings.length ? {
+      usage_budget_diagnostics: { policy: 'advisory', warnings: usageWarnings },
+    } : {}) };
     const info = db.prepare(
       `INSERT INTO production_actions (
         run_id, action_key, stage, scope_type, scope_id, kind, status, attempt,
@@ -1237,7 +1232,7 @@ function reserveAction(db, input) {
     }
     appendEvent(db, input.run_id, 'action.reserved', {
       stage: input.stage, scope_type: input.scope_type, scope_id: input.scope_id,
-      payload: { action_id: actionId, action_key: input.action_key, kind: input.kind, reserved_video_seconds: seconds },
+      payload: { action_id: actionId, action_key: input.action_key, kind: input.kind, reserved_video_seconds: seconds, usage_budget_warnings: usageWarnings },
     });
     return toAction(db.prepare('SELECT * FROM production_actions WHERE id = ?').get(actionId));
   });
@@ -1331,15 +1326,11 @@ function reserveFallbackBudget(db, runId, input = {}) {
     const costs = costLedger.sumRun(db, runId);
     const existing = Math.max(0, Number(runtime.fallback_reserved_microusd) || 0);
     const committed = costs.reserved_microusd + costs.settled_microusd + costs.uncertain_microusd + existing;
-    if (limit != null && committed + amount > limit) {
-      const error = new Error('视频降级最坏成本预留将超过任务金额上限');
-      error.code = 'COST_FALLBACK_BUDGET_EXHAUSTED';
-      error.details = { limit_microusd: limit, committed_microusd: committed, requested_microusd: amount };
-      throw error;
-    }
     const reservation = {
       key,
       amount_microusd: amount,
+      cost_policy: 'advisory',
+      warnings: limit != null && committed + amount > limit ? ['estimate_above_reference'] : [],
       remaining_microusd: amount,
       reason: String(input.reason || 'seedance_fallback_worst_case').slice(0, 240),
       created_at: nowIso(),
@@ -1371,16 +1362,11 @@ function consumeFallbackBudget(db, runId, reservationKey, amountMicrousd) {
     const reservation = reservations[key];
     if (!reservation) return { consumed: 0, remaining_microusd: 0, missing: true };
     const remaining = Math.max(0, Number(reservation.remaining_microusd) || 0);
-    if (amount > remaining) {
-      const error = new Error('视频降级子任务超出父镜头预算预留');
-      error.code = 'COST_FALLBACK_SEGMENT_BUDGET_EXHAUSTED';
-      throw error;
-    }
-    const next = remaining - amount;
+    const next = Math.max(0, remaining - amount);
     reservations[key] = { ...reservation, remaining_microusd: next, last_consumed_microusd: amount, updated_at: nowIso() };
     runtime.fallback_budget_reservations = reservations;
     runtime.fallback_reserved_microusd = Math.max(0,
-      (Number(runtime.fallback_reserved_microusd) || 0) - amount);
+      (Number(runtime.fallback_reserved_microusd) || 0) - Math.min(amount, remaining));
     updateRun(db, runId, { runtime });
     appendEvent(db, runId, 'fallback.budget_consumed', {
       stage: 'shot_video', scope_type: 'shot', scope_id: null,
@@ -1702,17 +1688,54 @@ function reconcileAmbiguousAction(db, actionId, patch = {}) {
  */
 function requestAmbiguousRetryStart(db, actionId, patch = {}) {
   const tx = db.transaction(() => {
-    const action = getAction(db, actionId);
+    let action = getAction(db, actionId);
     if (!action) return null;
+    const sourceAction = action;
+    const requestKey = String(patch.request_key || patch.retry_request_key || '').trim();
+    if (requestKey) {
+      const prior = db.prepare(`SELECT id,payload_json FROM production_events
+        WHERE run_id=? AND event_type='action.retry_request_recorded'
+          AND json_extract(payload_json,'$.request_key')=? ORDER BY id ASC LIMIT 1`)
+        .get(action.run_id, requestKey);
+      if (prior) {
+        const receipt = parseJson(prior.payload_json);
+        if (Number(receipt.source_action_id) !== Number(sourceAction.id)) {
+          throw Object.assign(new Error('同一重新生成请求标识不能绑定另一条原任务'), { code: 'RETRY_REQUEST_IDENTITY_CONFLICT' });
+        }
+        return { action: getAction(db, receipt.target_action_id), reused: true, newer_action: null,
+          retry_request: { ...receipt, event_id: prior.id }, request_replayed: true };
+      }
+      // The historical output identifies a logical scope. A fresh click uses
+      // that scope's latest execution, with its current model and inputs.
+      action = toAction(db.prepare(`SELECT * FROM production_actions
+        WHERE run_id=? AND stage=? AND kind=?
+          AND IFNULL(scope_type,'')=IFNULL(?,'') AND IFNULL(scope_id,'')=IFNULL(?,'')
+          AND IFNULL(segment_index,0)=IFNULL(?,0)
+        ORDER BY id DESC LIMIT 1`)
+        .get(action.run_id, action.stage, action.kind, action.scope_type, action.scope_id, action.segment_index)) || action;
+      const started = requestAmbiguousRetryStart(db, action.id, { ...patch, request_key: null, retry_request_key: null });
+      const target = started.newer_action || started.action;
+      const receipt = { request_key: requestKey, source_action_id: sourceAction.id,
+        target_action_id: target.id, stage: target.stage, scope_type: target.scope_type, scope_id: target.scope_id,
+        requested_at: patch.requested_at || nowIso(), paid_submission: false,
+        already_pending: started.reused === true && !started.newer_action };
+      const eventId = appendEvent(db, action.run_id, 'action.retry_request_recorded', {
+        stage: target.stage, scope_type: target.scope_type, scope_id: target.scope_id, payload: receipt,
+      });
+      return { ...started, action: target, newer_action: null, reused: false,
+        retry_request: { ...receipt, event_id: eventId }, request_replayed: false };
+    }
 
     const newer = toAction(db.prepare(
       `SELECT * FROM production_actions
        WHERE run_id = ? AND stage = ? AND kind = ?
          AND IFNULL(scope_type, '') = IFNULL(?, '')
          AND IFNULL(scope_id, '') = IFNULL(?, '')
+         AND IFNULL(parent_action_id, 0) = IFNULL(?, 0)
+         AND IFNULL(segment_index, 0) = IFNULL(?, 0)
          AND id > ?
        ORDER BY id DESC LIMIT 1`
-    ).get(action.run_id, action.stage, action.kind, action.scope_type, action.scope_id, action.id));
+    ).get(action.run_id, action.stage, action.kind, action.scope_type, action.scope_id, action.parent_action_id, action.segment_index, action.id));
     if (newer) return { action, reused: true, newer_action: newer };
     if (action.result?.retry_start_requested_at) return { action, reused: true, newer_action: null };
 
@@ -1729,8 +1752,29 @@ function requestAmbiguousRetryStart(db, actionId, patch = {}) {
         retry_start_reason: String(patch.reason || '用户明确确认创建一次新尝试').slice(0, 500),
       },
     });
+    if (action.parent_action_id && action.segment_index
+      && getAction(db, action.parent_action_id)?.kind === 'video_execution_parent') {
+      // Later segments inherit the earlier segment's tail frame. Rebuilding
+      // one segment also rebuilds its dependent suffix without discarding any
+      // original generation or pretending that its charge was refunded.
+      const dependentSegments = db.prepare(`SELECT * FROM production_actions
+        WHERE parent_action_id=? AND kind='video_generate' AND segment_index>?
+          AND id IN (SELECT MAX(id) FROM production_actions WHERE parent_action_id=? AND kind='video_generate' GROUP BY segment_index)`)
+        .all(action.parent_action_id, action.segment_index, action.parent_action_id).map(toAction);
+      for (const dependent of dependentSegments) {
+        if (dependent.result?.retry_start_requested_at) continue;
+        updateAction(db, dependent.id, { status: 'cancelled', result: {
+          ...(dependent.result || {}), retry_authorized: true,
+          retry_start_requested_at: requestedAt,
+          retry_start_reason: '上游执行片段重新生成，沿新尾帧重建后续片段',
+          retry_of_upstream_action_id: action.id,
+          previous_status: dependent.status,
+          previous_external_outcome: dependent.external_outcome,
+        } });
+      }
+    }
     // Preserve the old media and receipts, but make its output no longer current.
-    const artifacts = db.prepare("SELECT id FROM production_artifacts WHERE source_action_id=? AND deleted_at IS NULL AND status NOT IN ('superseded','invalidated')").all(action.id);
+    const artifacts = db.prepare("SELECT id FROM production_artifacts WHERE source_action_id IN (?,?) AND deleted_at IS NULL AND status NOT IN ('superseded','invalidated')").all(action.id, action.parent_action_id || action.id);
     for (const artifact of artifacts) {
       db.prepare("UPDATE production_artifacts SET status='invalidated',updated_at=? WHERE id=?").run(requestedAt,artifact.id);
       invalidateDownstream(db, artifact.id, 'explicit_action_retry');

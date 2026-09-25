@@ -279,7 +279,7 @@ function createMediaBatchService(db, log = console, injected = {}) {
         // the batch pump with a missing-table error.
         if (task?.status === 'failed') {
           db.prepare("UPDATE media_batch_items SET status = 'needs_review', error_code = 'INTERRUPTED_RESULT_UNKNOWN', error_message = ?, retryable = 0, completed_at = ?, updated_at = ? WHERE id = ? AND status IN ('submitting','processing')")
-            .run(String(task.error || '服务中断后无法确认上游结果，请先核对任务和账单').slice(0, 500), now(), now(), item.id);
+            .run(String(task.error || '服务中断后无法确认上游结果，可核对原任务或直接重新生成；原记录和未知费用保留').slice(0, 500), now(), now(), item.id);
         }
       }
       return;

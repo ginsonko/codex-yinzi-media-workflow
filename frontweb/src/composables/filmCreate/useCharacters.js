@@ -333,16 +333,19 @@ export function useCharacters(deps) {
   }
 
   async function onGenerateCharacterImage(char) {
+    const meta = { ...buildCharImageMeta(char), submitting: true }
+    if (genStore.isSubmitting(meta)) return
     char.errorMsg = ''
     char.error_msg = ''
-    const meta = buildCharImageMeta(char)
     generatingCharIds.add(char.id)
     genStore.markRunning(meta)
     try {
       const res = await characterAPI.generateImage(char.id, undefined, getSelectedStyle())
+      genStore.finishSubmission(meta)
       const taskId = res?.image_generation?.task_id ?? res?.task_id
       if (taskId) {
         const pollRes = await pollTask(taskId, () => loadDrama(), meta)
+        if (!genStore.isCurrentAttempt(meta)) return
         if (pollRes?.status === 'failed') {
           char.errorMsg = pollRes.error || '生成失败'
         } else {
@@ -358,12 +361,15 @@ export function useCharacters(deps) {
         ElMessage.success('角色图片已生成')
       }
     } catch (e) {
+      genStore.markFailed(meta, e.message || '提交失败')
+      if (!genStore.isCurrentAttempt(meta)) return
       console.error(e)
       char.errorMsg = e.message || '生成失败'
       ElMessage.error(e.message || '提交失败')
     } finally {
-      generatingCharIds.delete(char.id)
-      genStore.markDone(meta)
+      genStore.finishSubmission(meta)
+      if (genStore.isCurrentAttempt(meta)) generatingCharIds.delete(char.id)
+      if (!meta.taskId && genStore.isRunning(meta)) genStore.markDone(meta)
     }
   }
 

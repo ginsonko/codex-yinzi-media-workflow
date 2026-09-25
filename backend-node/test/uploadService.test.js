@@ -40,3 +40,19 @@ test('different upload contents receive different content-addressed paths', () =
     fs.rmSync(storage, { recursive: true, force: true });
   }
 });
+
+test('recognized upload bytes determine the stored extension and deduplicate across misleading names', () => {
+  const storage = fs.mkdtempSync(path.join(os.tmpdir(), 'yinzi-upload-format-'));
+  try {
+    const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jf1kAAAAASUVORK5CYII=', 'base64');
+    const first = uploadService.uploadFile(storage, '', log, png, 'image.jpg', 'image/jpeg', 'references');
+    const second = uploadService.uploadFile(storage, '', log, png, 'upload.bin', 'application/octet-stream', 'references');
+    assert.equal(first.mime_type, 'image/png');
+    assert.match(first.local_path, /\.png$/);
+    assert.equal(second.local_path, first.local_path);
+    assert.equal(second.deduplicated, true);
+    assert.deepEqual(fs.readFileSync(path.join(storage, first.local_path)), png);
+  } finally {
+    fs.rmSync(storage, { recursive: true, force: true });
+  }
+});

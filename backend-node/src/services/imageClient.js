@@ -1,11 +1,13 @@
 // 与 Go pkg/image + ImageGenerationService 对齐：调用图片生成 API，更新 image_generations 与角色头像
 const fs = require('fs');
 const path = require('path');
+const { localReferencePath, importGenerationReferences } = require('./localMediaReference');
 const crypto = require('crypto');
 const aiConfigService = require('./aiConfigService');
 const uploadService = require('./uploadService');
 const storageLayout = require('./storageLayout');
 const taskService = require('./taskService');
+const { isLatestImageAttempt } = require('./imageAttemptOwnership');
 const { loadConfig } = require('../config');
 const { postJSONWithTimeout } = require('./aiClient');
 const seedance2AssetGuards = require('../utils/seedance2AssetGuards');
@@ -164,17 +166,8 @@ function getDefaultImageConfig(db, preferredModel, preferredProvider, imageServi
       ? aiConfigService.getConfig(db, configId)
       : null;
     if (!config) throw new Error(`图片配置 ${explicitConfigId} 不存在，已停止生成以避免误用其它 Key`);
-    if (!config.is_active) throw new Error(`图片配置 ${configId} 已停用，已停止生成以避免误用其它 Key`);
-    if (config.service_type !== serviceType) {
-      throw new Error(`图片配置 ${configId} 类型为 ${config.service_type}，不能用于 ${serviceType}`);
-    }
-    const models = Array.isArray(config.model) ? config.model : (config.model != null ? [config.model] : []);
-    if (preferredModel && !models.includes(preferredModel)) {
-      throw new Error(`图片配置 ${configId} 不包含任务锁定模型 ${preferredModel}`);
-    }
-    if (preferredProvider && String(config.provider || '').toLowerCase() !== String(preferredProvider).trim().toLowerCase()) {
-      throw new Error(`图片配置 ${configId} 与任务锁定供应商 ${preferredProvider} 不一致`);
-    }
+    // An explicit selection binds this connection. Discovery labels and the
+    // automatic-routing enabled flag cannot veto a direct user request.
     return config;
   }
   let configs = aiConfigService.listConfigs(db, serviceType);
@@ -210,7 +203,7 @@ function buildImageUrl(config) {
 
 function getModelFromConfig(config, preferredModel) {
   const models = Array.isArray(config.model) ? config.model : (config.model != null ? [config.model] : []);
-  if (preferredModel && models.includes(preferredModel)) return preferredModel;
+  if (preferredModel && String(preferredModel).trim()) return String(preferredModel).trim();
   if (config.default_model && models.includes(config.default_model)) return config.default_model;
   return models[0] || 'dall-e-3';
 }
@@ -887,44 +880,17 @@ function qwenImageSize(size) {
  */
 function resolveImageRef(value, filesBaseUrl, storageLocalPath) {
   if (!value || !String(value).trim()) return null;
-  const s = String(value).trim();
-  const baseUrl = (filesBaseUrl || '').replace(/\/$/, '');
-  // isLocalhost: 只要 URL 本身或配置的 base_url 含 localhost/127，都视为本地
-  const isLocalhostUrl = /localhost|127\.0\.0\.1/i.test(s);
-  const isLocalhostBase = baseUrl && /localhost|127\.0\.0\.1/i.test(baseUrl);
-  const isLocalhost = isLocalhostUrl || isLocalhostBase;
-
-  function toPublicUrl(v) {
-    if (!v || !String(v).trim()) return null;
-    const sv = String(v).trim();
-    if (sv.startsWith('http://') || sv.startsWith('https://')) return sv;
-    if (baseUrl) return baseUrl + '/' + sv.replace(/^\//, '');
-    return sv;
+  const raw = String(value).trim();
+  if (/^data:/i.test(raw)) return raw;
+  const local = localReferencePath(raw, storageLocalPath);
+  if (local) {
+    const bytes = fs.readFileSync(local);
+    const mime = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.bmp': 'image/bmp' }[path.extname(local).toLowerCase()] || 'image/png';
+    return `data:${mime};base64,${bytes.toString('base64')}`;
   }
-
-  let relPath = null;
-  if (s.startsWith('http://') || s.startsWith('https://')) {
-    if (!isLocalhost || !storageLocalPath) return s;
-    // 从 URL 中提取 /static/ 之后的相对路径；或去掉 baseUrl 前缀
-    const afterStatic = s.split('/static/')[1]
-      || (baseUrl ? s.replace(baseUrl + '/', '').replace(baseUrl, '') : null)
-      || s.replace(/^https?:\/\/[^/]+\//, '');
-    if (afterStatic) relPath = afterStatic.replace(/^\//, '');
-    else return s;
-  } else if (storageLocalPath) {
-    relPath = s.replace(/^\//, '');
-  }
-  if (!relPath) return toPublicUrl(s);
-  const filePath = path.join(storageLocalPath, relPath);
-  try {
-    if (!fs.existsSync(filePath)) return toPublicUrl(s);
-    const buf = fs.readFileSync(filePath);
-    const ext = path.extname(filePath).toLowerCase();
-    const mime = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.bmp': 'image/bmp' }[ext] || 'image/png';
-    return 'data:' + mime + ';base64,' + buf.toString('base64');
-  } catch (e) {
-    return toPublicUrl(s);
-  }
+  if (/^https?:\/\//i.test(raw)) return raw;
+  const base = String(filesBaseUrl || '').replace(/\/$/, '');
+  return base ? `${base}/${raw.replace(/^\//, '')}` : raw;
 }
 
 // 通义万象：支持参考图（角色/场景），content 为 [text, image, image, ...]；本地调试时参考图可转 base64
@@ -1473,6 +1439,7 @@ async function callGeminiImageApi(db, config, log, opts) {
  * @returns {Promise<{ image_url?: string, error?: string }>}
  */
 async function callImageApi(db, log, opts) {
+  opts = importGenerationReferences(opts);
   const {
     prompt,
     model: preferredModel,
@@ -1783,12 +1750,12 @@ function createAndGenerateImage(db, log, opts) {
           'UPDATE image_generations SET status = ?, error_msg = ?, updated_at = ? WHERE id = ?'
         ).run('failed', result.error, now2, imageGenId);
         taskService.updateTaskError(db, taskId, result.error);
-        if (charIdNum != null) {
+        if (charIdNum != null && isLatestImageAttempt(db, imageGenId, { kind: 'character', id: charIdNum })) {
           try {
             db.prepare('UPDATE characters SET error_msg = ?, updated_at = ? WHERE id = ?').run(result.error, now2, charIdNum);
           } catch (_) {}
         }
-        if (sceneIdNum != null) {
+        if (sceneIdNum != null && isLatestImageAttempt(db, imageGenId, { kind: 'scene', id: sceneIdNum })) {
           try {
             db.prepare('UPDATE scenes SET error_msg = ?, updated_at = ? WHERE id = ?').run(result.error, now2, sceneIdNum);
           } catch (_) {}
@@ -1829,7 +1796,7 @@ function createAndGenerateImage(db, log, opts) {
         }
       }
       taskService.updateTaskResult(db, taskId, { image_generation_id: imageGenId, image_url: result.image_url, local_path: localPath, status: 'completed' });
-      if (charIdNum != null) {
+      if (charIdNum != null && isLatestImageAttempt(db, imageGenId, { kind: 'character', id: charIdNum })) {
         try {
           // 旧图追加到 extra_images，与上传逻辑保持一致
           const oldChar = db
@@ -1859,9 +1826,10 @@ function createAndGenerateImage(db, log, opts) {
             throw e;
           }
         }
+        try { db.prepare('UPDATE characters SET error_msg = NULL WHERE id = ?').run(charIdNum); } catch (_) {}
         log.info('Character image updated', { character_id: charIdNum, image_url: result.image_url, local_path: localPath });
       }
-      if (sceneIdNum != null) {
+      if (sceneIdNum != null && isLatestImageAttempt(db, imageGenId, { kind: 'scene', id: sceneIdNum })) {
         try {
           // 旧图追加到 extra_images，与上传逻辑保持一致
           const oldScene = db.prepare('SELECT local_path, image_url, extra_images FROM scenes WHERE id = ?').get(sceneIdNum);
@@ -1885,6 +1853,7 @@ function createAndGenerateImage(db, log, opts) {
             throw e;
           }
         }
+        try { db.prepare('UPDATE scenes SET error_msg = NULL WHERE id = ?').run(sceneIdNum); } catch (_) {}
         log.info('Scene image updated', { scene_id: sceneIdNum, image_url: result.image_url, local_path: localPath });
       }
       log.info('Image generation completed', { image_gen_id: imageGenId, local_path: localPath });
@@ -1903,12 +1872,12 @@ function createAndGenerateImage(db, log, opts) {
       } catch (e) {
         log.error('Image generation: failed to update task status', { task_id: taskId, error: e.message });
       }
-      if (charIdNum != null) {
+      if (charIdNum != null && isLatestImageAttempt(db, imageGenId, { kind: 'character', id: charIdNum })) {
         try {
           db.prepare('UPDATE characters SET error_msg = ?, updated_at = ? WHERE id = ?').run(errMsg, now2, charIdNum);
         } catch (_) {}
       }
-      if (sceneIdNum != null) {
+      if (sceneIdNum != null && isLatestImageAttempt(db, imageGenId, { kind: 'scene', id: sceneIdNum })) {
         try {
           db.prepare('UPDATE scenes SET error_msg = ?, updated_at = ? WHERE id = ?').run(errMsg, now2, sceneIdNum);
         } catch (_) {}
@@ -2001,6 +1970,7 @@ function refListHasCanonical(list, ref) {
 
 module.exports = {
   getDefaultImageConfig,
+  resolveImageRef,
   callImageApi,
   createAndGenerateImage,
   resolveAssetUserNegativeForApi,

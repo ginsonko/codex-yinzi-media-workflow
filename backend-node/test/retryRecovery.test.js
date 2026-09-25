@@ -85,10 +85,32 @@ test('image unknown outcome is retained but does not block explicit retry',()=>{
 test('same request is idempotent and deliberate retry requires fresh request identity',()=>{
   const id=setup();reserve(id);
   assert.equal(reserve(id).reserved,false);
-  assert.throws(()=>reserve(id,'different'),{code:'REQUEST_HASH_CONFLICT'});
-  service.retryNode(id,'work');
-  assert.throws(()=>reserve(id),{code:'REQUEST_HASH_RETIRED'});
+  assert.equal(reserve(id,'different').reserved,true);
+  assert.equal(service.listNodes(id)[0].attempt,2);
+  const historical=reserve(id);
+  assert.equal(historical.reserved,false);
+  assert.equal(historical.historical_attempt,true);
+  assert.equal(historical.node.attempt,1);
+  assert.equal(service.listNodes(id)[0].request_hash,'different');
   assert.equal(reserve(id,'request-two').reserved,true);
+});
+
+test('same transport identity cannot mutate payload while a fresh identity submits directly',()=>{
+  const id=setup();reserve(id,'first',{idempotency_key:'same-transport'});
+  assert.throws(()=>reserve(id,'changed',{idempotency_key:'same-transport'}),{code:'REQUEST_IDENTITY_CONFLICT'});
+  assert.equal(reserve(id,'fresh',{idempotency_key:'new-generation'}).reserved,true);
+  assert.throws(()=>reserve(id,'historical-content-changed',{idempotency_key:'same-transport'}),{code:'REQUEST_IDENTITY_CONFLICT'});
+  assert.equal(service.listNodes(id)[0].attempt,2);
+});
+
+for(const status of ['pending','running','succeeded','failed','cancelled','skipped']) test(`explicit new reservation works directly from ${status}`,()=>{
+  const id=setup();
+  service.updateNode(id,'work',{status});
+  service.pauseSession(id);
+  const result=reserve(id,'new-explicit-request');
+  assert.equal(result.reserved,true);
+  assert.equal(result.node.status,'running');
+  assert.equal(service.getBundle(id).session.status,'running');
 });
 test('old callback cannot overwrite new attempt before or after a fresh reservation',()=>{
   const id=setup();reserve(id);generation('request-one','ambiguous');
@@ -102,6 +124,12 @@ test('old callback cannot overwrite new attempt before or after a fresh reservat
   const before=service.listNodes(id)[0];
   assert.equal(service.updateNode(id,'work',{request_hash:'request-one',status:'succeeded'}).ignored,true);
   assert.equal(service.updateNode(id,'work',{expected_attempt:1,status:'failed'}).ignored,true);
+  service.updateNode(id,'work',{request_hash:'request-one',expected_attempt:1,output_refs:[{type:'image_generation',id:'41'}],progress:{correlation_id:'old-task'}});
+  const late = service.listEvents(id).filter(e=>e.event_type==='node.late_attempt_result').at(-1);
+  assert.equal(late.payload.request_hash,'request-one');
+  assert.equal(late.payload.attempt,1);
+  assert.equal(late.payload.output_refs[0].id,'41');
+  assert.equal(late.payload.progress.correlation_id,'old-task');
   assert.deepEqual(service.listNodes(id)[0],before);
   assert.equal(service.actOnNode(id,'work','complete',{request_hash:'request-two',expected_attempt:2}).node.status,'succeeded');
 });

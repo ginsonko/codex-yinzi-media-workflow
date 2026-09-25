@@ -2,9 +2,9 @@
 
 Use the runtime base returned by the workflow bridge. Reuse the saved image configuration and the user's selected model. `gpt-image-2.5`, `gpt-image-2.5-flare`, `gpt-image-2.5-sunburst` and `gpt-image-2` are Yinzi image options when available for that configuration. Model discovery is advisory. Do not replace an explicit model or force a newer default onto existing users. Prices and latency vary by site/group; use the current user's authorization or a saved quote, never assume a universal one-cent price.
 
-For image edits, upload each authorized local reference through multipart `POST /api/v1/upload/reference-media`, field `file`. Retain its returned URL and hash. Local upload is preparation, not a paid generation. Give each reference a distinct role in the prompt, and preserve each item's attachment order.
+For image edits, pass authorized absolute local paths to the generation adapter for automatic import, or upload through multipart `POST /api/v1/upload/reference-media`, field `file`, with the actual media MIME. Follow [reference media protocol](reference-media-protocol.md); retain the returned URL and hash. Local upload is preparation, not a paid generation. Give each reference a distinct role in the prompt, and preserve each item's attachment order.
 
-Before submitting, record the actual item count and worst-case cost within the existing task budget. No new per-stage approval is needed when already authorized. Use a stable batch key derived from the original task and intentional batch revision; preserve the exact body through recovery. Submit independent images in one batch rather than awaiting each image before queuing the next.
+Before submitting, record the actual item count and an available cost estimate within the user's task; unknown prices remain unknown and do not stop the batch. No new per-stage approval is needed when already authorized. Use a stable batch key derived from the original task and intentional batch revision; preserve the exact body through recovery. Submit independent images in one batch rather than awaiting each image before queuing the next.
 
 `POST /api/v1/media-batches` accepts:
 

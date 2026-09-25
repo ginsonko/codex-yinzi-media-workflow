@@ -4,6 +4,7 @@ const path = require('path');
 const https = require('https');
 const http = require('http');
 const { createHash, randomUUID } = require('crypto');
+const { uploadMetadata } = require('../utils/uploadMetadata');
 
 /**
  * 用 Node.js 原生 http/https 模块下载 URL 到 Buffer。
@@ -67,8 +68,8 @@ function resolveCategoryPaths(storagePath, category, projectSubdir) {
 function uploadFile(storagePath, baseUrl, log, fileBuffer, originalName, mimeType, category, projectSubdir = null) {
   const { dir: categoryPath, relPrefix } = resolveCategoryPaths(storagePath, category, projectSubdir);
   ensureDir(categoryPath);
-  const rawExt = path.extname(originalName || '').toLowerCase();
-  const ext = /^\.[a-z0-9]{1,10}$/.test(rawExt) ? rawExt : '.bin';
+  const metadata = uploadMetadata(fileBuffer, originalName, mimeType);
+  const ext = '.' + metadata.extension;
   const sha256 = createHash('sha256').update(fileBuffer).digest('hex');
   const name = `${sha256}${ext}`;
   const filePath = path.join(categoryPath, name);
@@ -100,7 +101,7 @@ function uploadFile(storagePath, baseUrl, log, fileBuffer, originalName, mimeTyp
   const relativePath = `${relPrefix}/${name}`.replace(/\\/g, '/');
   const url = baseUrl ? `${baseUrl.replace(/\/$/, '')}/${relativePath}` : `/static/${relativePath}`;
   log.info('File uploaded', { path: filePath, url, sha256, deduplicated });
-  return { url, local_path: relativePath, sha256, deduplicated };
+  return { url, local_path: relativePath, sha256, deduplicated, mime_type: metadata.mime };
 }
 
 /**

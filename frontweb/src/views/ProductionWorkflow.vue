@@ -509,6 +509,11 @@
           <template #default>
             <span>可以停止本页等待，不影响后台生成；如需请求供应商取消，请展开操作。</span>
             <el-button link type="primary" :loading="actionCancelling" @click="cancelCurrentAction">停止当前请求</el-button>
+            <el-button link type="primary" :loading="regeneratingActionId === activeProviderAction.id" @click="regenerateAction(activeProviderAction)">重新生成一次</el-button>
+            <div v-if="hasPendingRegeneration(activeProviderAction.id) && regeneratingActionId === null" class="pending-regeneration-note" role="status">
+              <p>上次重新生成尚未收到回执。再次点击会恢复原请求；也可直接新建一次。原任务和费用记录仍保留。</p>
+              <el-button plain @click="regenerateAction(activeProviderAction, true)">直接新建一次</el-button>
+            </div>
           </template>
         </el-alert>
 
@@ -716,6 +721,11 @@
                 <a :href="mediaUrl(artifact.media_path)" download>
                   <el-icon><Download /></el-icon>下载文件
                 </a>
+                <el-button v-if="artifact.source_action_id && ['asset_images', 'storyboard_images', 'shot_video'].includes(artifact.stage)" link type="primary" :loading="regeneratingActionId === artifact.source_action_id" @click="regenerateAction({ id: artifact.source_action_id })">重新生成一次</el-button>
+                <div v-if="hasPendingRegeneration(artifact.source_action_id) && regeneratingActionId === null" class="pending-regeneration-note" role="status">
+                  <p>上次重新生成尚未收到回执。再次点击会恢复原请求；也可直接新建一次。原任务和费用记录仍保留。</p>
+                  <el-button plain @click="regenerateAction({ id: artifact.source_action_id }, true)">直接新建一次</el-button>
+                </div>
                 <template v-if="isImageArtifact(artifact) && !isUnattendedMode && !isViewingHistory">
                   <el-select v-model="privacyMode" size="small" aria-label="隐私派生模式" style="width: 170px">
                     <el-option label="灰度 + 随机绕线" value="line_grayscale" />
@@ -1116,7 +1126,7 @@
             </div>
             <div>
               <label>视频分组</label>
-              <el-select v-model="settingsDraft.video_group" filterable allow-create default-first-option placeholder="选择或手动输入视频分组" @change="projectExpensiveConfirmed = false">
+              <el-select v-model="settingsDraft.video_group" filterable allow-create default-first-option placeholder="选择或手动输入视频分组">
                 <el-option v-for="group in projectVideoGroups" :key="group" :label="group" :value="group" />
               </el-select>
             </div>
@@ -1133,7 +1143,7 @@
 
           <div class="project-routing-mode">
             <label>项目默认选模方式</label>
-            <el-radio-group v-model="settingsDraft.video_routing_mode" @change="projectExpensiveConfirmed = false">
+            <el-radio-group v-model="settingsDraft.video_routing_mode">
               <el-radio-button value="auto">按镜头自动选择</el-radio-button>
               <el-radio-button value="fixed">固定一个模型</el-radio-button>
             </el-radio-group>
@@ -1143,7 +1153,7 @@
 
           <div v-if="settingsDraft.video_routing_mode === 'fixed'" class="fixed-video-model">
             <label>项目固定模型</label>
-            <el-select v-model="settingsDraft.video_model" filterable allow-create default-first-option placeholder="从目录选择或手动输入模型名" @change="projectExpensiveConfirmed = false">
+            <el-select v-model="settingsDraft.video_model" filterable allow-create default-first-option placeholder="从目录选择或手动输入模型名">
               <el-option
                 v-for="option in projectVideoModelOptions"
                 :key="option.model"
@@ -1157,9 +1167,7 @@
             </div>
             <el-alert v-if="projectSelectedVideoOption?.warnings?.length" type="warning" :closable="false" show-icon :title="modelWarnings(projectSelectedVideoOption).join('；')" />
             <el-alert v-else-if="settingsDraft.video_model && !projectSelectedVideoOption" type="warning" :closable="false" show-icon title="模型能力尚未从当前 Key 目录确认，仍可保存并在提交时由上游校验。" />
-            <el-checkbox v-if="projectSelectedVideoOption?.requires_explicit_confirmation" v-model="projectExpensiveConfirmed">
-              我已确认这是高价破甲模型，并接受目录显示的价格
-            </el-checkbox>
+            <p v-if="projectSelectedVideoOption?.requires_explicit_confirmation">此模型参考费用较高；费用提示不会阻止选择和生成。</p>
             <div class="model-contract-actions">
               <el-button link type="primary" :loading="videoCatalogLoading" @click="refreshSelectedVideoCatalog">同步当前 Key 模型与能力提示</el-button>
               <el-button link type="primary" @click="router.push({ name: 'advanced-settings', query: { tab: 'prices', model: settingsDraft.video_model || '' } })">编辑价格/契约提示</el-button>
@@ -1170,7 +1178,7 @@
             <div><label>每镜自动尝试上限</label><el-input-number v-model="settingsDraft.max_video_attempts_per_shot" :min="1" :max="20" /></div>
             <div><label>全片视频任务上限</label><el-input-number v-model="settingsDraft.max_video_attempts" :min="1" :max="120" /></div>
           </div>
-          <el-alert type="info" :closable="false" show-icon title="目录和能力提示只用于自动建议与费用预估；手动选中的任意模型都会按原名提交。上游若拒绝，会保留原始原因和参考包，供你调整后重试。高价破甲模型仍需单独确认价格。" />
+          <el-alert type="info" :closable="false" show-icon title="目录和能力提示只用于自动建议与费用预估；手动选中的任意模型都会按原名提交。上游若拒绝，会保留原始原因和参考包，供你调整后重试。费用未知或较高均不要求额外确认。" />
         </section>
         <div class="settings-grid">
           <div><label>目标镜头</label><el-input-number v-model="settingsDraft.target_shots" :min="1" :max="999" /></div>
@@ -1181,9 +1189,9 @@
           <div><label>导演方案/预演返工上限</label><el-input-number v-model="settingsDraft.max_director_revisions" :min="1" :max="20" /></div>
           <div><label>自动故障恢复上限</label><el-input-number v-model="settingsDraft.max_auto_recoveries" :min="1" :max="20" /></div>
           <div class="run-budget-setting">
-            <label>本任务金额上限（USD）</label>
+            <label>本任务参考费用（USD）</label>
             <el-input-number v-model="settingsDraft.max_cost_usd" :min="0" :max="1000000" :precision="6" :step="0.1" controls-position="right" placeholder="不限额" />
-            <small>留空表示不限额；不能低于当前已结算、预留和待对账金额。</small>
+            <small>可留空；仅用于费用提示，不因未知报价或高于参考金额拦截执行。</small>
           </div>
           <div class="run-aspect-lock">
             <label>任务画幅</label>
@@ -1192,7 +1200,7 @@
             <small v-else>分镜图、3D 摄影机、预演录制和视频请求共同使用此画幅。</small>
           </div>
         </div>
-        <el-checkbox v-model="settingsDraft.allow_unknown_price">允许本任务使用未定价模型（费用会标记为未定价，不会伪装成 0 元）</el-checkbox>
+        <p class="muted">未定价模型照常提交，费用标记为未知，不会显示成免费。</p>
         <el-checkbox v-model="settingsDraft.manual_next_default">之后默认手动添加下一阶段</el-checkbox>
         <label>AI 审批模型</label>
         <el-select v-model="settingsDraft.review_model" filterable allow-create clearable default-first-option placeholder="留空时使用默认文本模型">
@@ -1505,6 +1513,8 @@ const drafts = reactive({})
 const dirtyArtifacts = reactive(new Set())
 const reviewReasons = reactive({})
 const retryReason = ref('')
+const regeneratingActionId = ref(null)
+const regenerationRequests = reactive(new Map())
 const ambiguousRecoveryBusy = ref(false)
 const directorRecoveryBusy = ref(false)
 const ambiguousRecoveryResult = ref(null)
@@ -1514,7 +1524,6 @@ const historyVisible = ref(false)
 const pendingRunSelection = ref(null)
 const settingsVisible = ref(false)
 const settingsSaving = ref(false)
-const projectExpensiveConfirmed = ref(false)
 const revisionsVisible = ref(false)
 const exportVisible = ref(false)
 const settingsDraft = ref(null)
@@ -1767,12 +1776,10 @@ const ambiguousProviderAction = computed(() => selectAmbiguousRecoveryAction(
 const ambiguousRecoveryStage = computed(() => {
   const action = ambiguousProviderAction.value
   if (!action) return 'none'
-  // Updated: Allow direct retry from ambiguous/failed states without requiring
-  // prior reconciliation. User can retry immediately after checking status.
+  // Explicit regeneration is available independently of reconciliation.
   if (action.status === 'cancelled' && action.result?.ambiguous_reconciled === true
     && action.result?.retry_authorized === true) return 'retry_ready'
   if (action.status === 'failed' || action.status === 'ambiguous') {
-    // Direct retry is now available - will show cost confirmation
     return 'retry_ready'
   }
   if (ambiguousRecoveryResult.value?.status === 'still_ambiguous'
@@ -1940,7 +1947,7 @@ const settingsSaveDisabled = computed(() => {
   if (!settingsDraft.value || settingsSaving.value) return true
   if (settingsDraft.value.video_routing_mode !== 'fixed') return false
   if (!String(settingsDraft.value.video_model || '').trim()) return true
-  return projectSelectedVideoOption.value.requires_explicit_confirmation === true && !projectExpensiveConfirmed.value
+  return false
 })
 const shotStrip = computed(() => (runSummary.value?.artifacts || [])
   .filter((item) => item.stage === 'storyboard_plan')
@@ -2508,7 +2515,6 @@ async function refreshSelectedVideoCatalog() {
 
 async function onVideoConfigChange(configId) {
   if (!settingsDraft.value) return
-  projectExpensiveConfirmed.value = false
   settingsDraft.value.video_model = ''
   const loaded = await discoverVideoCatalog(configId, { group: settingsDraft.value.video_group })
   if (!loaded) return
@@ -2956,9 +2962,8 @@ async function retryFailedGeneration() {
   if (!latestFailedAction.value || driving.value) return
   try {
     const action = latestFailedAction.value
-    // A fixed-duration child may already be cancelled with an explicit retry
-    // grant from an earlier click. In that state the runner only needs to be
-    // resumed; authorizing the same terminal action again would be rejected.
+    // The earlier click already requested a replacement for this cancelled
+    // child. Continue driving that replacement instead of duplicating it.
     if (!(action.status === 'cancelled' && action.result?.retry_authorized === true)) {
       await productionAPI.retry(activeRun.value.id, { action_id: action.id, reason })
     }
@@ -2967,6 +2972,35 @@ async function retryFailedGeneration() {
     await driveRun()
   } catch (error) {
     ElMessage.error(error.message || '重试失败')
+  }
+}
+
+function hasPendingRegeneration(actionId) {
+  return Boolean(activeRun.value && actionId && regenerationRequests.has(`${activeRun.value.id}:${actionId}`))
+}
+
+async function regenerateAction(action, fresh = false) {
+  if (!activeRun.value || !action?.id || regeneratingActionId.value !== null) return
+  regeneratingActionId.value = action.id
+  const runId = activeRun.value.id
+  const intentId = `${runId}:${action.id}`
+  if (fresh === true || !regenerationRequests.has(intentId)) regenerationRequests.set(intentId, `regenerate:${crypto.randomUUID()}`)
+  try {
+    await productionAPI.retry(runId, { action_id: action.id, reason: '用户请求重新生成一次', request_key: regenerationRequests.get(intentId) })
+    regenerationRequests.delete(intentId)
+    ElMessage.info('已请求新尝试；旧记录和费用保留，新尝试可能产生费用')
+  } catch (error) {
+    ElMessage.error(error.message || '重新生成请求未完成')
+    return
+  } finally {
+    regeneratingActionId.value = null
+  }
+  if (activeRun.value?.id !== runId) return
+  try {
+    await loadRun(runId)
+    await driveRun()
+  } catch (error) {
+    ElMessage.error(error.message || '新尝试已提交，暂时无法刷新进度')
   }
 }
 
@@ -3900,7 +3934,6 @@ async function openSettings() {
     review_model: activeRun.value.review_profile?.model || '',
     review_skills: Array.isArray(activeRun.value.review_profile?.skills) ? activeRun.value.review_profile.skills.join('\n') : (activeRun.value.review_profile?.skills || ''),
   }
-  projectExpensiveConfirmed.value = false
   settingsVisible.value = true
   if (settingsDraft.value.video_config_id) {
     await discoverVideoCatalog(settingsDraft.value.video_config_id, { group: settingsDraft.value.video_group })
@@ -3927,9 +3960,6 @@ async function saveSettings() {
     }
     if (value.video_routing_mode === 'fixed') {
       if (!String(value.video_model || '').trim()) throw new Error('请先选择或手动输入一个视频模型名')
-      if (projectSelectedVideoOption.value.requires_explicit_confirmation && !projectExpensiveConfirmed.value) {
-        throw new Error('高价破甲模型需要先确认目录价格')
-      }
     }
 
     let baseRun = activeRun.value
@@ -3938,7 +3968,6 @@ async function saveSettings() {
       const routeResult = await productionAPI.updateVideoRouting(runId, buildProjectVideoRoutingPayload(value, {
         shotId: activeRun.value.current_scope_id,
         expectedVersion: activeRun.value.version,
-        confirmExpensive: projectExpensiveConfirmed.value,
       }))
       routeApplied = true
       if (routeResult.summary) runSummary.value = routeResult.summary
@@ -4264,6 +4293,8 @@ onBeforeUnmount(clearPoll)
 </script>
 
 <style scoped>
+.pending-regeneration-note { grid-column: 1 / -1; color: var(--muted); font-size: 12px; line-height: 1.6; }
+.pending-regeneration-note p { margin: 6px 0; }
 .workflow-page { min-height: 100vh; overflow-x: clip; background: #f3f5f6; color: #1e2930; --accent: #16766b; --accent-soft: #e9f4f1; --line: #dbe2e5; --muted: #6f7d85; --el-color-primary: #16766b; --el-color-primary-light-3: #5b9f97; --el-color-primary-light-5: #86bab3; --el-color-primary-light-7: #b8d8d4; --el-color-primary-light-8: #d5e8e5; --el-color-primary-light-9: #ecf5f3; --el-color-primary-dark-2: #125f56; }
 .start-template { margin: 18px 0; padding: 16px; border: 1px solid var(--line); background: #fff; }
 .start-template .section-heading { margin-bottom: 10px; }

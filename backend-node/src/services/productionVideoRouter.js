@@ -162,7 +162,8 @@ function priceForCatalogItem(item, group, duration = null) {
 }
 
 function estimatePrice(price, duration) {
-  if (!price || !Number.isFinite(Number(price.effective_price))) return null;
+  if (!price || price.effective_price == null || price.effective_price === ''
+    || !Number.isFinite(Number(price.effective_price))) return null;
   if (price.billing_unit === 'per_second') {
     if (!Number.isFinite(Number(duration))) return null;
     return Number((Number(price.effective_price) * Number(duration)).toFixed(4));
@@ -354,8 +355,23 @@ function selectShotVideoRoute(input) {
     : String(policy.video_model || '').trim() ? 'fixed' : 'auto';
   const manualModel = shotModelOverride(shot, policy);
   const catalogItems = normalizeCatalog(catalog);
+  const configuredFallbackModel = String(policy.video_model || catalog?.configured_model || '').trim();
+  const advisoryFallback = (model, reason, evaluated = []) => {
+    const route = selectShotVideoRoute({ shot, catalog, policy: { ...policy, video_routing_mode: 'fixed', video_model: model } });
+    const candidate = evaluated.find(item => item.item.model === model);
+    route.automatic = true;
+    route.reason_codes = [...new Set([reason, ...route.reason_codes])];
+    route.contract_warnings = [...new Set([...(route.contract_warnings || []), reason, ...(candidate?.reasons || [])])];
+    route.routing_diagnostics = { policy: 'advisory', configured_model: configuredFallbackModel || null,
+      discovery_outcome: catalog?.discovery_outcome || null,
+      warnings: Array.isArray(catalog?.warnings) ? catalog.warnings : [],
+      candidates: evaluated.map(item => ({ model: item.item.model, reasons: item.reasons })),
+    };
+    return applyRouteSignatures(route);
+  };
   if (routingMode === 'fixed' || manualModel) {
-    const selectedModel = manualModel || policy.video_model;
+    const selectedModel = manualModel || configuredFallbackModel;
+    if (!selectedModel) throw Object.assign(new Error('当前视频连接尚未配置模型，请填写模型名称'), { code: 'VIDEO_MODEL_NOT_CONFIGURED' });
     const catalogItem = catalogItems.find((item) => item.model.toLowerCase() === String(selectedModel || '').toLowerCase());
     const capabilityResolution = catalogItem
       ? capabilityResolutionForCatalogItem(catalogItem)
@@ -401,9 +417,8 @@ function selectShotVideoRoute(input) {
   }
 
   if (!catalogItems.length) {
-    const error = new Error('实时视频模型目录不可用，自动路由已在付费提交前停止');
-    error.code = 'VIDEO_ROUTE_CATALOG_UNAVAILABLE';
-    throw error;
+    if (configuredFallbackModel) return advisoryFallback(configuredFallbackModel, 'automatic_configured_model_fallback');
+    throw Object.assign(new Error('当前视频连接没有配置模型，模型目录也未返回模型名称，请填写模型名称'), { code: 'VIDEO_MODEL_NOT_CONFIGURED' });
   }
   const qualityPolicy = String(policy.video_quality || 'balanced');
   const group = String(policy.video_group || '').trim();
@@ -470,6 +485,9 @@ function selectShotVideoRoute(input) {
       || left.short_multimodal_penalty - right.short_multimodal_penalty
       || Number(left.capability?.preference_rank || 1000) - Number(right.capability?.preference_rank || 1000)
       || left.item.model.localeCompare(right.item.model));
+  if (!eligible.length && configuredFallbackModel) {
+    return advisoryFallback(configuredFallbackModel, 'automatic_configured_model_fallback', evaluated);
+  }
   if (!eligible.length) {
     // The key-scoped /models directory proves availability. Missing local
     // contracts are advisory: prefer a priced unknown model, then the stable
@@ -486,10 +504,11 @@ function selectShotVideoRoute(input) {
       });
   }
   if (!eligible.length) {
-    const error = new Error(`${classified.duration} 秒镜头没有满足媒体、时长和费用策略的视频模型`);
-    error.code = 'VIDEO_ROUTE_NO_ELIGIBLE_MODEL';
-    error.details = evaluated.map((candidate) => ({ model: candidate.item.model, reasons: candidate.reasons }));
-    throw error;
+    const fallback = [...evaluated].sort((left, right) => left.family_rank - right.family_rank
+      || left.quality_rank - right.quality_rank
+      || (left.estimated ?? Number.POSITIVE_INFINITY) - (right.estimated ?? Number.POSITIVE_INFINITY)
+      || left.item.model.localeCompare(right.item.model))[0];
+    return advisoryFallback(fallback.item.model, 'automatic_catalog_metadata_advisory', evaluated);
   }
   const selected = eligible[0];
   const capability = selected.capability;
@@ -648,7 +667,7 @@ function listShotVideoRouteOptions(input) {
           || (!capability ? '本地尚未登记该模型的能力提示；手动选择仍可提交' : null)
           || (contractIssue ? `本地能力提示：${contractIssue}` : null),
       warnings: [...new Set(warnings)],
-      requires_explicit_confirmation: capability?.expensive_bypass === true,
+      requires_explicit_confirmation: false,
       automatic_eligible: capability?.automatic_eligible === true,
       resolution: capability?.resolution || null,
       quality_tier: capability?.quality_tier || null,

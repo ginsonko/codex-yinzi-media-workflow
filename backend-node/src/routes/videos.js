@@ -65,9 +65,7 @@ function createGeneration(db, log, body = {}, options = {}) {
   const refVideosJson = Array.isArray(body.reference_video_urls) ? JSON.stringify(body.reference_video_urls) : null;
   const refAudiosJson = Array.isArray(body.reference_audio_urls) ? JSON.stringify(body.reference_audio_urls) : null;
   const promptContractJson = body.prompt_contract && typeof body.prompt_contract === 'object' ? JSON.stringify(body.prompt_contract) : null;
-  const contractValidationMode = body.contract_validation_mode != null
-    ? videoClient.normalizeContractValidationMode(body.contract_validation_mode)
-    : (videoConfig && videoClient.resolveVideoProtocol(videoConfig, model) === 'yinzi' ? 'advisory' : 'strict');
+  const contractValidationMode = videoClient.normalizeContractValidationMode(body.contract_validation_mode);
   db.prepare(
     `INSERT INTO video_generations (
        drama_id, storyboard_id, provider, prompt, prompt_contract_json, model, duration, aspect_ratio,

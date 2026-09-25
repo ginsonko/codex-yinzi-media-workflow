@@ -392,7 +392,7 @@ function createProductionService(db, cfg, log, injected = {}) {
       updated = repo.updateAction(db, action.id, {
         status: 'ambiguous',
         error_code: 'VIDEO_CREATE_AMBIGUOUS',
-        error_message: '旧模型请求已经外发但没有任务 ID，无法确认是否扣费；已保留待对账，禁止自动重复提交',
+        error_message: '旧模型请求已发出但没有任务 ID，是否计费未知；原记录已保留，可核对原任务或直接重新生成',
         result,
       });
     } else if (['reserved', 'submitted', 'waiting'].includes(action.status)) {
@@ -476,8 +476,8 @@ function createProductionService(db, cfg, log, injected = {}) {
       const configId = Number(input.config_id);
       if (!Number.isSafeInteger(configId) || configId <= 0) throw new Error('视频配置 ID 无效');
       const config = aiConfigService.getConfig(db, configId);
-      if (!config || config.service_type !== 'video' || config.is_active === false) {
-        throw new Error(`视频配置 #${configId} 不存在、不是视频配置或已停用`);
+      if (!config) {
+        throw new Error(`视频配置 #${configId} 不存在`);
       }
       nextPolicy.video_config_id = configId;
     }
@@ -533,26 +533,14 @@ function createProductionService(db, cfg, log, injected = {}) {
         throw error;
       }
     }
-    const expensiveRoute = routes.find(({ route }) => route.capability?.expensive_bypass === true);
-    if (expensiveRoute && input.confirm_expensive !== true) {
-      const error = new Error(`模型 ${expensiveRoute.route.model} 属于高价破甲通道，必须单独确认价格后才能选择`);
-      error.code = 'EXPENSIVE_VIDEO_MODEL_CONFIRMATION_REQUIRED';
-      throw error;
-    }
-
-    if (!targetShotApproved && input.authorize_retry === true) {
-      const error = new Error('当前分镜尚未确认，路由可以保存，但不能授权视频重试');
-      error.code = 'VIDEO_ROUTE_RETRY_REQUIRES_APPROVED_SHOT';
-      throw error;
-    }
-    const latestVideoAction = targetShot.id == null || !targetShotApproved ? null : repo.getLatestAction(db, run.id, {
+    const latestVideoAction = targetShot.id == null ? null : repo.getLatestAction(db, run.id, {
       stage: 'shot_video', scope_type: 'shot', scope_id: targetShot.scope_id, kind: 'video_generate',
     });
     // A retry is an explicit user action; a free-form explanation is useful
     // context but must never become a usability gate. Keep an auditable
     // fallback reason when the caller leaves it blank.
     const retryReason = String(input.retry_reason || '').trim()
-      || (input.authorize_retry === true && latestVideoAction?.status === 'failed'
+      || (input.authorize_retry === true && latestVideoAction
         ? '用户请求切换当前视频配置并重试'
         : '');
 
@@ -562,17 +550,9 @@ function createProductionService(db, cfg, log, injected = {}) {
       .filter(Boolean);
     let retryAction = null;
     if (input.authorize_retry === true
-      && latestVideoAction?.status === 'failed'
+      && latestVideoAction
       && !routeSupersessions.some((item) => item.previous.id === latestVideoAction.id)) {
-      retryAction = repo.updateAction(db, latestVideoAction.id, {
-        status: 'cancelled',
-        result: {
-          ...(latestVideoAction.result || {}),
-          retry_authorized: true,
-          retry_reason: retryReason,
-          route_change_authorized: true,
-        },
-      });
+      retryAction = repo.requestAmbiguousRetryStart(db, latestVideoAction.id, { reason: retryReason }).action;
       repo.appendEvent(db, run.id, 'action.retry_authorized', {
         stage: 'shot_video', scope_type: 'shot', scope_id: targetShot.scope_id,
         payload: { action_id: latestVideoAction.id, reason: retryReason, source: 'video_route_change' },
@@ -607,7 +587,12 @@ function createProductionService(db, cfg, log, injected = {}) {
       && String(run.current_scope_id || '') === String(targetShot.scope_id);
     if (targetShotApproved && targetsCurrentShot && ['reference_bundle', 'shot_video'].includes(run.current_stage)) {
       bundleResult = await media.ensureReferenceBundleForShot(updatedRun, targetShot);
-      if (bundleResult.state === 'refreshed' || run.current_stage === 'shot_video') {
+      if (input.authorize_retry === true) {
+        updatedRun = repo.updateRun(db, run.id, {
+          current_stage: 'shot_video', current_scope_type: 'shot', current_scope_id: String(targetShot.scope_id),
+          status: 'running', waiting_reason: null, error_code: null, error_message: null,
+        });
+      } else if (bundleResult.state === 'refreshed' || run.current_stage === 'shot_video') {
         updatedRun = repo.updateRun(db, run.id, {
           current_stage: 'reference_bundle',
           current_scope_type: 'shot',
@@ -1867,7 +1852,7 @@ function createProductionService(db, cfg, log, injected = {}) {
       requested_fallback_model: moderationFallbackAuthorized ? requestedFallback : null,
       selected_model: candidate.model,
       designated_fallback_used: fallbackAuthorized,
-      expensive_model_authorized: fallbackAuthorized && candidate.requires_explicit_confirmation === true,
+      expensive_model_authorized: fallbackAuthorized && candidate.warnings?.includes('expensive_bypass') === true,
       settings_snapshot: {
         moderation_fallback_enabled: preferences.moderation_fallback_enabled,
         moderation_fallback_model: preferences.moderation_fallback_model,
@@ -1895,7 +1880,7 @@ function createProductionService(db, cfg, log, injected = {}) {
         to_model: candidate.model,
         source_action_id: failedAction.id,
         estimated_price: candidate.estimated_price,
-        high_price_authorized: candidate.requires_explicit_confirmation === true,
+        high_price_authorized: candidate.warnings?.includes('expensive_bypass') === true,
         trigger_category: failure.category || null,
         fallback_authorized: fallbackAuthorized,
         settings_snapshot: switchReceipt.settings_snapshot,
@@ -3100,10 +3085,9 @@ function createProductionService(db, cfg, log, injected = {}) {
     if (!lease.claimed) return { state: lease.reason === 'busy' ? 'waiting_task' : 'failed', reason: lease.reason, run: lease.run };
     try {
       let run = repo.getRun(db, runId);
-      // Reconciliation releases only the local workflow quota. Keep a hard
-      // server-side stop until the user separately requests a new paid attempt
-      // through reconcileAction(start_retry). This also protects unattended
-      // polling and page refreshes from silently resubmitting.
+      // Reading or reconciling an old request does not create a new attempt.
+      // Explicit retry is available through authorizeRetry or start_retry;
+      // polling and page refreshes keep the original request identity.
       if (run.status === 'waiting_review' && run.waiting_reason === 'ambiguous_retry_ready') {
         return { state: 'waiting_review', reason: 'ambiguous_retry_ready', run };
       }
@@ -3113,8 +3097,8 @@ function createProductionService(db, cfg, log, injected = {}) {
       // `ambiguous`, so every poll kept re-entering the runner and appeared to
       // do nothing. Converge that stale run state before any stage work. This
       // is a local state update only: it never calls a provider, reserves
-      // money, or authorizes a retry. The explicit reconcile flow remains the
-      // only way out of this hold.
+      // money, or authorizes a retry. An explicit new-generation request can
+      // resume immediately without first reconciling this old request.
       if (run.status === 'running' && run.current_stage === 'shot_video') {
         const ambiguousCurrentAction = repo.getLatestAction(db, run.id, {
           stage: 'shot_video',
@@ -3128,7 +3112,7 @@ function createProductionService(db, cfg, log, injected = {}) {
             status: 'waiting_review',
             waiting_reason: 'ambiguous_video_create',
             error_code: ambiguousCurrentAction.error_code || 'VIDEO_CREATE_AMBIGUOUS',
-            error_message: ambiguousCurrentAction.error_message || '视频创建结果不明确，需先核对上游任务',
+            error_message: ambiguousCurrentAction.error_message || '视频创建结果不明确，可核对原任务或直接重新生成',
           });
           repo.appendEvent(db, run.id, 'action.ambiguous_state_converged', {
             stage: 'shot_video',
@@ -3606,9 +3590,10 @@ function createProductionService(db, cfg, log, injected = {}) {
   }
 
   function authorizeRetry(runId, input = {}) {
+    return db.transaction(() => {
     const run = repo.getRun(db, runId);
     if (!run) throw new Error('制作任务不存在');
-    const reason = String(input.reason || '').trim() || '用户请求重试当前失败任务';
+    const reason = String(input.reason || '').trim() || '用户请求重新生成';
     const action = input.action_id
       ? repo.getAction(db, input.action_id)
       : repo.getLatestAction(db, run.id, {
@@ -3616,17 +3601,24 @@ function createProductionService(db, cfg, log, injected = {}) {
         ...(input.scope_type != null ? { scope_type: input.scope_type } : {}),
         ...(input.scope_id != null ? { scope_id: input.scope_id } : {}),
       });
-    if (!action || action.run_id !== run.id || action.stage !== run.current_stage) throw new Error('找不到当前阶段可重试的失败任务');
+    if (!action || action.run_id !== run.id) throw new Error('找不到要重新生成的原任务');
 
-    const started = repo.requestAmbiguousRetryStart(db, action.id, {reason});
-    if (!started.newer_action && !['paused','cancelled'].includes(run.status)) {
-      const resolvedRuntime = resolvedAutonomyRuntime(run, {action});
+    const started = repo.requestAmbiguousRetryStart(db, action.id, {
+      reason, request_key: input.request_key || input.retry_request_key,
+    });
+    const targetAction = started.newer_action || started.action;
+    if (!started.newer_action && !started.request_replayed) {
+      const resolvedRuntime = resolvedAutonomyRuntime(run, {action: targetAction});
       repo.updateRun(db, run.id, {
+        current_stage: targetAction.stage, current_scope_type: targetAction.scope_type, current_scope_id: targetAction.scope_id, completed_at: null,
         ...(resolvedRuntime ? {runtime:resolvedRuntime} : {}),
         status:'running', waiting_reason:null, error_code:null, error_message:null,
       });
     }
-    return {action:started.newer_action || started.action,reused:started.reused,summary:repo.getRunSummary(db,run.id)};
+    return {action:targetAction,reused:started.reused,
+      ...(started.retry_request ? { retry_request: started.retry_request } : {}),
+      summary:repo.getRunSummary(db,run.id)};
+    }).immediate();
   }
 
   function ambiguousRecoveryState(action, generation) {
@@ -3691,16 +3683,20 @@ function createProductionService(db, cfg, log, injected = {}) {
       throw error;
     }
     if (mode === 'start_retry') {
+      return db.transaction(() => {
       const started = repo.requestAmbiguousRetryStart(db, action.id, {
         reason: input.reason || '用户请求创建一次新尝试；旧结果与费用保留',
+        request_key: input.request_key || input.retry_request_key,
       });
       if (!started) {
         const error = new Error('找不到要重试的原任务');
         error.code = 'AMBIGUOUS_ACTION_NOT_FOUND';
         throw error;
       }
-      if (!started.newer_action && !['paused','cancelled'].includes(run.status)) {
+      if (!started.newer_action && !started.request_replayed) {
+        const targetAction = started.action;
         repo.updateRun(db, run.id, {
+          current_stage: targetAction.stage, current_scope_type: targetAction.scope_type, current_scope_id: targetAction.scope_id, completed_at: null,
           status: 'running', waiting_reason: null, error_code: null, error_message: null,
         });
       }
@@ -3709,6 +3705,7 @@ function createProductionService(db, cfg, log, injected = {}) {
         status: 'retry_started',
         action: current,
         reused: started.reused,
+        ...(started.retry_request ? { retry_request: started.retry_request } : {}),
         newer_action_id: started.newer_action?.id || null,
         paid_submission: false,
         message: started.newer_action
@@ -3718,6 +3715,7 @@ function createProductionService(db, cfg, log, injected = {}) {
             : '已开始一次新尝试；接下来会实时读取最新模型、Key、能力和参考包。',
         summary: repo.getRunSummary(db, run.id),
       };
+      }).immediate();
     }
     if (mode === 'attach_provider_task') {
       const providerTaskId = String(input.provider_task_id || '').trim();
@@ -3853,7 +3851,7 @@ function createProductionService(db, cfg, log, injected = {}) {
       }
     }
     const messages = {
-      still_ambiguous: '仍未找到可核对的上游任务 ID。你可以粘贴任务 ID，或确认上游没有该任务后安全重试。',
+      still_ambiguous: '仍未找到可核对的上游任务 ID。可以继续找回原结果，也可以直接重新生成；原请求和未知费用将保留。',
       processing: '已恢复原上游任务的查询，不会重新生成视频。',
       recovered: '已找到原任务结果，正在恢复到当前镜头。',
       confirmed_failed: '上游任务已明确失败，可以按意见重试或切换模型。',

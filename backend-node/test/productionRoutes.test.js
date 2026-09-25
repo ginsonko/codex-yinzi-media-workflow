@@ -182,7 +182,7 @@ describe('production HTTP routes', () => {
         'SELECT contract_validation_mode, provider_config_snapshot_json FROM video_generations WHERE id = ?'
       ).get(strict.body.data.id);
       const strictSnapshot = JSON.parse(strictRow.provider_config_snapshot_json);
-      assert.equal(strictRow.contract_validation_mode, 'strict');
+      assert.equal(strictRow.contract_validation_mode, 'advisory');
       assert.equal(strictSnapshot.automatic_route, false);
       assert.equal(strictSnapshot.requested_model_explicit, true);
       await new Promise((resolve) => setImmediate(resolve));

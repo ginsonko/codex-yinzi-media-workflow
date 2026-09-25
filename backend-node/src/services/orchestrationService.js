@@ -812,6 +812,14 @@ function createOrchestrationService(db) {
       const retiredRequest = input.request_hash && input.request_hash !== row.request_hash
         && db.prepare("SELECT 1 FROM orchestration_events WHERE node_id=? AND event_type='node.attempt_archived' AND json_extract(payload_json,'$.request_hash')=? LIMIT 1").get(row.id, input.request_hash);
       if (retiredRequest || (input.expected_attempt != null && Number(input.expected_attempt) !== row.attempt)) {
+        // Keep the late acknowledgement with its original identity even when
+        // retry archived the request before its generation ID was available.
+        appendEvent(db, sessionId, 'node.late_attempt_result', {
+          node_key: row.node_key, attempt: input.expected_attempt ?? null,
+          request_hash: input.request_hash || null, status: input.status || null,
+          progress: input.progress || {}, output_refs: input.output_refs || [],
+          decision: input.decision || {}, error: input.error || {},
+        }, { node_id: row.id, actor: input.actor || 'codex' });
         return { ignored: true, reason: 'superseded_attempt', node: publicNode(row), bundle: getBundle(sessionId) };
       }
       const status = input.status == null ? row.status : String(input.status);
@@ -965,11 +973,13 @@ function createOrchestrationService(db) {
       return retryNode(sessionId, nodeIdOrKey, { ...input, force: name === 'reopen' || input.force });
     }
     if (name === 'start') {
-      if (!input.force && !['ready', 'waiting_confirmation'].includes(row.status)) {
-        throw makeError('NODE_NOT_READY', '节点尚未就绪；可以先修改依赖计划，或由人工明确强制接管', { current_status: row.status });
+      if (!['ready', 'waiting_confirmation'].includes(row.status) || row.request_hash) {
+        retryNode(sessionId, nodeIdOrKey, { actor: input.actor, note: input.note });
       }
+      db.prepare("UPDATE orchestration_sessions SET status='running',completed_at=NULL,updated_at=?,version=version+1 WHERE id=? AND status='paused'").run(nowIso(), sessionId);
       return updateNode(sessionId, nodeIdOrKey, {
         ...input,
+        expected_version: undefined,
         status: 'running',
         progress: input.progress || { state: 'local_started', message: '执行器已开始；等待真实阶段事件' },
       });
@@ -1178,23 +1188,33 @@ function createOrchestrationService(db) {
     const tx = db.transaction(() => {
       const session = getSessionRow(db, sessionId);
       if (!session) throw makeError('ORCHESTRATION_NOT_FOUND', '编排任务不存在');
-      const row = getNodeRow(db, sessionId, nodeIdOrKey);
+      let row = getNodeRow(db, sessionId, nodeIdOrKey);
       if (!row) throw makeError('ORCHESTRATION_NODE_NOT_FOUND', '编排节点不存在');
       const requestHash = String(input.request_hash || '').trim();
       if (!requestHash) throw makeError('REQUEST_HASH_REQUIRED', '外部请求必须提供稳定 request_hash');
       const priorSubmission = parse(row.progress_json, {}).submission_state;
-      if (row.request_hash) {
-        if (row.request_hash !== requestHash) throw makeError('REQUEST_HASH_CONFLICT', '该节点已绑定另一请求；请重开节点或提交新计划，禁止静默覆盖');
+      if (row.request_hash === requestHash) {
         return { reserved: false, reused: true, reconciliation_required: externalAttemptEvidence(row)?.state === 'unresolved' || ['submitting', 'accepted', 'uncertain', 'settled'].includes(priorSubmission), node: publicNode(row) };
       }
-      if (db.prepare("SELECT 1 FROM orchestration_events WHERE node_id=? AND event_type IN ('node.external_request_reserved','node.attempt_archived') AND json_extract(payload_json,'$.request_hash')=? LIMIT 1").get(row.id, requestHash)) {
-        throw makeError('REQUEST_HASH_RETIRED', '该请求属于历史尝试；查询旧记录请使用对账，新尝试请使用新的 idempotency_key');
+      const previousKey = parse(row.decision_json, {}).idempotency_key;
+      if (row.request_hash && previousKey && previousKey === input.decision?.idempotency_key) {
+        throw makeError('REQUEST_IDENTITY_CONFLICT', '同一次请求标识对应的内容发生变化；重新生成请使用新的请求标识，原请求保持可追踪');
       }
-      assertExternalAttemptResolved(row);
-      if (!['ready', 'waiting_confirmation'].includes(row.status)) {
-        throw makeError('NODE_NOT_READY', '节点尚未就绪，不能创建新的外部请求');
+      const requestedKey = input.decision?.idempotency_key;
+      if (requestedKey && db.prepare("SELECT 1 FROM orchestration_events WHERE node_id=? AND event_type='node.attempt_archived' AND json_extract(payload_json,'$.node.decision.idempotency_key')=? AND json_extract(payload_json,'$.request_hash')<>? LIMIT 1").get(row.id, requestedKey, requestHash)) {
+        throw makeError('REQUEST_IDENTITY_CONFLICT', '此请求标识已属于历史内容；重新生成请使用新的请求标识，旧尝试保持可追踪');
       }
-      if (session.status === 'paused') throw makeError('SESSION_PAUSED', '任务已暂停，不再提交新的外部请求；已有任务仍可查询');
+      const archived = db.prepare("SELECT payload_json FROM orchestration_events WHERE node_id=? AND event_type='node.attempt_archived' AND json_extract(payload_json,'$.request_hash')=? ORDER BY id DESC LIMIT 1").get(row.id, requestHash);
+      if (archived) {
+        return { reserved: false, reused: true, historical_attempt: true, reconciliation_required: true, node: parse(archived.payload_json, {}).node };
+      }
+      // A new request identity is an explicit new attempt, including after
+      // success or while an earlier attempt is unresolved. Archive first so
+      // delayed callbacks remain attributable to their original attempt.
+      if (row.request_hash || !['ready', 'waiting_confirmation'].includes(row.status) || externalAttemptEvidence(row)) {
+        retryNode(sessionId, nodeIdOrKey, { actor: input.actor, note: '显式生成请求创建新尝试' });
+        row = getNodeRow(db, sessionId, nodeIdOrKey);
+      }
       const stamp = nowIso();
       const progress = sanitize({ ...(parse(row.progress_json, {})), ...(input.progress || {}), state: 'local_started', submission_state: 'submitting', message: input.message || '正在提交外部请求' });
       const decision = sanitize({ ...(parse(row.decision_json, {})), ...(input.decision || {}) });

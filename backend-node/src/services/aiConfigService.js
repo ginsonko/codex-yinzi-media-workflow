@@ -31,9 +31,11 @@ function modelFromDb(val) {
 
 const CAPABILITY_STRING_FIELDS = new Set([
   'provider_contract', 'family', 'duration_mode', 'resolution', 'quality_tier', 'exclusion_reason',
+  'reference_template',
 ]);
 const CAPABILITY_BOOLEAN_FIELDS = new Set([
   'automatic_eligible', 'expensive_bypass', 'requires_director_preview',
+  'each_reference_must_be_mentioned', 'first_last_frame_supported',
 ]);
 const CAPABILITY_NUMBER_FIELDS = new Set([
   'duration_min', 'duration_max', 'auto_duration_min', 'auto_duration_max', 'fixed_duration_seconds',

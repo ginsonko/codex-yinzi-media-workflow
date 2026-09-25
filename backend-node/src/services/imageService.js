@@ -63,6 +63,7 @@ const uploadService = require('./uploadService');
 const storageLayout = require('./storageLayout');
 const aiClient = require('./aiClient');
 const promptI18n = require('./promptI18n');
+const { isLatestImageAttempt, resolveStoryboardFrameType } = require('./imageAttemptOwnership');
 
 const LAST_FRAME_TYPES = new Set(['last', 'storyboard_last', 'tail', 'last_frame']);
 
@@ -570,7 +571,7 @@ function create(db, log, req) {
   const now = new Date().toISOString();
   const task = taskService.createTask(db, log, 'image_generation', String(req.drama_id || ''));
   const taskId = task.id;
-  const frameType = req.frame_type ?? null;
+  const frameType = resolveStoryboardFrameType(db, req.storyboard_id, req.frame_type);
   const sceneId = req.scene_id != null ? Number(req.scene_id) : null;
   const refImagesJson =
     req.reference_images && Array.isArray(req.reference_images)
@@ -1299,7 +1300,7 @@ async function processImageGeneration(db, log, imageGenId) {
             );
             // 回写到 storyboards.polished_prompt（原始 image_prompt 保持不变，供对比查看）
             try {
-              db.prepare('UPDATE storyboards SET polished_prompt = ?, updated_at = ? WHERE id = ? AND deleted_at IS NULL').run(
+              if (isLatestImageAttempt(db, imageGenId, { shared: true })) db.prepare('UPDATE storyboards SET polished_prompt = ?, updated_at = ? WHERE id = ? AND deleted_at IS NULL').run(
                 finalPrompt, nowIso, Number(row.storyboard_id)
               );
             } catch (_) {}
@@ -1324,7 +1325,7 @@ async function processImageGeneration(db, log, imageGenId) {
                 max_tokens: 200,
                 temperature: 0.1,
               }).then((snapshotJson) => {
-                if (!snapshotJson?.trim()) return;
+                if (!snapshotJson?.trim() || !isLatestImageAttempt(db, imageGenId, { shared: true })) return;
                 // 清理可能的 markdown 代码块包裹
                 const cleaned = snapshotJson.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '');
                 try {
@@ -1459,10 +1460,10 @@ async function processImageGeneration(db, log, imageGenId) {
       );
       if (row.task_id) taskService.updateTaskError(db, row.task_id, result.error);
       log.error('[图生] ✗ API返回错误', { id: imageGenId, error: result.error, total_elapsed: elapsed() });
-      if (row.scene_id != null) {
+      if (row.scene_id != null && row.storyboard_id == null && isLatestImageAttempt(db, imageGenId)) {
         try { db.prepare('UPDATE scenes SET error_msg = ?, updated_at = ? WHERE id = ?').run(result.error, now2, row.scene_id); } catch (_) {}
       }
-      if (row.storyboard_id != null) {
+      if (row.storyboard_id != null && isLatestImageAttempt(db, imageGenId, { shared: true })) {
         try { db.prepare('UPDATE storyboards SET error_msg = ?, updated_at = ? WHERE id = ?').run(result.error, now2, row.storyboard_id); } catch (_) {}
       }
       return;
@@ -1516,7 +1517,7 @@ async function processImageGeneration(db, log, imageGenId) {
       });
     }
     
-    if (row.scene_id != null && row.storyboard_id == null) {
+    if (row.scene_id != null && row.storyboard_id == null && isLatestImageAttempt(db, imageGenId)) {
       // 旧图追加到 extra_images，与上传逻辑保持一致
       const oldScene = db.prepare('SELECT local_path, image_url, extra_images FROM scenes WHERE id = ?').get(row.scene_id);
       const oldPath = oldScene?.local_path || oldScene?.image_url || '';
@@ -1538,41 +1539,20 @@ async function processImageGeneration(db, log, imageGenId) {
           throw e;
         }
       }
+      try { db.prepare('UPDATE scenes SET error_msg = NULL WHERE id = ?').run(row.scene_id); } catch (_) {}
+    }
+    if (row.storyboard_id != null && isLatestImageAttempt(db, imageGenId, { shared: true })) {
+      try { db.prepare('UPDATE storyboards SET error_msg = NULL WHERE id = ?').run(row.storyboard_id); } catch (_) {}
     }
     log.info('[图生] ✓ 完成', { id: imageGenId, local_path: localPath, total_elapsed: elapsed() });
 
-    // ── 首尾帧绑定决策 ─────────────────────────────────────────────
-    // 优先信任 image_generations 行自身保存的 frame_type（前端点击“尾帧生成”会正确传 'storyboard_last'）。
-    // 仅当该记录的 frame_type 为空或非首/尾帧特型时，才回退到“最近一次 frame_prompts”作为推断（兼容旧数据/历史创建路径）。
-    let effectiveFrameTypeForBind = row.frame_type;
-    const rowFt = String(row.frame_type || '').toLowerCase();
-    const rowIsSpecificFirstLast = ['first', 'last', 'storyboard_first', 'storyboard_last'].includes(rowFt);
-    if (row.storyboard_id && !rowIsSpecificFirstLast) {
-      try {
-        const fp = db.prepare(
-          'SELECT frame_type FROM frame_prompts WHERE storyboard_id = ? ORDER BY updated_at DESC, created_at DESC LIMIT 1'
-        ).get(Number(row.storyboard_id));
-        if (fp && fp.frame_type && ['first', 'last', 'storyboard_first', 'storyboard_last'].includes(String(fp.frame_type))) {
-          effectiveFrameTypeForBind = fp.frame_type;
-          log.info('[图生] 绑定决策：image 自身无明确首/尾帧类型，回退使用最近的 frame_prompts', {
-            id: imageGenId,
-            inferred: effectiveFrameTypeForBind
-          });
-        }
-      } catch (_) {}
-    }
-
-    if (row.storyboard_id && effectiveFrameTypeForBind !== 'quad_grid' && effectiveFrameTypeForBind !== 'nine_grid') {
+    // The destination was fixed before asynchronous work; only the newest
+    // request for this first/tail slot can replace the current binding.
+    if (row.storyboard_id && row.frame_type !== 'quad_grid' && row.frame_type !== 'nine_grid'
+      && isLatestImageAttempt(db, imageGenId)) {
       try {
         const { bindStoryboardFrameImage } = require('./storyboardFrameBinding');
-        bindStoryboardFrameImage(
-          db,
-          row.storyboard_id,
-          effectiveFrameTypeForBind,
-          imageGenId,
-          persistedImageUrl,
-          localPath
-        );
+        bindStoryboardFrameImage(db, row.storyboard_id, row.frame_type, imageGenId, persistedImageUrl, localPath);
       } catch (bindErr) {
         log.warn('[图生] 分镜首尾帧绑定失败', { id: imageGenId, error: bindErr.message });
       }
@@ -1607,10 +1587,10 @@ async function processImageGeneration(db, log, imageGenId) {
     );
     if (row.task_id) taskService.updateTaskError(db, row.task_id, err.message);
     log.error('[图生] ✗ 异常', { id: imageGenId, error: err.message, stack: (err.stack || '').slice(0, 400), total_elapsed: elapsed() });
-    if (row.scene_id != null) {
+    if (row.scene_id != null && row.storyboard_id == null && isLatestImageAttempt(db, imageGenId)) {
       try { db.prepare('UPDATE scenes SET error_msg = ?, updated_at = ? WHERE id = ?').run(err.message, now2, row.scene_id); } catch (_) {}
     }
-    if (row.storyboard_id != null) {
+    if (row.storyboard_id != null && isLatestImageAttempt(db, imageGenId, { shared: true })) {
       try { db.prepare('UPDATE storyboards SET error_msg = ?, updated_at = ? WHERE id = ?').run(err.message, now2, row.storyboard_id); } catch (_) {}
     }
   }

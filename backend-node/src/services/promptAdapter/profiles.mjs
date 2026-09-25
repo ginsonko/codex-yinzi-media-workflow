@@ -1,4 +1,5 @@
 import { validateProfile } from './schema.mjs';
+import referenceContracts from '../yinziVideoReferenceContracts.js';
 
 function freeze(value) {
   if (value && typeof value === 'object') {
@@ -19,7 +20,7 @@ export const TARGET_PROFILES = freeze({
     availability: 'supported', duration_mode: 'range', duration_min: 4, duration_max: 30,
     supported_resolutions: ['480p', '720p', '1080p'], default_resolution: '720p',
     max_images: 30, max_videos: 10, max_audios: 10, max_total_references: 50,
-    first_last_frame_supported: false, each_reference_must_be_mentioned: true,
+    ...referenceContracts.SEEDANCE_25_REFERENCE_CONTRACT,
     contract_source: { kind: 'user_supplied_channel_contract', observed_at: '2026-09-14', model: 'Seedance 2.5' },
     notes: '按所选渠道的已确认合同编译；部署到其它渠道时以实际模型合同覆盖。负面参数和字符上限尚未确认，约束保留在正文。',
   },

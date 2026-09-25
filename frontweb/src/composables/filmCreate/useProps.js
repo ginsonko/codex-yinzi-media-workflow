@@ -295,16 +295,19 @@ export function useProps(deps) {
   }
 
   async function onGeneratePropImage(prop, useQuadGrid = false) {
+    const meta = { ...buildPropImageMeta(prop), submitting: true }
+    if (genStore.isSubmitting(meta)) return
     prop.errorMsg = ''
     prop.error_msg = ''
-    const meta = buildPropImageMeta(prop)
     generatingPropIds.add(prop.id)
     genStore.markRunning(meta)
     try {
       const res = await propAPI.generateImage(prop.id, undefined, getSelectedStyle(), !!useQuadGrid)
+      genStore.finishSubmission(meta)
       const taskId = res?.task_id
       if (taskId) {
         const pollRes = await pollTask(taskId, () => loadDrama(), meta)
+        if (!genStore.isCurrentAttempt(meta)) return
         if (pollRes?.status === 'failed') {
           prop.errorMsg = pollRes.error || '生成失败'
         } else {
@@ -320,12 +323,15 @@ export function useProps(deps) {
         ElMessage.success('道具图片已生成')
       }
     } catch (e) {
+      genStore.markFailed(meta, e.message || '提交失败')
+      if (!genStore.isCurrentAttempt(meta)) return
       console.error(e)
       prop.errorMsg = e.message || '生成失败'
       ElMessage.error(e.message || '提交失败')
     } finally {
-      generatingPropIds.delete(prop.id)
-      genStore.markDone(meta)
+      genStore.finishSubmission(meta)
+      if (genStore.isCurrentAttempt(meta)) generatingPropIds.delete(prop.id)
+      if (!meta.taskId && genStore.isRunning(meta)) genStore.markDone(meta)
     }
   }
 

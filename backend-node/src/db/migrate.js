@@ -393,7 +393,7 @@ function ensureAllColumns(database) {
     { name: 'submission_status', type: 'TEXT' },
     { name: 'submission_http_status', type: 'INTEGER' },
     { name: 'submission_receipt_json', type: 'TEXT' },
-    { name: 'contract_validation_mode', type: "TEXT NOT NULL DEFAULT 'strict'" },
+    { name: 'contract_validation_mode', type: "TEXT NOT NULL DEFAULT 'advisory'" },
     { name: 'contract_validation_receipt_json', type: 'TEXT' },
     { name: 'task_id',              type: 'TEXT' },
     { name: 'client_request_key',    type: 'TEXT' },

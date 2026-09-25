@@ -23,3 +23,14 @@ test('inline local image corrects a misleading extension without changing the so
  try{fs.writeFileSync(file,png);const result=localImageDataUrl(file);assert.equal(result.mime,'image/png');assert.ok(result.data_url.startsWith('data:image/png;base64,'));assert.deepEqual(fs.readFileSync(file),png);}
  finally{assert.equal(path.dirname(root),path.resolve(os.tmpdir()));fs.rmSync(root,{recursive:true,force:true});}
 });
+
+test('known containers use codec evidence before extension hints; arbitrary extensions never supply MIME',()=>{
+ const webm=Buffer.concat([Buffer.from([0x1a,0x45,0xdf,0xa3,0x87,0x42,0x82,0x84]),Buffer.from('webm')]);
+ assert.equal(uploadMetadata(webm,'clip.bin','application/octet-stream').mime,'video/webm');
+ assert.equal(uploadMetadata(webm,'sound.weba','application/octet-stream').mime,'audio/webm');
+ assert.equal(uploadMetadata(Buffer.from('OggSxxxxxxxxOpusHead'),'clip.ogv').mime,'audio/ogg');
+ assert.equal(uploadMetadata(Buffer.from('OggSxxxxxxxxtheora'),'sound.ogg').mime,'video/ogg');
+ assert.equal(uploadMetadata(Buffer.from('random bytes'),'pretend.png','application/octet-stream').mime,'application/octet-stream');
+ assert.equal(uploadMetadata(Buffer.from('random bytes'),'pretend.mp4','').mime,'application/octet-stream');
+ assert.equal(uploadMetadata(Buffer.from('unknown'),'unknown.vendor','VIDEO/X-VENDOR; custom=value').mime,'video/x-vendor');
+});
