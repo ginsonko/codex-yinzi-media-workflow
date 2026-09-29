@@ -1573,7 +1573,7 @@ async function callImageApi(db, log, opts) {
   let effectiveSize = size;
   if (isSeedream && size) effectiveSize = fixSeedreamSize(size);
   else if (isAgnes && size) effectiveSize = fixAgnesImageSize(size);
-  else if (isYinziGptImage && size) effectiveSize = fixOpenAIImageSize(size);
+  else if (isYinziGptImage && size && !/^gpt-image-2(?:\.5)?$/i.test(model)) effectiveSize = fixOpenAIImageSize(size);
 
   const body = {
     model,

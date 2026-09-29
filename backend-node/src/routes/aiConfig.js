@@ -130,7 +130,18 @@ function modelCapabilities(db) {
     response.success(res, {
       config_id: id,
       service_type: config.service_type,
-      models: aiConfigService.modelCapabilityStates(config),
+      models: aiConfigService.modelCapabilityStates(config).map((state) => {
+        if (config.service_type !== 'video') return state;
+        const videoClient = require('../services/videoClient');
+        const protocol = videoClient.resolveVideoProtocol(config, state.model);
+        if (protocol !== 'yinzi') return { ...state, protocol };
+        // Display the same credential-scoped catalog/override contract that a
+        // new generation snapshots, instead of showing only the builtin table.
+        const resolved = videoClient.resolveYinziCapabilityContext(config, state.model);
+        return { ...state, protocol, capability: resolved.capability,
+          source: resolved.capability_source, contract_status: resolved.contract_status,
+          automatic_eligible: resolved.capability?.automatic_eligible === true };
+      }),
     });
   };
 }

@@ -12,6 +12,8 @@
 
 本次更新：[20 位作品监督、入门引导与制作经验](docs/RELEASE-2026-09-17.md)。
 
+**手动图片与视频生成**：批量生成页新增逐项编辑，每条任务可独立填写提示词、选择模型并上传参考图片、视频和音频，支持首尾帧、草稿恢复和结果重试。单条也能直接生成，不依赖 Codex；原快速逐行批量保留。[使用方法与更新说明](docs/MANUAL-BATCH-GENERATION.md)。
+
 **商品视频研究已开放试用**：输入商品和目标平台，收集同类参考、查看有出处的可视化报告，选出重点视频，再结合自己的商品资料交给 Agent 做原创脚本、分镜和制作。支持官方扫码登录、验证后接续、部分结果保留和离线研究包；主媒体 Skill 会按需求调用，无需记工具名。[更新与试用方法](docs/RELEASE-2026-09-22-ECOMMERCE.md) · [平台与数据边界](docs/ECOMMERCE-REFERENCE-RESEARCH.md)。
 
 [作品官网](https://workflow.yinziapi.top/) · [教学样片](https://workflow.yinziapi.top/learn/) · [拍题讲解与交互实验](https://workflow.yinziapi.top/learn/table/)

@@ -4,6 +4,7 @@ import fs from 'node:fs'
 import vm from 'node:vm'
 import { randomUUID } from 'node:crypto'
 import { batchSubmission } from '../src/utils/batchRequestKey.js'
+import { imageSizeFor } from '../src/utils/imageSizes.js'
 import { computed, reactive, ref } from 'vue'
 
 const storeSource = fs.readFileSync(new URL('../src/stores/generationTaskStore.js', import.meta.url), 'utf8')
@@ -365,7 +366,24 @@ test('related-image retry releases its submit lock while the provider is still p
   assert.equal(c.regenSbImagesProgress.value['char-1'], undefined)
 })
 
-for (const kind of ['manual', 'batch']) {
+test('batch receipt recovery uses its exact saved snapshot even when the editor and catalog changed', async () => {
+  const source = fs.readFileSync(new URL('../src/views/BatchControl.vue', import.meta.url), 'utf8')
+  const original = { kind:'video',items:[{prompt:'old',video_config_id:17,reference_image_urls:['old.png'],reference_video_urls:['v.mp4'],reference_audio_urls:['a.wav']}] }
+  const pending = batchSubmission(original)
+  const calls = []
+  const context = { submitting:{value:false}, pendingSubmission:{value:pending}, submitError:{value:''},
+    mediaBatchAPI:{create:async body => { calls.push(body); return {id:'recovered'} }},
+    sessionStorage:{removeItem(){}}, selectionRead:0, activeBatch:{value:null}, selectedBatchId:{value:''}, itemPage:{value:2},
+    refresh:async()=>{}, ElMessage:{success(){}}, form:{prompt:'changed'} }
+  vm.createContext(context)
+  vm.runInContext(extract(source,'async function recoverSubmission','\nasync function updateBatch'),context)
+  await context.recoverSubmission()
+  assert.deepEqual(JSON.parse(JSON.stringify(calls[0])),{...original,idempotency_key:pending.key})
+  assert.equal(context.pendingSubmission.value,null)
+  assert.equal(context.selectedBatchId.value,'recovered')
+})
+
+for (const kind of ['manual', 'batch', 'batch-per-item']) {
   test(`${kind} lost receipt keeps ordinary recovery but explicit fresh uses a new key immediately`, async () => {
     const calls = [], saved = new Map()
     const pending = { value: null }, submitting = { value: false }
@@ -381,7 +399,9 @@ for (const kind of ['manual', 'batch']) {
       aspectRatio: { value: '16:9' }, imageReferences: { value: [] },
       pendingSubmission: pending, submitting, submitError: { value: '' }, canSubmit: { value: true },
       form: { prompt: 'new attempt', lines: '', kind: 'image', count: 1, concurrency: 1, model: '', settings: { aspect_ratio: '16:9' } },
-      batchModelSelection: () => ({}), modelOptions: { value: [] },
+      batchModelSelection: () => ({}), imageSizeFor, modelOptions: { value: [] },
+      editorMode: { value: kind === 'batch-per-item' ? 'manual' : 'quick' },
+      manualState: { value: { items: [{ prompt: 'new attempt', reference_image_urls: ['references/a.png'], reference_video_urls: ['references/a.mp4'], reference_audio_urls: ['references/a.wav'] }] } },
       selectionRead: 0, activeBatch: { value: null }, selectedBatchId: { value: '' }, itemPage: { value: 1 },
     }
     vm.createContext(context)

@@ -149,7 +149,7 @@ describe('image reference transport copies', () => {
         base_url: `http://127.0.0.1:${address.port}`,
         endpoint: '/images/generations',
         api_key: 'test-only-key',
-        model: ['gpt-image-2'],
+        model: ['gpt-image-2', 'gpt-image-2.5'],
         default_model: 'gpt-image-2',
         is_default: true,
       });
@@ -167,7 +167,7 @@ describe('image reference transport copies', () => {
       });
 
       assert.equal(result.image_url, 'https://cdn.example.test/generated.png');
-      assert.equal(receivedBody.size, '1536x1024');
+      assert.equal(receivedBody.size, '2560x1440');
       assert.equal(receivedBody.image.length, 3);
       assert.match(receivedBody.negative_prompt, /flowers, plants/);
       for (const dataUrl of receivedBody.image) {
@@ -180,6 +180,11 @@ describe('image reference transport copies', () => {
       refs.forEach((relativePath, index) => {
         assert.equal(sha256(path.join(storageRoot, relativePath)), hashes[index]);
       });
+      await callImageApi(db, log, {
+        prompt: 'second size contract', model: 'gpt-image-2.5', size: '3840x2160',
+        image_gen_id: 9002, imageServiceType: 'image', storage_local_path: storageRoot,
+      });
+      assert.equal(receivedBody.size, '3840x2160');
     } finally {
       if (server) await new Promise((resolve) => server.close(resolve));
       db.close();

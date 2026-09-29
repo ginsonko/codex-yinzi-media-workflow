@@ -9,6 +9,21 @@ function publicVideoConfigSnapshot(config, model, routingReceipt = null) {
   return videoClient.buildProviderConfigSnapshot(config, model, routingReceipt);
 }
 
+function serializeReferences(value, field) {
+  if (value == null) return null;
+  const references = Array.isArray(value) ? value : [value];
+  if (references.some((reference) => typeof reference === 'string' ? !reference.trim() :
+    !(reference && typeof reference === 'object' &&
+      ['url', 'local_path', 'file_id', 'data_url'].some((key) => reference[key])))) {
+    const error = new Error(`${field} 需要素材地址或素材地址数组`);
+    error.code = 'VALIDATION_ERROR';
+    error.definitely_not_submitted = true;
+    throw error;
+  }
+  return JSON.stringify(references.map((reference) =>
+    typeof reference === 'string' ? reference.trim() : reference.local_path || reference));
+}
+
 /** Create one persisted video generation using the same path as the HTTP API.
  * Batch orchestration calls this helper so provider validation, snapshots and
  * idempotent local task creation stay in one place. */
@@ -23,6 +38,9 @@ function createGeneration(db, log, body = {}, options = {}) {
     model: body.model || null,
     drama_id: body.drama_id || null,
   });
+  const refImagesJson = serializeReferences(body.reference_image_urls, 'reference_image_urls');
+  const refVideosJson = serializeReferences(body.reference_video_urls, 'reference_video_urls');
+  const refAudiosJson = serializeReferences(body.reference_audio_urls, 'reference_audio_urls');
   const task = taskService.createTask(db, log, 'video_generation', String(body.drama_id || ''));
   const now = new Date().toISOString();
   const dramaId = Number(body.drama_id) || 0;
@@ -61,9 +79,6 @@ function createGeneration(db, log, body = {}, options = {}) {
   const imageUrl = body.image_url ?? null;
   const firstFrameUrl = body.first_frame_url ?? body.first_frame_local_path ?? null;
   const lastFrameUrl = body.last_frame_url ?? body.last_frame_local_path ?? null;
-  const refImagesJson = Array.isArray(body.reference_image_urls) ? JSON.stringify(body.reference_image_urls) : null;
-  const refVideosJson = Array.isArray(body.reference_video_urls) ? JSON.stringify(body.reference_video_urls) : null;
-  const refAudiosJson = Array.isArray(body.reference_audio_urls) ? JSON.stringify(body.reference_audio_urls) : null;
   const promptContractJson = body.prompt_contract && typeof body.prompt_contract === 'object' ? JSON.stringify(body.prompt_contract) : null;
   const contractValidationMode = videoClient.normalizeContractValidationMode(body.contract_validation_mode);
   db.prepare(
@@ -108,6 +123,7 @@ function routes(db, log) {
         if (err.acceptance_guard === true) {
           return response.error(res, err.http_status || 423, err.code, err.message);
         }
+        if (err.code === 'VALIDATION_ERROR') return response.badRequest(res, err.message);
         response.internalError(res, err.message);
       }
     },
