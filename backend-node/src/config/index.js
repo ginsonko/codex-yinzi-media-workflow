@@ -3,7 +3,6 @@ const path = require('path');
 const yaml = require('js-yaml');
 
 const configPaths = [
-  process.env.YINZI_WORKFLOW_CONFIG,
   path.join(process.cwd(), 'configs', 'config.yaml'),
   path.join(process.cwd(), 'config.yaml'),
   path.join(__dirname, '..', '..', 'configs', 'config.yaml'),
@@ -11,7 +10,9 @@ const configPaths = [
 
 function loadConfig() {
   let raw = null;
-  for (const p of configPaths) {
+  // Embedded/local test runtimes may set their isolated config after importing
+  // a media utility. Resolve the explicit binding when reading, not at import.
+  for (const p of [process.env.YINZI_WORKFLOW_CONFIG, ...configPaths].filter(Boolean)) {
     if (fs.existsSync(p)) {
       raw = fs.readFileSync(p, 'utf8');
       break;

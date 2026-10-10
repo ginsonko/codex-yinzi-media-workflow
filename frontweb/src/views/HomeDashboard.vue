@@ -26,6 +26,7 @@
         <div class="first-run-footnote">当前配置：文本 {{ onboarding?.active_config_counts?.text || 0 }} · 图片 {{ onboarding?.active_config_counts?.image || 0 }} · 视频 {{ onboarding?.active_config_counts?.video || 0 }}；推荐目录只作参考，Codex 会保留你选定的模型，并按你的授权和预算执行。</div>
       </section>
 
+      <section class="panel manual-current" aria-label="画布创作入口"><h2>在画布上制作漫剧与视频</h2><p>上传素材、连接参考、逐镜生成；专用创作助手和你一起整理剧本与镜头。</p><el-button type="primary" plain @click="router.push('/create-canvas')">打开画布创作</el-button></section>
       <section class="metric-grid" aria-label="工作台摘要"><article v-for="metric in metrics" :key="metric.label" class="metric-card"><div class="metric-top"><span>{{ metric.label }}</span><el-icon :class="metric.tone"><component :is="metric.icon" /></el-icon></div><strong>{{ metric.value }}</strong><small>{{ metric.note }}</small></article></section>
 
       <div class="dashboard-columns" :class="{ 'has-work-activity': activeSession?.source_context?.activity || activeBatch }">

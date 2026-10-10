@@ -6,6 +6,8 @@ const QUEUE_TABLES = Object.freeze({
   production_runs: ['running'],
   orchestration_blender_jobs: ['queued', 'running'],
   local_media_jobs: ['queued', 'running'],
+  creation_canvas_jobs: ['queued', 'running'],
+  creation_canvas_runs: ['queued', 'running'],
 });
 
 const LIVE_NODE_STATES = Object.freeze([
@@ -197,6 +199,8 @@ function collectRuntimeWorkStatusOrThrow(db) {
     + counts.production_runs
     + counts.orchestration_blender_jobs
     + counts.local_media_jobs
+    + counts.creation_canvas_jobs
+    + counts.creation_canvas_runs
     + counts.media_batch_items
     + counts.image_generations
     + counts.video_generations

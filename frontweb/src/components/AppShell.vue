@@ -63,6 +63,7 @@ const navGroups = computed(() => [
     { to: '/batch', label: '批量生成', icon: 'CopyDocument' },
   ] },
   { label: '素材与制作', items: [
+    { to: '/create-canvas', label: '画布创作', icon: 'Grid' },
     { to: '/media-library', label: '素材库', icon: 'Picture' },
     { to: '/director', label: '3D 导演台', icon: 'VideoCamera' },
     { to: '/projects', label: '项目与剧集', icon: 'Film' },

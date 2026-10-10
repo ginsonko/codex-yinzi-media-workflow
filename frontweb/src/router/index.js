@@ -10,6 +10,12 @@ const router = createRouter({
   },
   routes: [
     {
+      path: '/create-canvas/:id?',
+      name: 'creation-canvas',
+      component: () => import('@/views/CreationCanvas.vue'),
+      meta: { title: '画布创作', description: '剧本、素材、镜头与专用创作 Agent' }
+    },
+    {
       path: '/research',
       name: 'product-research',
       component: () => import('@/views/ProductResearch.vue'),

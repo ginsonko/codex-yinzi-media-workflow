@@ -131,6 +131,7 @@ function createApp(options = {}) {
   app.use('/api/v1', apiRouter);
   app.locals.blenderService = apiRouter.blenderService;
   app.locals.mediaBatchService = apiRouter.mediaBatchService;
+  app.locals.creationCanvas = apiRouter.creationCanvas;
   app.locals.startupRecovery = startupRecovery;
 
   // 前端静态资源（sxy：web/dist）；Electron 打包时可设 WEB_DIST_PATH

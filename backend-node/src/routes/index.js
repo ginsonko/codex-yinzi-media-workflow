@@ -77,6 +77,9 @@ function setupRouter(cfg, db, log, injected = {}) {
   });
   if (startupRecovery === 'auto') mediaBatch.resumeAll();
   r.mediaBatchService = mediaBatch;
+  const creationCanvas = require('./creationCanvas')(db, cfg, log, mediaBatch, injected.creationCanvas || {});
+  r.use('/creation-canvases', creationCanvas);
+  r.creationCanvas = creationCanvas;
 
   // Read-only process/database identity used by the UI and Codex adapters to
   // prevent split-brain when more than one local backend is running.

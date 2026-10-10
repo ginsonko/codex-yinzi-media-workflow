@@ -1,0 +1,23 @@
+# Infinite canvas and dedicated creation Agent
+
+Use `creation_canvas` when the user wants an editable canvas for drama/video planning, connected reference assets, manual generation or a dedicated creation assistant. UI: `/create-canvas/:id`. Existing `/batch`, `/free-create`, `/research` and `/film/:id/canvas` remain available. This integration adopts Toonflow's interaction pattern; it is not a bundled copy of all Toonflow features.
+
+The host owns task scope and final review. The dedicated model works on the canvas using tools; it does not replace host supervision. Users can work on the same nodes manually. Select an existing text `config_id` plus model with `configure`; the initial transport supports OpenAI Chat Completions-compatible services. `mode=tools` uses native tool calls, `mode=json_actions` is an explicit compatibility option. Do not silently switch models/protocols. Keys belong only in the existing AI configuration API/UI, never in nodes, chat, tool arguments or exports.
+
+Typical sequence:
+
+1. `list`/`create`, then `get`. Keep this `canvas_id`; do not recreate the project after refresh.
+2. `models`/`configure`, then `send` with a stable `request_id`, message and optionally `selected_node_ids`. The returned `run_id` is asynchronous. Read `messages` incrementally with `after`; read `run`/`get` for actual status.
+3. The assistant can edit connected nodes, import existing library/research assets, generate and inspect media and export a sequence. `tools` returns its exact contracts. Edits use operations, never a replacement graph. Updating/deleting a node requires its current `expected_version`; on conflict reread and merge human edits.
+4. Send a correction to interrupt the previous agent round and pause its unsubmitted generation work. `stop` ends text/tool execution; already-submitted provider tasks retain their IDs. Use `resume_job` when the interrupted generation should continue. Existing results are preserved.
+5. Review actual files and tool receipts. `completed` for an Agent means that conversation ended, not that every media job succeeded. Follow jobs and examine generated media separately. Visual inspection is explicit: `inspect` reads an image or analyzes video shots/contact sheets using existing local tools. A contact sheet is sampled evidence, not full-motion QA.
+
+Canvas nodes: `text`, `image`, `video`, `audio`. `data` holds `title`, `prompt` or `text`, `settings`, optional `media` (`local_path`/`url`) and provenance. For uploads use the existing multipart `/api/v1/upload/reference-media`, then `operations` to add the returned file. Imported library nodes keep asset IDs. Research import keeps source/report revision and imports up to 100 records, reporting total and `next_offset`; it does not claim the videos were watched or download platform media.
+
+Image settings use `image_config_id`, `model`, `size`, `aspect_ratio`; video settings use `video_config_id`, `model`, `duration`, `resolution`, `aspect_ratio`. Edges reference another node using `reference`, `first_frame`, `last_frame`, `context`. Selected upstream generation completes before the downstream uses its new result. Inputs/settings are frozen in the generation job; later edits affect the next generation. Existing batch protocol adapters resolve actual provider input. Price/capability metadata is advisory, not a new permission gate.
+
+Explicit regeneration creates a new `request_id` and retains prior attempts, even when a previous attempt succeeded. Repeating the same request after a network failure keeps its original ID and never creates another generation. `get` exposes jobs and versioned attempts; `select_attempt` chooses a previous completed result. One node's old attempt must not replace a newer selection.
+
+`export_video` takes **ordered** video node IDs, not spatial assumptions, and asynchronously produces a real MP4 using the existing strict merge path (720p landscape/portrait or its square preset). It is sequence assembly, not a full nonlinear timeline editor. Use existing editing tools for music mixing, detailed timing, subtitles and advanced finishing. Do not claim a polished full production from a mere concat. A failed merge must remain failed, not present the first shot as the whole film.
+
+After backend restart, text runs become `interrupted` and require a new message; completed tool receipts and media jobs remain available. Ordinary browser refresh does not interrupt them. A model HTTP error/timeout/empty reply is shown and retained; it is not automatically resubmitted. Host tools use the same backend records, so manual and MCP work are inspectable together.

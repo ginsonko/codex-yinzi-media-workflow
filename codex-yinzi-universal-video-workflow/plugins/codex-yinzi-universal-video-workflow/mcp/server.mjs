@@ -10,6 +10,7 @@ import path from 'node:path'
 import readline from 'node:readline'
 import { reverseTools } from './reverse-tools.mjs'
 import { researchTools, researchRequest } from './research-tools.mjs'
+import { canvasTools, canvasRequest } from './canvas-tools.mjs'
 import { styleSupervisorTools, styleSupervisorRequest, selectionSchema } from './style-supervisor-tools.mjs'
 import { activityResponse } from '../skills/codex-yinzi-universal-video/scripts/activity-response.mjs'
 import { readRegistry, localOrigin, verifyUi, openBrowser } from '../scripts/runtime-state.mjs'
@@ -926,6 +927,7 @@ async function reconcileImage(args) {
 }
 
 const tools = [
+  ...canvasTools,
   ...styleSupervisorTools,
   { name:'prompt_adapt', description:'本地分镜提示词适配：读取profiles、拆分可编辑IR或编译目标提示词；保留素材引用与约束，返回差异报告，不提交媒体生成。', inputSchema:{type:'object',properties:{action:{type:'string',enum:['profiles','parse','validate','compile']},text:{type:'string'},ir:{type:'object'},profile:{oneOf:[{type:'string'},{type:'object'}]},options:{type:'object'}}} },
   ...reverseTools,
@@ -978,6 +980,10 @@ tools.find(tool => tool.name === 'generate_video_once').inputSchema.properties.c
 for (const name of ['begin_media_task','create_session']) tools.find(tool=>tool.name===name).inputSchema.properties.supervisor = selectionSchema
 
 async function callTool(name, args = {}) {
+  if (name === 'creation_canvas') {
+    rejectSecrets(args)
+    return api(...canvasRequest(args))
+  }
   if (name === 'product_video_research' || name === 'research_platform_connection') {
     rejectSecrets(args)
     return api(...researchRequest(name, args))

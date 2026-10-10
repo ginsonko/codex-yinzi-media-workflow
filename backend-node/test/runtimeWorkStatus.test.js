@@ -15,6 +15,7 @@ let db;
 let server;
 let origin;
 let storageDir;
+let apiRouter;
 const log = { info() {}, warn() {}, error() {} };
 
 function migrateQuietly() {
@@ -43,10 +44,11 @@ beforeEach(async () => {
   migrateQuietly();
   const app = express();
   app.use(express.json({ limit: '1mb' }));
-  app.use('/api/v1', setupRouter({ storage: { local_path: storageDir, base_url: 'http://127.0.0.1/static' } }, db, log, {
+  apiRouter = setupRouter({ storage: { local_path: storageDir, base_url: 'http://127.0.0.1/static' } }, db, log, {
     production: { media: { fetchVideoCatalog: async () => ({ video: [] }) } },
     orchestration: { localMedia: { execute: async () => { throw new Error('isolation fixture must not execute media'); } } },
-  }));
+  });
+  app.use('/api/v1', apiRouter);
   server = await new Promise((resolve) => {
     const listener = app.listen(0, '127.0.0.1', () => resolve(listener));
   });
@@ -54,12 +56,27 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+  await apiRouter.creationCanvas?.close();
+  apiRouter.mediaBatchService?.stop();
   await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
   db.close();
   fs.rmSync(storageDir, { recursive: true, force: true });
 });
 
 describe('runtime work status upgrade boundary', () => {
+  it('includes active canvas jobs and dedicated Agent runs, but not saved drafts', async () => {
+    const canvas = apiRouter.creationCanvas.service, created = canvas.create({ title: 'status fixture' });
+    assert.equal(collectRuntimeWorkStatus(db).busy, false);
+    canvas.store.record('run', { id: 'fixture-run', canvas_id: created.id, status: 'running' });
+    let state = collectRuntimeWorkStatus(db);
+    assert.equal(state.busy, true); assert.equal(state.counts.creation_canvas_runs, 1);
+    canvas.store.record('run', { id: 'fixture-run', canvas_id: created.id, status: 'interrupted' });
+    canvas.store.record('job', { id: 'fixture-job', canvas_id: created.id, kind: 'generation', steps: [], status: 'running' });
+    state = collectRuntimeWorkStatus(db);
+    assert.equal(state.busy, true); assert.equal(state.counts.creation_canvas_jobs, 1);
+    canvas.store.record('job', { id: 'fixture-job', canvas_id: created.id, kind: 'generation', steps: [], status: 'completed' });
+    assert.equal(collectRuntimeWorkStatus(db).busy, false);
+  });
   it('active research prevents an automatic update, saved finished reports do not', async () => {
     let complete;
     const service=require('../src/services/productResearchJobs').createResearchJobs({root:path.join(storageDir,'research'),sessionManager:{},collect:async ctx=>{

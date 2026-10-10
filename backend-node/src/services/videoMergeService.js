@@ -1,5 +1,6 @@
 const path = require('path');
 const fs = require('fs');
+const { randomUUID } = require('node:crypto');
 const { getFfmpegPath, getFfprobePath, hasLocalFfmpeg } = require('../utils/ffmpegPath');
 const storageLayout = require('./storageLayout');
 
@@ -123,7 +124,7 @@ async function resolveVideoToLocalPath(videoUrl, baseUrl, storageRoot, tempDir, 
   const ext = u.includes('.mp4') ? '.mp4' : u.includes('.webm') ? '.webm' : '.mp4';
   const destPath = path.join(tempDir, `dl_${Date.now()}_${index}${ext}`);
   try {
-    const res = await fetch(u, { method: 'GET' });
+    const res = await fetch(u, { method: 'GET', signal: AbortSignal.timeout(120000) });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const buf = Buffer.from(await res.arrayBuffer());
     fs.writeFileSync(destPath, buf);
@@ -139,7 +140,7 @@ async function resolveVideoToLocalPath(videoUrl, baseUrl, storageRoot, tempDir, 
 function runFfmpegConcat(localPaths, outputPath, log) {
   const ffmpegBin = getFfmpegPath();
   const isWin = process.platform === 'win32';
-  const listFile = path.join(path.dirname(outputPath), `concat_list_${Date.now()}.txt`);
+  const listFile = path.join(path.dirname(outputPath), `concat_list_${randomUUID()}.txt`);
   try {
     const lines = localPaths.map((p) => {
       const normalized = p.replace(/\\/g, '/');
@@ -155,7 +156,7 @@ function runFfmpegConcat(localPaths, outputPath, log) {
       '-y',
       outputPath,
     ];
-    const result = spawnSync(ffmpegBin, args, { encoding: 'utf8', maxBuffer: 4 * 1024 * 1024 });
+    const result = spawnSync(ffmpegBin, args, { encoding: 'utf8', maxBuffer: 4 * 1024 * 1024, windowsHide: true, timeout: 1800000 });
     if (result.error) {
       log.warn('Video merge: ffmpeg spawn error', { error: result.error.message });
       return false;
@@ -175,6 +176,7 @@ function ffmpegInputHasAudio(filePath) {
   const result = spawnSync(getFfmpegPath(), ['-hide_banner', '-i', filePath], {
     encoding: 'utf8',
     maxBuffer: 4 * 1024 * 1024,
+    windowsHide: true, timeout: 30000,
   });
   return /Stream\s+#\d+:\d+[^\n]*Audio:/i.test(result.stderr || '');
 }
@@ -210,7 +212,7 @@ function normalizeClipForStrictMerge(inputPath, outputPath, options, log) {
     '-shortest',
     '-y', outputPath
   );
-  const result = spawnSync(getFfmpegPath(), args, { encoding: 'utf8', maxBuffer: 8 * 1024 * 1024 });
+  const result = spawnSync(getFfmpegPath(), args, { encoding: 'utf8', maxBuffer: 8 * 1024 * 1024, windowsHide: true, timeout: Number(options.timeout_ms) || 1800000 });
   if (result.error || result.status !== 0 || !fs.existsSync(outputPath) || fs.statSync(outputPath).size < 8192) {
     log.warn('Video merge: strict clip normalization failed', {
       input: inputPath,
@@ -294,9 +296,10 @@ async function processVideoMerge(db, log, mergeId, baseUrl, storageRootOverride 
 
   const totalDuration = scenes.reduce((sum, s) => sum + (Number(s.duration) || 0), 0);
   const storageRoot = storageRootOverride ? path.resolve(storageRootOverride) : getStorageRoot();
-  const tempDir = path.join(require('os').tmpdir(), 'drama-video-merge');
-  if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir, { recursive: true });
+  const tempRoot = path.resolve(require('os').tmpdir());
+  const tempDir = fs.mkdtempSync(path.join(tempRoot, `drama-video-merge-${mergeId}-`));
 
+  try {
   const localPaths = [];
   const toCleanup = [];
   for (let i = 0; i < scenes.length; i++) {
@@ -343,7 +346,7 @@ async function processVideoMerge(db, log, mergeId, baseUrl, storageRootOverride 
       ? path.join(storageRoot, sub, 'videos', 'merged')
       : path.join(storageRoot, 'videos', 'merged');
     if (!fs.existsSync(mergedDir)) fs.mkdirSync(mergedDir, { recursive: true });
-    const outputFileName = `merged_${Date.now()}.mp4`;
+    const outputFileName = `merged_${mergeId}_${randomUUID()}.mp4`;
     const outputPath = path.join(mergedDir, outputFileName);
     const ok = strict
       ? runStrictNormalizedMerge(localPaths, outputPath, mergeOpts, log, tempDir)
@@ -417,6 +420,12 @@ async function processVideoMerge(db, log, mergeId, baseUrl, storageRootOverride 
   }
   if (!mergedRelativePath) {
     log.info('Video merge completed (first-clip fallback)', { merge_id: mergeId, episode_id: episodeId });
+  }
+  } finally {
+    // Only this invocation's freshly allocated directory is disposable.
+    if (path.dirname(path.resolve(tempDir)) === tempRoot) {
+      try { fs.rmSync(tempDir, { recursive: true, force: true }); } catch (_) {}
+    }
   }
 }
 

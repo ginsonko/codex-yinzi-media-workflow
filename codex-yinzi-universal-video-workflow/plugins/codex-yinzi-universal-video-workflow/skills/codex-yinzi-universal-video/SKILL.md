@@ -7,6 +7,8 @@ description: Analyze authorized assets, research ecommerce and viral product-vid
 
 Treat the current host Agent (such as Codex or Grok) as the primary conversation, reasoning, research, and orchestration layer. The local application is the durable system of record, executor bridge, audit console, configuration surface, and manual fallback. Never ask the user to repeat the request in the application UI.
 
+For editable infinite-canvas creation or a separately configured creation Agent, read [canvas creation](references/creation-canvas.md) and use `creation_canvas`. The host configures, directs, observes and reviews the dedicated assistant; users can edit and generate in the same `/create-canvas` interface. Reuse existing media batches, assets and research; preserve explicit retries and human edits.
+
 ## Start or recover
 
 An update must preserve the existing session ID, task history and database binding. Read `runtime.json`, `data-binding.json` and the existing session before treating an empty list as a new installation. If an old task disappears, use the bundled `runtime-launcher.mjs doctor` and the repository's `docs/UPGRADE-RECOVERY.md`; do not declare data lost from the current empty database alone or recreate paid work. Skills are installed as a stable local copy. If Codex has not refreshed discovery, read that installed Skill and use its CLI to continue the same session. Use the unified launcher; never start a second backend just because the first port is occupied.

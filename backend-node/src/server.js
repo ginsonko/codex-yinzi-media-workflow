@@ -53,17 +53,22 @@ const server = app.listen(port, host, () => {
   logger.info('Server is ready!');
 });
 
+let shuttingDown = false;
 async function shutdown() {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  const exitTimer = setTimeout(() => process.exit(1), 5000);
   logger.info('Shutting down server...');
   productionAutonomyRunner?.stop();
+  await app.locals.creationCanvas?.close();
   app.locals.mediaBatchService?.stop();
   await app.locals.blenderService?.stop();
   server.close(() => {
+    clearTimeout(exitTimer);
     closeDb();
     logger.info('Server exited');
     process.exit(0);
   });
-  setTimeout(() => process.exit(1), 5000);
 }
 
 process.on('SIGINT', shutdown);
