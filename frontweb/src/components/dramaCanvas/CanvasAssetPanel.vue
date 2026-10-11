@@ -165,9 +165,10 @@ const kindLabel = computed(() => {
   return map[props.kind] || '素材'
 })
 
+// 占位用中文小字，不用 emoji
 const kindIcon = computed(() => {
-  const map = { character: '👤', scene: '🏞', prop: '🎭' }
-  return map[props.kind] || '📦'
+  const map = { character: '角色', scene: '场景', prop: '道具' }
+  return map[props.kind] || '素材'
 })
 
 const previewUrl = computed(() => assetImageUrl(props.entity))
@@ -302,20 +303,34 @@ function highlightRelated() {
 .asset-panel {
   margin-top: 10px;
   width: min(520px, 92vw);
-  padding: 10px 14px 12px;
-  border-radius: 12px;
-  border: 1px solid rgba(52, 211, 153, 0.4);
-  background: rgba(15, 15, 18, 0.97);
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+  padding: 10px 13px 12px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-muted);
+  background: var(--bg-card);
+  box-shadow: var(--shadow-sm);
 }
 .panel-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  font-size: 12px;
-  font-weight: 700;
-  color: #6ee7b7;
-  margin-bottom: 10px;
+  gap: 8px;
+  margin-bottom: 9px;
+  padding-bottom: 7px;
+  border-bottom: 1px solid var(--border-color);
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: .02em;
+  color: var(--text-muted);
+}
+.head-right,
+.head-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.busy-tag {
+  font-size: 10px;
+  color: var(--ui-warning);
 }
 .panel-body {
   display: flex;
@@ -330,10 +345,10 @@ function highlightRelated() {
   position: relative;
   width: 108px;
   height: 108px;
-  border-radius: 10px;
+  border-radius: var(--radius-sm);
   overflow: hidden;
-  background: #09090b;
-  border: 1px solid #3f3f46;
+  background: var(--bg-deep);
+  border: 1px solid var(--border-color);
 }
 .preview-box img {
   width: 100%;
@@ -346,8 +361,9 @@ function highlightRelated() {
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 32px;
-  opacity: 0.65;
+  font-size: 12px;
+  letter-spacing: .06em;
+  color: var(--text-faint);
 }
 .preview-loading {
   position: absolute;
@@ -357,29 +373,30 @@ function highlightRelated() {
   align-items: center;
   justify-content: center;
   gap: 6px;
-  background: rgba(9, 9, 11, 0.82);
+  background: var(--bg-deep);
+  opacity: .94;
   font-size: 10px;
-  color: #d4d4d8;
+  color: var(--text-primary);
   text-align: center;
   padding: 6px;
 }
 .spinner {
-  width: 20px;
-  height: 20px;
-  border: 2px solid rgba(255, 255, 255, 0.12);
-  border-top-color: #34d399;
+  width: 18px;
+  height: 18px;
+  border: 2px solid var(--border-muted);
+  border-top-color: var(--ui-warning);
   border-radius: 50%;
-  animation: spin 0.75s linear infinite;
+  animation: spin .75s linear infinite;
 }
 .entity-status {
   margin-top: 6px;
-  font-size: 10px;
+  font-size: 10.5px;
   text-align: center;
-  color: #71717a;
+  color: var(--text-faint);
 }
-.entity-status.st-processing { color: #60a5fa; }
-.entity-status.st-completed { color: #34d399; }
-.entity-status.st-failed { color: #f87171; }
+.entity-status.st-processing { color: var(--ui-warning); }
+.entity-status.st-completed { color: var(--ui-success); }
+.entity-status.st-failed { color: var(--ui-danger); }
 .form-col {
   flex: 1;
   min-width: 0;
@@ -388,7 +405,7 @@ function highlightRelated() {
   margin-bottom: 6px;
 }
 .compact-form :deep(.el-form-item__label) {
-  color: #71717a;
+  color: var(--text-subtle);
   font-size: 11px;
   padding-right: 6px;
 }
@@ -399,7 +416,7 @@ function highlightRelated() {
 .compact-form :deep(.el-textarea__inner) {
   resize: vertical;
   min-height: 52px;
-  line-height: 1.45;
+  line-height: 1.5;
 }
 .form-row-2 {
   display: flex;
@@ -415,17 +432,11 @@ function highlightRelated() {
   gap: 8px;
   margin-top: 10px;
   padding-top: 8px;
-  border-top: 1px solid rgba(63, 63, 70, 0.6);
+  border-top: 1px solid var(--border-color);
 }
 .panel-actions :deep(.el-button) {
   margin: 0;
 }
-.kind-scene { border-color: rgba(96, 165, 250, 0.45); }
-.kind-scene .panel-head { color: #93c5fd; }
-.kind-scene .spinner { border-top-color: #93c5fd; }
-.kind-prop { border-color: rgba(251, 191, 36, 0.45); }
-.kind-prop .panel-head { color: #fcd34d; }
-.kind-prop .spinner { border-top-color: #fcd34d; }
 @keyframes spin {
   to { transform: rotate(360deg); }
 }

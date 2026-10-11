@@ -6,8 +6,6 @@
 .workspace-frame :is(.director-header,.workflow-header) { position:relative; top:auto; border:1px solid var(--shell-line); border-radius:12px; }
 .workspace-frame .ai-config-content { background:var(--shell-panel); padding:22px; border:1px solid var(--shell-line); border-radius:14px; }
 .workspace-frame .content-actions,.workspace-frame .actions-left { flex-wrap:wrap; gap:8px; }
-.app-shell .el-button--primary:not(.is-link):not(.is-plain) { background:#167a5d !important; border-color:#167a5d !important; box-shadow:0 2px 8px rgba(22,115,89,.22) !important; color:#fff !important; }
-.app-shell .el-button--primary:not(.is-link):not(.is-plain):hover { background:#257e68 !important; border-color:#257e68 !important; }
 .app-shell .runtime-banner,.app-shell .console-header,.app-shell .header,.app-shell .page-header { margin-left:0; margin-right:0; }
 .workspace-frame .actions-left .el-button { margin-left:0; }
 .workspace-intro { max-width:800px; margin:0 0 24px; }

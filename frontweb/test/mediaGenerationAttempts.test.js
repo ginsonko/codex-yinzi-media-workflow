@@ -398,6 +398,7 @@ for (const kind of ['manual', 'batch', 'batch-per-item']) {
       prompt: { value: 'new attempt' }, mode: { value: 'image' }, style: { value: '' },
       aspectRatio: { value: '16:9' }, imageReferences: { value: [] },
       pendingSubmission: pending, submitting, submitError: { value: '' }, canSubmit: { value: true },
+      showPreview: { value: true }, budgetExceeded: { value: true }, capBlocked: { value: true },
       form: { prompt: 'new attempt', lines: '', kind: 'image', count: 1, concurrency: 1, model: '', settings: { aspect_ratio: '16:9' } },
       batchModelSelection: () => ({}), imageSizeFor, modelOptions: { value: [] },
       editorMode: { value: kind === 'batch-per-item' ? 'manual' : 'quick' },
@@ -411,7 +412,7 @@ for (const kind of ['manual', 'batch', 'batch-per-item']) {
     const submit = context[name]
     await submit()
     const originalKey = calls[0].idempotency_key
-    assert.equal(pending.value.key, originalKey, 'failed request remains available immediately')
+    assert.equal(pending.value.key, originalKey, 'failed request remains available immediately, including above-budget requests')
     assert.equal(submitting.value, false)
     assert.equal(JSON.parse([...saved.values()][0]).key, originalKey)
     await submit({ type: 'click' })

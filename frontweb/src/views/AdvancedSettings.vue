@@ -5,9 +5,8 @@
     <main class="advanced-main">
       <section class="page-intro">
         <div>
-          <span class="eyebrow">可控、可迁移、可回滚</span>
-          <h1>高级设置</h1>
-          <p>把工作流的系统提示词、自动化、通知、价格与预算、备份和迁移放在一个地方管理。普通用户可以保持默认，高标准制作时再逐项调整。</p>
+          <h1 class="silver-display">高级设置</h1>
+          <p>这一页放的是「会改变工作流行为」的全局项：运行时并发与效果档位、系统提示词、自动化与通知、价格与预算、备份与迁移。每一项都写了默认值和改了会影响什么。普通用户保持默认即可，高标准制作时再逐项调整。</p>
         </div>
         <div class="intro-actions">
           <el-button :icon="Download" @click="exportBundleFile">导出完整配置</el-button>
@@ -17,13 +16,104 @@
       </section>
 
       <section class="health-strip" aria-label="配置摘要">
-        <div><span>提示词</span><strong>{{ summary.prompts.customized || 0 }} / {{ summary.prompts.total || 0 }} 已自定义</strong></div>
-        <div><span>价格目录</span><strong>{{ summary.prices.total || 0 }} 条<span v-if="summary.prices.automatic"> · {{ summary.prices.automatic }} 条自动目录</span></strong></div>
-        <div><span>新任务预算</span><strong>{{ budgetLabel }}</strong></div>
-        <div><span>备份</span><strong>{{ summary.backup.total || 0 }} 个快照</strong></div>
+        <div><span>提示词</span><strong class="silver-mono">{{ summary.prompts.customized || 0 }} / {{ summary.prompts.total || 0 }}<small>已自定义</small></strong></div>
+        <div><span>价格目录</span><strong class="silver-mono">{{ summary.prices.total || 0 }} 条<small v-if="summary.prices.automatic">{{ summary.prices.automatic }} 条来自自动目录</small></strong></div>
+        <div><span>新任务预算</span><strong class="silver-mono">{{ budgetLabel }}</strong></div>
+        <div><span>备份</span><strong class="silver-mono">{{ summary.backup.total || 0 }} 个<small>快照</small></strong></div>
       </section>
 
       <el-tabs v-model="activeTab" class="advanced-tabs">
+        <el-tab-pane label="运行时与效果" name="runtime">
+          <section class="settings-section">
+            <div class="section-heading">
+              <div><h2>运行时与效果</h2><p>控制同时跑几路生成、界面动效花多少性能。这些是所有页面共用的全局项，改完立刻生效。</p></div>
+            </div>
+
+            <div class="runtime-grid">
+              <article class="runtime-card">
+                <div class="runtime-card-head">
+                  <strong>图片并发数</strong>
+                  <span class="default-tag">默认 3</span>
+                </div>
+                <div class="control-line">
+                  <el-input-number v-model="generationDraft.concurrency" :min="1" :max="20" :precision="0" controls-position="right" />
+                  <span class="unit">路同时生成</span>
+                </div>
+                <p class="impact">影响步骤 2 角色图、步骤 4 场景图、步骤 6 分镜图。调高更快，但过高会触发站点 429 限流；调低最稳，适合额度紧张的站点。</p>
+              </article>
+
+              <article class="runtime-card">
+                <div class="runtime-card-head">
+                  <strong>视频并发数</strong>
+                  <span class="default-tag">默认 3</span>
+                </div>
+                <div class="control-line">
+                  <el-input-number v-model="generationDraft.video_concurrency" :min="1" :max="20" :precision="0" controls-position="right" />
+                  <span class="unit">路同时生成</span>
+                </div>
+                <p class="impact">影响步骤 7 分镜视频。视频按秒计费，并发越高同时扣费越多；想中途停下来检查，建议 1–3。</p>
+              </article>
+
+              <article class="runtime-card">
+                <div class="runtime-card-head">
+                  <strong>视频单任务超时</strong>
+                  <span class="default-tag is-readonly">只读 · 由后端配置</span>
+                </div>
+                <div class="control-line">
+                  <span class="readonly-value silver-mono">{{ generationDraft.video_generation_timeout_minutes ?? '—' }} 分钟</span>
+                </div>
+                <p class="impact">超过这个时间仍未拿到结果的任务会按「结果不明确」处理：不重复提交，保留原任务号等你对账。要改请在本地后端配置里调整，前端不提供隐式修改。</p>
+              </article>
+            </div>
+
+            <div class="storage-panel">
+              <div class="storage-head">
+                <strong>存储与文件位置</strong>
+                <span class="default-tag is-readonly">只读</span>
+              </div>
+              <p>成片、素材、快照都存在运行本工作流的那台机器上，数据库与项目目录由后端自己管理。前端不提供清理缓存的按钮：删文件是不可逆操作，需要在文件系统里手动确认，或先在上面的「备份与迁移」里导出配置包再处理。</p>
+              <p>磁盘紧张时优先把大文件目录换到空间更大的盘，改完重启后端才生效。</p>
+            </div>
+
+            <div class="effects-panel">
+              <div class="effects-head">
+                <strong>界面效果</strong>
+                <span>当前：{{ fxCurrent.label }} · {{ fxCurrent.note }}</span>
+              </div>
+              <div class="effects-options" role="radiogroup" aria-label="界面效果档位">
+                <button
+                  v-for="option in fxLevels"
+                  :key="option.id"
+                  type="button"
+                  role="radio"
+                  :aria-checked="fxLevel === option.id"
+                  :class="['effect-option', { active: fxLevel === option.id }]"
+                  @click="applyEffectLevel(option.id)"
+                >
+                  <strong>{{ option.label }}</strong>
+                  <small>{{ option.note }}</small>
+                </button>
+              </div>
+              <div class="effects-actions">
+                <el-button :loading="measuringFps" @click="runFpsTest">测一下帧率</el-button>
+                <span v-if="fpsResult != null" class="fps-result">
+                  <span class="silver-mono">{{ fpsResult }}</span> 帧/秒
+                  <small>{{ fpsAdvice }}</small>
+                </span>
+                <span v-else class="fps-result muted">当前档位下的实测值。低于 45 会提示你降一档。</span>
+              </div>
+              <p class="effects-note">{{ fxAutoNote }}</p>
+            </div>
+
+            <div class="section-footer">
+              <span v-if="generationSavedAt" class="saved-note">并发设置已保存 · {{ generationSavedAt }}</span>
+              <span v-else class="saved-note muted">并发设置会记住上次保存的值，刷新页面后仍然是它。</span>
+              <span class="spacer"></span>
+              <el-button type="primary" :loading="savingGeneration" @click="saveGeneration">保存并发设置</el-button>
+            </div>
+          </section>
+        </el-tab-pane>
+
         <el-tab-pane label="系统提示词" name="prompts">
           <section class="settings-section">
             <div class="section-heading">
@@ -88,7 +178,7 @@
                   <label for="review-concurrency">同时审批任务数</label>
                   <el-input-number id="review-concurrency" v-model="automationDraft.review_concurrency" :min="1" :precision="0" controls-position="right" />
                 </div>
-                <small>推荐 3。提高并发会更快，也会增加文本模型的瞬时请求量。</small>
+                <small><b class="default-tag">默认 3</b> 提高并发会更快，也会增加文本模型的瞬时请求量；站点限流时先降这一个。</small>
               </article>
 
               <article class="automation-setting-card">
@@ -120,7 +210,7 @@
                   <span class="setting-icon"><el-icon><Bell /></el-icon></span>
                   <div><strong>无人值守提醒</strong><p>只在成片完成或系统确认必须由人处理时提醒；排队、轮询和自动恢复不会打扰你。</p></div>
                 </div>
-                <div class="switch-setting"><span><b>应用内通知</b><small>完成为绿色通知，人工介入为警示通知</small></span><el-switch v-model="automationDraft.notifications_enabled" /></div>
+                <div class="switch-setting"><span><b>应用内通知</b><small>完成是「已成功」的绿灯，需要人工介入是琥珀提示</small></span><el-switch v-model="automationDraft.notifications_enabled" /></div>
                 <div class="switch-setting"><span><b>提示音</b><small>两种结果使用不同节奏；浏览器禁播时仍保留可见通知</small></span><el-switch v-model="automationDraft.notification_sound_enabled" :disabled="!automationDraft.notifications_enabled" /></div>
               </article>
             </div>
@@ -247,12 +337,14 @@ import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Bell, Download, House, Operation, Plus, Refresh, Search, Setting, Switch, Upload } from '@element-plus/icons-vue'
 import { advancedSettingsAPI } from '@/api/advancedSettings'
+import { generationSettingsAPI } from '@/api/prompts'
 import { aiAPI } from '@/api/ai'
+import { useEffects } from '@/composables/useEffects'
 import { normalizeProductionNotificationPreferences } from '@/utils/productionNotifications'
 
 const router = useRouter()
 const loading = ref(false)
-const activeTab = ref('prompts')
+const activeTab = ref('runtime')
 const summary = reactive({ prompts: {}, prices: {}, budget_defaults: {}, backup: {} })
 const prompts = ref([])
 const promptSearch = ref('')
@@ -285,6 +377,36 @@ const previewData = ref(null)
 const previewError = ref('')
 const previewAction = ref(null)
 const applyingPreview = ref(false)
+const generationDraft = reactive({ concurrency: 3, video_concurrency: 3, video_generation_timeout_minutes: null })
+const savingGeneration = ref(false)
+const generationSavedAt = ref('')
+const measuringFps = ref(false)
+const fpsResult = ref(null)
+
+const { level: fxLevel, current: fxCurrent, levels: fxLevels, autoDegraded: fxAutoDegraded, setLevel: setFxLevel, measureFps } = useEffects()
+const fxAutoNote = computed(() => fxAutoDegraded.value
+  ? '程序检测到帧率持续偏低，已经自动降了一档；再手动点一次上面的档位即可覆盖它。'
+  : '四档会一起关掉毛玻璃、网格底纹和持续动效；档位记在本机，下次打开还是这个。')
+const fpsAdvice = computed(() => {
+  const value = Number(fpsResult.value || 0)
+  if (value >= 55) return '这一档很宽裕，可以放心用完整效果。'
+  if (value >= 45) return '够用；如果机器还在跑别的重任务，建议降到轻量。'
+  return '偏低，建议降到更轻的一档，界面更跟手。'
+})
+
+async function applyEffectLevel(id) {
+  setFxLevel(id)
+  ElMessage.success(`界面效果已切换为「${fxLevels.find((item) => item.id === id)?.label || id}」`)
+}
+
+async function runFpsTest() {
+  measuringFps.value = true
+  try {
+    fpsResult.value = await measureFps(1200)
+  } finally {
+    measuringFps.value = false
+  }
+}
 
 const CATEGORY_LABELS = Object.freeze({ all: '全部', story: '剧本', assets: '资源', storyboard: '分镜', director: '导演台', assist: '帮写', review: '审核', automation: '自动化', video: '视频', image: '生图' })
 const promptCategories = computed(() => [{ key: 'all', label: '全部', count: prompts.value.length }, ...Object.entries(CATEGORY_LABELS).filter(([key]) => key !== 'all').map(([key, label]) => ({ key, label, count: prompts.value.filter((item) => item.category === key).length })).filter((item) => item.count)])
@@ -326,8 +448,8 @@ function selectPrompt(id) { selectedPromptId.value = id; promptDraft.value = pro
 async function loadAll() {
   loading.value = true
   try {
-    const [summaryResult, promptResult, priceResult, budgetResult, automationResult, backupResult, catalogResult] = await Promise.all([
-      advancedSettingsAPI.summary(), advancedSettingsAPI.listPrompts(), advancedSettingsAPI.listPrices(), advancedSettingsAPI.getBudgetDefaults(), advancedSettingsAPI.getAutomationPreferences(), advancedSettingsAPI.listBackups({ page: 1, page_size: 30 }), aiAPI.getYinziCatalog().catch(() => null),
+    const [summaryResult, promptResult, priceResult, budgetResult, automationResult, backupResult, catalogResult, generationResult] = await Promise.all([
+      advancedSettingsAPI.summary(), advancedSettingsAPI.listPrompts(), advancedSettingsAPI.listPrices(), advancedSettingsAPI.getBudgetDefaults(), advancedSettingsAPI.getAutomationPreferences(), advancedSettingsAPI.listBackups({ page: 1, page_size: 30 }), aiAPI.getYinziCatalog().catch(() => null), generationSettingsAPI.get().catch(() => null),
     ])
     Object.assign(summary, summaryResult || {})
     prompts.value = promptResult?.prompts || []
@@ -337,7 +459,39 @@ async function loadAll() {
     Object.assign(automationDraft, normalizeProductionNotificationPreferences(automationResult || summaryResult?.automation_preferences))
     automationVideoModels.value = (catalogResult?.video || []).map((item) => item.model || item.name).filter(Boolean)
     Object.assign(backups, backupResult || {})
+    if (generationResult) {
+      // 数字用等宽显示，这里统一成数字，避免出现字符串 "3"
+      Object.assign(generationDraft, {
+        concurrency: Number(generationResult.concurrency ?? 3) || 3,
+        video_concurrency: Number(generationResult.video_concurrency ?? 3) || 3,
+        video_generation_timeout_minutes: generationResult.video_generation_timeout_minutes ?? null,
+      })
+    }
   } catch (error) { ElMessage.error(error.message || '高级设置加载失败') } finally { loading.value = false }
+}
+
+async function saveGeneration() {
+  savingGeneration.value = true
+  try {
+    const result = await generationSettingsAPI.update({
+      concurrency: Number(generationDraft.concurrency) || 1,
+      video_concurrency: Number(generationDraft.video_concurrency) || 1,
+    })
+    Object.assign(generationDraft, {
+      concurrency: Number(result?.concurrency ?? generationDraft.concurrency) || 1,
+      video_concurrency: Number(result?.video_concurrency ?? generationDraft.video_concurrency) || 1,
+      video_generation_timeout_minutes: result?.video_generation_timeout_minutes ?? generationDraft.video_generation_timeout_minutes,
+    })
+    // 记住上次用的值，刷新后先按本机值显示，后端返回后再校准
+    try {
+      localStorage.setItem('yinzi-generation-concurrency', JSON.stringify({
+        concurrency: generationDraft.concurrency,
+        video_concurrency: generationDraft.video_concurrency,
+      }))
+    } catch (_) { /* 隐私模式下写不进去，忽略 */ }
+    generationSavedAt.value = new Date().toLocaleTimeString('zh-CN', { hour12: false })
+    ElMessage.success('并发设置已保存，对之后新建的任务生效')
+  } catch (error) { ElMessage.error(error.message || '并发设置保存失败') } finally { savingGeneration.value = false }
 }
 async function saveSelectedPrompt() {
   if (!selectedPrompt.value) return
@@ -375,7 +529,17 @@ async function saveAutomationPreferences() {
     await refreshSummaryAndBackups()
   } catch (error) { ElMessage.error(error.message || '自动化设置保存失败') } finally { savingAutomation.value = false }
 }
-async function syncPrices() { syncingPrices.value = true; try { const result = await advancedSettingsAPI.syncYinziPrices(); ElMessage.success(`已同步 ${result.imported || 0} 条价格`); await loadAll() } catch (error) { ElMessage.error(error.message || '价格同步失败') } finally { syncingPrices.value = false } }
+async function syncPrices() {
+  try {
+    await ElMessageBox.confirm(
+      '会从 YinziAPI 拉取最新价格目录，并用它覆盖同名的自动价格。手动维护的价格保留，来源标记不变；历史账单不会被改写。这个过程不产生任何生成费用。',
+      '同步价格目录',
+      { type: 'info', confirmButtonText: '开始同步', cancelButtonText: '取消' },
+    )
+  } catch (_) { return }
+  syncingPrices.value = true
+  try { const result = await advancedSettingsAPI.syncYinziPrices(); ElMessage.success(`已同步 ${result.imported || 0} 条价格`); await loadAll() } catch (error) { ElMessage.error(error.message || '价格同步失败') } finally { syncingPrices.value = false }
+}
 function openPriceDialog(row = null) {
   editingPrice.value = Boolean(row)
   Object.assign(priceForm, row ? {
@@ -406,13 +570,49 @@ useWorkbenchPage({ refresh: loadAll, loading: () => loading.value })
 .advanced-header { position: sticky; top: 0; z-index: 20; background: var(--bg-card); border-bottom: 1px solid var(--line); backdrop-filter: blur(12px); }
 .header-inner { max-width: 1240px; min-height: 66px; margin: 0 auto; padding: 10px 24px; display: flex; align-items: center; justify-content: space-between; gap: 16px; }
 .brand { display: inline-flex; align-items: center; gap: 10px; border: 0; background: none; color: inherit; cursor: pointer; text-align: left; }.brand-mark { width: 32px; height: 32px; display: grid; place-items: center; color: var(--shell-panel); background: var(--accent); border-radius: 8px; }.brand-copy { display: grid; gap: 2px; }.brand-copy strong { font-size: 15px; }.brand-copy small { color: var(--muted); font-size:12px; }.header-actions { display: flex; align-items: center; gap: 8px; }
-.advanced-main { max-width: 1240px; margin: 0 auto; padding: 30px 24px 72px; }.page-intro { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; padding-bottom: 24px; }.eyebrow { color: var(--accent); font-size:12px; font-weight: 800; }.page-intro h1 { margin: 5px 0 7px; font-size: 28px; letter-spacing: 0; }.page-intro p { max-width: 760px; margin: 0; color: var(--muted); font-size: 13px; line-height: 1.65; }.intro-actions, .section-actions, .migration-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
-.health-strip { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1px; margin-bottom: 24px; border: 1px solid var(--line); background: var(--line); }.health-strip > div { min-height: 72px; padding: 14px 16px; display: grid; align-content: center; gap: 5px; background: var(--shell-panel); }.health-strip span { color: var(--muted); font-size:12px; }.health-strip strong { color: var(--ui-accent); font-size: 15px; overflow-wrap: anywhere; }.health-strip strong span { color: var(--text-muted); font-size:12px; font-weight: 500; }
-.advanced-tabs :deep(.el-tabs__header) { margin-bottom: 0; }.settings-section { padding: 24px 0; }.section-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; margin-bottom: 18px; }.section-heading h2 { margin: 0 0 5px; font-size: 19px; }.section-heading p { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.6; }
+.advanced-main { max-width: 1240px; margin: 0 auto; padding: 30px 24px 72px; }.page-intro { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; padding-bottom: 24px; }.page-intro h1 { margin: 0 0 8px; font-size: 30px; font-weight: 600; }.page-intro p { max-width: 86ch; margin: 0; color: var(--muted); font-size: 13px; line-height: 1.8; }.intro-actions, .section-actions, .migration-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.health-strip { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1px; margin-bottom: 24px; border: 1px solid var(--line); background: var(--line); }.health-strip > div { min-height: 76px; padding: 14px 16px; display: grid; align-content: center; gap: 5px; background: var(--shell-panel); }.health-strip span { color: var(--muted); font-size: 11.5px; }.health-strip strong { display: grid; gap: 3px; color: var(--text-bright); font-size: 16px; overflow-wrap: anywhere; }.health-strip strong small { color: var(--text-subtle); font-size: 11px; font-weight: 400; }
+.advanced-tabs :deep(.el-tabs__header) { margin-bottom: 0; }.settings-section { padding: 24px 0; }.section-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; margin-bottom: 18px; }.section-heading h2 { margin: 0 0 5px; font-family: var(--font-display); font-size: 19px; font-weight: 600; }.section-heading p { max-width: 82ch; margin: 0; color: var(--muted); font-size: 12px; line-height: 1.7; }
+
+/* ── 运行时与效果 ─────────────────────────────────────────── */
+.runtime-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.runtime-card { padding: 16px 18px; border: 1px solid var(--line); background: var(--shell-panel); }
+.runtime-card-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.runtime-card-head strong { font-size: 13.5px; }
+.default-tag { padding: 2px 7px; border: 1px solid var(--border-color); color: var(--text-subtle); font-size: 10.5px; font-weight: 400; white-space: nowrap; }
+.default-tag.is-readonly { border-style: dashed; }
+.control-line { display: flex; align-items: center; gap: 10px; margin: 14px 0 10px; }
+.control-line .unit { color: var(--text-subtle); font-size: 11.5px; }
+.readonly-value { color: var(--text-bright); font-size: 15px; }
+.impact { margin: 0; color: var(--text-muted); font-size: 11.5px; line-height: 1.75; }
+.storage-panel { margin-top: 14px; padding: 16px 18px; border: 1px solid var(--line); background: var(--bg-inner); }
+.storage-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 8px; }
+.storage-head strong { font-size: 13.5px; }
+.storage-panel p { margin: 6px 0 0; color: var(--text-muted); font-size: 11.5px; line-height: 1.8; }
+.effects-panel { margin-top: 14px; padding: 16px 18px; border: 1px solid var(--line); background: var(--shell-panel); }
+.effects-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.effects-head strong { font-size: 13.5px; }
+.effects-head span { color: var(--text-subtle); font-size: 11.5px; }
+.effects-options { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin: 14px 0 12px; }
+.effect-option { display: grid; gap: 5px; padding: 12px; border: 1px solid var(--border-color); color: var(--text-muted); background: var(--bg-card); text-align: left; font: inherit; cursor: pointer; }
+.effect-option:hover { border-color: var(--border-bright); color: var(--text-bright); }
+.effect-option.active { border-color: var(--ui-accent); color: var(--text-bright); background: var(--ui-accent-soft); }
+.effect-option strong { font-size: 12.5px; font-weight: 600; }
+.effect-option small { color: var(--text-subtle); font-size: 11px; line-height: 1.55; }
+.effects-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }
+.fps-result { color: var(--text-primary); font-size: 12px; }
+.fps-result .silver-mono { font-size: 15px; color: var(--text-bright); }
+.fps-result small { margin-left: 8px; color: var(--text-subtle); font-size: 11px; }
+.fps-result.muted { color: var(--text-subtle); font-size: 11.5px; }
+.effects-note { margin: 12px 0 0; padding-top: 10px; border-top: 1px solid var(--border-muted); color: var(--text-subtle); font-size: 11.5px; line-height: 1.7; }
+.section-footer { display: flex; align-items: center; gap: 12px; margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--line); }
+.section-footer .spacer { flex: 1; }
+.saved-note { font-size: 11.5px; color: var(--ui-success); }
+.saved-note.muted { color: var(--text-subtle); }
 .prompt-layout { min-height: 650px; display: grid; grid-template-columns: 270px minmax(0, 1fr); border: 1px solid var(--line); background: var(--shell-panel); }.prompt-sidebar { min-width: 0; padding: 14px; border-right: 1px solid var(--line); background: var(--bg-card); }.prompt-category-list { display: flex; flex-wrap: wrap; gap: 6px; padding: 13px 0; border-bottom: 1px solid var(--line); }.category-button { min-height: 27px; padding: 3px 7px; display: inline-flex; align-items: center; gap: 5px; border: 1px solid var(--border-color); background: var(--shell-panel); color: var(--text-muted); font: inherit; font-size:12px; cursor: pointer; }.category-button.active { color: var(--ui-accent); border-color: var(--border-color); background: var(--bg-card); }.category-button small { color: var(--text-muted); }.prompt-list { display: grid; gap: 5px; padding-top: 12px; max-height: 510px; overflow: auto; }.prompt-item { min-width: 0; padding: 9px 10px; display: grid; gap: 3px; border: 1px solid transparent; background: transparent; color: var(--ui-info); text-align: left; cursor: pointer; }.prompt-item:hover { border-color: var(--border-color); background: var(--bg-hover); }.prompt-item.active { border-color: var(--border-color); background: var(--bg-card); }.prompt-item strong, .prompt-item small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }.prompt-item strong { font-size: 12px; }.prompt-item small { color: var(--text-muted); font-size:12px; }.prompt-editor-panel { min-width: 0; padding: 24px; display: grid; align-content: start; gap: 14px; }.editor-heading { display: flex; justify-content: space-between; gap: 12px; }.editor-heading h3 { margin: 3px 0 4px; font-size: 18px; }.editor-heading p { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.55; }.editor-category { color: var(--accent); font-size:12px; font-weight: 800; }.editor-meta { display: flex; flex-wrap: wrap; gap: 8px 20px; padding: 10px 12px; border: 1px solid var(--border-color); background: var(--bg-card); color: var(--text-muted); font-size:12px; }.editor-meta span { min-width: 0; display: flex; gap: 5px; align-items: baseline; }.editor-meta b { color: var(--ui-accent); font-size:12px; }.editor-meta code { overflow-wrap: anywhere; }.editor-footer { display: flex; justify-content: space-between; align-items: center; gap: 12px; color: var(--muted); font-size:12px; }.locked-note { white-space: pre-wrap; line-height: 1.5; }.empty-editor { display: grid; place-items: center; min-height: 500px; color: var(--muted); }.empty-note { margin: 16px 0; color: var(--muted); font-size: 12px; }
 .budget-panel { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 16px; border: 1px solid var(--border-color); background: var(--bg-card); }.budget-panel strong { font-size: 13px; }.budget-panel p { margin: 5px 0 0; color: var(--muted); font-size:12px; }.budget-controls { display: flex; align-items: center; flex-wrap: wrap; justify-content: flex-end; gap: 9px; }.budget-controls :deep(.el-input-number) { width: 170px; }.budget-controls > span { color: var(--muted); font-size:12px; }.price-toolbar { display: flex; gap: 8px; margin: 18px 0 12px; }.price-toolbar :deep(.el-input) { max-width: 420px; }.price-toolbar :deep(.el-select) { width: 150px; }.price-table, .backup-table { border: 1px solid var(--line); }.price-table :deep(.el-table__header-wrapper), .price-table :deep(.el-table__body-wrapper), .backup-table :deep(.el-table__header-wrapper), .backup-table :deep(.el-table__body-wrapper) { overflow-x: auto; }.auto-price-note { color: var(--text-muted); font-size:12px; }.price-form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 14px; }.price-form :deep(.el-select), .price-form :deep(.el-input-number) { width: 100%; }.migration-actions { margin-bottom: 14px; }.migration-actions > span { color: var(--muted); font-size:12px; }
 .automation-settings-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }.automation-setting-card, .moderation-fallback-panel { padding: 18px; border: 1px solid var(--line); background: var(--shell-panel); }.setting-card-heading { display: grid; grid-template-columns: 34px minmax(0, 1fr) auto; align-items: start; gap: 11px; }.setting-icon { width: 34px; height: 34px; display: grid; place-items: center; color: var(--shell-panel); background: var(--accent); border-radius: 7px; }.setting-icon.is-warning { background: var(--ui-danger-soft); }.setting-card-heading strong { display: block; margin-bottom: 4px; font-size: 14px; }.setting-card-heading p { margin: 0; color: var(--muted); font-size:12px; line-height: 1.6; }.setting-control-line { margin-top: 20px; display: flex; align-items: center; justify-content: space-between; gap: 14px; }.setting-control-line label, .fallback-controls label { color: var(--ui-accent); font-size:12px; font-weight: 700; }.automation-setting-card > small { display: block; margin-top: 10px; color: var(--muted); font-size:12px; line-height: 1.55; }.switch-setting { min-height: 54px; display: flex; align-items: center; justify-content: space-between; gap: 14px; border-bottom: 1px solid var(--border-color); }.switch-setting:last-child { border-bottom: 0; }.switch-setting span { min-width: 0; display: grid; gap: 3px; }.switch-setting b { color: var(--ui-accent); font-size:12px; }.switch-setting small { color: var(--muted); font-size:12px; line-height: 1.45; }.moderation-fallback-panel { margin-top: 14px; }.fallback-controls { display: grid; grid-template-columns: minmax(280px, .9fr) minmax(0, 1.1fr); gap: 18px; margin: 18px 0 14px; padding-top: 16px; border-top: 1px solid var(--line); }.fallback-controls > div:first-child { display: grid; gap: 7px; }.fallback-controls :deep(.el-select) { width: 100%; }.fallback-receipt { display: flex; align-items: center; gap: 10px; }.fallback-receipt span { color: var(--muted); font-size:12px; line-height: 1.55; }
 .dialog-error { padding: 12px; color: var(--ui-danger); border: 1px solid var(--border-color); background: var(--bg-card); }.diff-summary { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin: 14px 0; }.diff-summary > div { padding: 10px; display: grid; gap: 4px; border: 1px solid var(--line); background: var(--bg-card); }.diff-summary strong { font-size:12px; }.diff-summary span { color: var(--muted); font-size:12px; }.preview-json { max-height: 380px; padding: 12px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--text-muted); background: var(--bg-card); border: 1px solid var(--line); font: 11px/1.55 ui-monospace, SFMono-Regular, Consolas, monospace; }
-@media (max-width: 840px) { .page-intro, .section-heading, .budget-panel { align-items: flex-start; flex-direction: column; }.health-strip { grid-template-columns: 1fr 1fr; }.budget-controls { justify-content: flex-start; }.prompt-layout, .automation-settings-grid, .fallback-controls { grid-template-columns: 1fr; }.prompt-sidebar { border-right: 0; border-bottom: 1px solid var(--line); }.prompt-list { max-height: 240px; }.diff-summary { grid-template-columns: 1fr 1fr; } }
-@media (max-width: 560px) { .header-inner, .advanced-main { padding-left: 14px; padding-right: 14px; }.header-actions > :deep(.el-button:not(.is-circle)) { width: 34px; min-width: 34px; padding: 0; }.header-actions > :deep(.el-button:not(.is-circle)) span { display: none; }.health-strip { grid-template-columns: 1fr; }.intro-actions, .section-actions, .migration-actions, .price-toolbar, .budget-controls { width: 100%; align-items: stretch; flex-direction: column; }.intro-actions :deep(.el-button), .section-actions :deep(.el-button), .migration-actions :deep(.el-button), .budget-controls :deep(.el-button), .price-toolbar :deep(.el-input), .price-toolbar :deep(.el-select) { width: 100%; max-width: none; margin-left: 0; }.prompt-editor-panel { padding: 16px; }.editor-footer { align-items: flex-start; flex-direction: column; }.price-form-grid { grid-template-columns: 1fr; }.diff-summary { grid-template-columns: 1fr; }.setting-card-heading { grid-template-columns: 34px minmax(0, 1fr); }.setting-card-heading > :deep(.el-switch) { grid-column: 1 / -1; justify-self: start; }.setting-control-line, .fallback-receipt { align-items: flex-start; flex-direction: column; } }
+@media (max-width: 840px) { .page-intro, .section-heading, .budget-panel { align-items: flex-start; flex-direction: column; }.health-strip { grid-template-columns: 1fr 1fr; }.budget-controls { justify-content: flex-start; }.prompt-layout, .automation-settings-grid, .fallback-controls, .runtime-grid { grid-template-columns: 1fr; }.effects-options { grid-template-columns: 1fr 1fr; }.prompt-sidebar { border-right: 0; border-bottom: 1px solid var(--line); }.prompt-list { max-height: 240px; }.diff-summary { grid-template-columns: 1fr 1fr; } }
+@media (max-width: 560px) { .header-inner, .advanced-main { padding-left: 14px; padding-right: 14px; }.header-actions > :deep(.el-button:not(.is-circle)) { width: 34px; min-width: 34px; padding: 0; }.header-actions > :deep(.el-button:not(.is-circle)) span { display: none; }.health-strip { grid-template-columns: 1fr; }.effects-options { grid-template-columns: 1fr; }.section-footer { flex-direction: column; align-items: stretch; }.intro-actions, .section-actions, .migration-actions, .price-toolbar, .budget-controls { width: 100%; align-items: stretch; flex-direction: column; }.intro-actions :deep(.el-button), .section-actions :deep(.el-button), .migration-actions :deep(.el-button), .budget-controls :deep(.el-button), .price-toolbar :deep(.el-input), .price-toolbar :deep(.el-select) { width: 100%; max-width: none; margin-left: 0; }.prompt-editor-panel { padding: 16px; }.editor-footer { align-items: flex-start; flex-direction: column; }.price-form-grid { grid-template-columns: 1fr; }.diff-summary { grid-template-columns: 1fr; }.setting-card-heading { grid-template-columns: 34px minmax(0, 1fr); }.setting-card-heading > :deep(.el-switch) { grid-column: 1 / -1; justify-self: start; }.setting-control-line, .fallback-receipt { align-items: flex-start; flex-direction: column; } }
 </style>

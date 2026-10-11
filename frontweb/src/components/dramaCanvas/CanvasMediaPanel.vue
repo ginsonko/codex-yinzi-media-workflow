@@ -134,30 +134,35 @@ async function runStep(step) {
 <style scoped>
 .media-panel {
   margin-top: 10px;
-  width: min(360px, 90vw);
-  padding: 10px 12px 12px;
-  border-radius: 10px;
-  border: 1px solid rgba(129, 140, 248, 0.4);
-  background: rgba(15, 15, 18, 0.96);
-  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.4);
+  width: min(360px, 92vw);
+  padding: 10px 13px 12px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-muted);
+  background: var(--bg-card);
+  box-shadow: var(--shadow-sm);
 }
 .panel-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  font-size: 11px;
-  font-weight: 700;
-  color: #a5b4fc;
-  margin-bottom: 8px;
+  gap: 8px;
+  margin-bottom: 9px;
+  padding-bottom: 7px;
+  border-bottom: 1px solid var(--border-color);
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: .02em;
+  color: var(--text-muted);
 }
-.head-right {
+.head-right,
+.head-actions {
   display: flex;
   align-items: center;
   gap: 6px;
 }
 .busy-tag {
   font-size: 10px;
-  color: #93c5fd;
+  color: var(--ui-warning);
 }
 .panel-body {
   display: flex;
@@ -170,8 +175,8 @@ async function runStep(step) {
   min-width: 180px;
   margin: 0;
   font-size: 11px;
-  line-height: 1.45;
-  color: #d4d4d8;
+  line-height: 1.5;
+  color: var(--text-primary);
   max-height: 72px;
   overflow-y: auto;
 }
@@ -180,9 +185,9 @@ async function runStep(step) {
   width: 120px;
   height: 72px;
   flex-shrink: 0;
-  border-radius: 6px;
+  border-radius: 4px;
   overflow: hidden;
-  background: #09090b;
+  background: var(--bg-deep);
 }
 .preview-img,
 .preview-vid {
@@ -197,7 +202,7 @@ async function runStep(step) {
   align-items: center;
   justify-content: center;
   font-size: 11px;
-  color: #71717a;
+  color: var(--text-faint);
 }
 .preview-loading {
   position: absolute;
@@ -207,17 +212,18 @@ async function runStep(step) {
   align-items: center;
   justify-content: center;
   gap: 4px;
-  background: rgba(9, 9, 11, 0.85);
+  background: var(--bg-deep);
+  opacity: .94;
   font-size: 10px;
-  color: #d4d4d8;
+  color: var(--text-primary);
 }
 .spinner {
   width: 18px;
   height: 18px;
-  border: 2px solid rgba(255, 255, 255, 0.12);
-  border-top-color: #818cf8;
+  border: 2px solid var(--border-muted);
+  border-top-color: var(--ui-warning);
   border-radius: 50%;
-  animation: spin 0.75s linear infinite;
+  animation: spin .75s linear infinite;
 }
 .preview-aud {
   flex: 1;
@@ -225,16 +231,13 @@ async function runStep(step) {
 }
 .audio-label {
   font-size: 11px;
-  color: #fbbf24;
+  color: var(--text-subtle);
   width: 100%;
 }
 .panel-actions {
   display: flex;
   gap: 8px;
 }
-.kind-video { border-color: rgba(244, 114, 182, 0.45); }
-.kind-universal { border-color: rgba(167, 139, 250, 0.45); }
-.kind-audio { border-color: rgba(251, 191, 36, 0.45); }
 @keyframes spin {
   to { transform: rotate(360deg); }
 }

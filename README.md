@@ -10,7 +10,9 @@
 
 [快速安装](#三步开始) · [配置 Key 图文说明](docs/BEGINNER-KEY-SETUP.md) · [安装与故障排查](docs/INSTALLATION.md) · [跨平台安装](docs/CROSS-PLATFORM-INSTALL.md) · [接入其它 Agent 软件](docs/MULTI-HOST.md) · [任务进度与自动更新](docs/WORKFLOW-UPDATES.md) · [分享 Skills](CONTRIBUTING.md) · [许可证](LICENSE)
 
-本次更新：[20 位作品监督、入门引导与制作经验](docs/RELEASE-2026-09-17.md)。
+本次更新：**[v0.2.0 · 画布创作助手与银盐工作台](docs/RELEASE-2026-10-11.md)**。新界面与专用画布 Agent、手动创作、异步视频查询/下载/完成通知配套发布。逐项参考生成、商品视频研究等已有能力保留。
+
+[此前更新：20 位作品监督、入门引导与制作经验](docs/RELEASE-2026-09-17.md)。
 
 **手动图片与视频生成**：批量生成页新增逐项编辑，每条任务可独立填写提示词、选择模型并上传参考图片、视频和音频，支持首尾帧、草稿恢复和结果重试。单条也能直接生成，不依赖 Codex；原快速逐行批量保留。[使用方法与更新说明](docs/MANUAL-BATCH-GENERATION.md)。
 

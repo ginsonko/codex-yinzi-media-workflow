@@ -1,6 +1,6 @@
 app:
   name: 银子AI视频工作流 API
-  version: 0.1.4
+  version: 0.2.0
   debug: false
   language: zh
   distribution_profile: universal

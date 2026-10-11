@@ -30,44 +30,39 @@ function onClick() {
 </script>
 
 <style scoped>
+/* 虚线 = 这里还能加东西，和实色节点区分开 */
 .canvas-add-node {
   width: 176px;
-  padding: 14px 12px;
-  border-radius: 10px;
-  border: 1px dashed rgba(129, 140, 248, 0.45);
-  background: rgba(24, 24, 27, 0.65);
+  padding: 13px 12px;
+  border-radius: var(--radius-sm);
+  border: 1px dashed var(--border-muted);
+  background: transparent;
   cursor: pointer;
   display: flex;
   align-items: center;
   gap: 8px;
-  transition: border-color 0.15s, background 0.15s;
+  transition: border-color .15s, background .15s;
 }
 .canvas-add-node:hover {
-  border-color: #818cf8;
-  background: rgba(129, 140, 248, 0.12);
+  border-color: var(--border-bright);
+  background: var(--bg-hover);
 }
 .add-icon {
-  width: 22px;
-  height: 22px;
-  border-radius: 6px;
-  background: rgba(129, 140, 248, 0.2);
-  color: #a5b4fc;
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  border: 1px solid var(--border-muted);
+  color: var(--text-subtle);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 16px;
-  font-weight: 700;
+  font-size: 14px;
+  line-height: 1;
   flex-shrink: 0;
 }
 .add-label {
-  font-size: 12px;
-  color: #a1a1aa;
+  font-size: 11.5px;
+  color: var(--text-subtle);
 }
-.kind-character { border-color: rgba(52, 211, 153, 0.4); }
-.kind-character .add-icon { background: rgba(52, 211, 153, 0.18); color: #6ee7b7; }
-.kind-scene { border-color: rgba(96, 165, 250, 0.4); }
-.kind-scene .add-icon { background: rgba(96, 165, 250, 0.18); color: #93c5fd; }
-.kind-prop { border-color: rgba(251, 191, 36, 0.4); }
-.kind-prop .add-icon { background: rgba(251, 191, 36, 0.18); color: #fcd34d; }
-.kind-storyboard { border-color: rgba(167, 139, 250, 0.45); width: 200px; }
+.kind-storyboard { width: 200px; }
 </style>

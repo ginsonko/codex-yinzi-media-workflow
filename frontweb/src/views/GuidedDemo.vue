@@ -13,29 +13,35 @@
     </header>
 
     <main class="demo-main">
+      <p class="sim-banner">
+        <el-icon><InfoFilled /></el-icon>
+        <span><b>这是模拟，不花钱。</b>下面每一步都播放本地一份已完成项目的副本，不调用任何模型、不创建生产任务、不产生费用。可以随时前进、后退或重来。</span>
+      </p>
+
       <nav class="demo-steps" aria-label="模拟制作步骤">
         <button
           v-for="(item, index) in steps"
           :key="item.key"
           type="button"
-          :class="['demo-step', { active: index === currentStep, complete: index < currentStep }]"
-          :disabled="index > currentStep"
-          @click="currentStep = index"
+          :class="['demo-step', { active: index === currentStep, complete: index < currentStep, visited: revisits[index] > 1 }]"
+          :aria-current="index === currentStep ? 'step' : undefined"
+          @click="goToStep(index)"
         >
-          <span>{{ index < currentStep ? '✓' : index + 1 }}</span>
+          <span class="step-index silver-mono">{{ index + 1 }}</span>
           <strong>{{ item.label }}</strong>
           <small>{{ item.short }}</small>
+          <span v-if="revisits[index] > 1" class="step-revision silver-mono">R{{ revisits[index] }}</span>
         </button>
       </nav>
 
       <div class="demo-status-line">
-        <span><el-icon><InfoFilled /></el-icon>素材来自已完成的本地“测试”项目；审批、打回和下载都不会创建生产任务。</span>
-        <span>当前修订：R{{ revisions[currentStep] }}</span>
+        <span><el-icon><InfoFilled /></el-icon>素材来自已完成的本地「测试」项目；审批、打回和下载都不会创建生产任务。</span>
+        <span class="silver-mono">步骤 {{ currentStep + 1 }} / {{ steps.length }} · 修订 R{{ revisions[currentStep] }}</span>
       </div>
 
       <section v-if="currentStep === 0" class="demo-stage" aria-labelledby="demo-script-title">
         <div class="stage-heading">
-          <div><p>第一步</p><h1 id="demo-script-title">阅读并审批剧本</h1></div>
+          <div><p><span class="step-dot" aria-hidden="true"></span>步骤 1 / 5 · 剧本</p><h1 id="demo-script-title">阅读并审批剧本</h1></div>
           <span class="approval-state">待你确认</span>
         </div>
         <div class="script-layout">
@@ -65,7 +71,7 @@
 
       <section v-else-if="currentStep === 1" class="demo-stage" aria-labelledby="demo-assets-title">
         <div class="stage-heading">
-          <div><p>第二步</p><h1 id="demo-assets-title">确认角色与场景</h1></div>
+          <div><p><span class="step-dot" aria-hidden="true"></span>步骤 2 / 5 · 资产</p><h1 id="demo-assets-title">确认角色与场景</h1></div>
           <span class="approval-state">2 项待确认</span>
         </div>
         <div class="asset-grid">
@@ -86,7 +92,7 @@
 
       <section v-else-if="currentStep === 2" class="demo-stage" aria-labelledby="demo-board-title">
         <div class="stage-heading">
-          <div><p>第三步</p><h1 id="demo-board-title">审批分镜与可选 3D 预演</h1></div>
+          <div><p><span class="step-dot" aria-hidden="true"></span>步骤 3 / 5 · 分镜</p><h1 id="demo-board-title">审批分镜与可选 3D 预演</h1></div>
           <el-radio-group v-model="directorMode">
             <el-radio-button v-for="option in directorOptions" :key="option" :value="option">{{ option }}</el-radio-button>
           </el-radio-group>
@@ -111,7 +117,7 @@
 
       <section v-else-if="currentStep === 3" class="demo-stage" aria-labelledby="demo-video-title">
         <div class="stage-heading">
-          <div><p>第四步</p><h1 id="demo-video-title">逐镜头审核视频片段</h1></div>
+          <div><p><span class="step-dot" aria-hidden="true"></span>步骤 4 / 5 · 视频</p><h1 id="demo-video-title">逐镜头审核视频片段</h1></div>
           <span class="approval-state">自动路由模型</span>
         </div>
         <div class="shot-review-list">
@@ -130,7 +136,7 @@
 
       <section v-else class="demo-stage" aria-labelledby="demo-final-title">
         <div class="stage-heading">
-          <div><p>第五步</p><h1 id="demo-final-title">检查成片并交付</h1></div>
+          <div><p><span class="step-dot" aria-hidden="true"></span>步骤 5 / 5 · 交付</p><h1 id="demo-final-title">检查成片并交付</h1></div>
           <span class="approval-state is-approved"><el-icon><CircleCheckFilled /></el-icon>模拟完成</span>
         </div>
         <div class="final-layout">
@@ -145,12 +151,16 @@
       </section>
 
       <footer class="demo-actions">
-        <el-button :disabled="currentStep === 0" @click="currentStep--"><el-icon><ArrowLeft /></el-icon>上一步</el-button>
-        <div>
+        <div class="actions-left">
+          <el-button :disabled="currentStep === 0" @click="goToStep(currentStep - 1)"><el-icon><ArrowLeft /></el-icon>上一步</el-button>
+          <el-button :disabled="currentStep >= steps.length - 1" @click="goToStep(currentStep + 1)">下一步<el-icon><ArrowRight /></el-icon></el-button>
+          <el-button :icon="Refresh" @click="restartDemo">重新体验</el-button>
+        </div>
+        <div class="actions-right">
+          <span class="sim-mark">模拟演示 · 不产生费用</span>
           <el-button v-if="currentStep < steps.length - 1" @click="openRejectDialog">打回看看</el-button>
           <el-button v-if="currentStep < steps.length - 1" type="primary" @click="approveCurrent">确认并继续<el-icon><ArrowRight /></el-icon></el-button>
-          <el-button v-else @click="restartDemo">重新体验</el-button>
-          <el-button v-if="currentStep === steps.length - 1" type="primary" @click="startReal">{{ readiness.isReady ? '开始真实制作' : '完成核心配置' }}<el-icon><ArrowRight /></el-icon></el-button>
+          <el-button v-else type="primary" @click="startReal">{{ readiness.isReady ? '开始真实制作' : '完成核心配置' }}<el-icon><ArrowRight /></el-icon></el-button>
         </div>
       </footer>
     </main>
@@ -173,7 +183,7 @@ import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import {
   ArrowLeft, ArrowRight, CircleCheckFilled, Download, InfoFilled, Link, Lock,
-  QuestionFilled, VideoCamera,
+  QuestionFilled, Refresh, VideoCamera,
 } from '@element-plus/icons-vue'
 import { aiAPI } from '@/api/ai'
 import { getConfigReadiness } from '@/utils/configReadiness'
@@ -182,6 +192,8 @@ import { demoShotReferenceLabel } from '@/utils/guidedDemo'
 const router = useRouter()
 const currentStep = ref(0)
 const revisions = ref([1, 1, 1, 1, 1])
+// 每个步骤被打开过的次数：用来在步骤条上标出「你已经回头看过这一步」
+const revisits = ref([1, 0, 0, 0, 0])
 const rejectVisible = ref(false)
 const rejectReason = ref('')
 const previewImage = ref('')
@@ -210,9 +222,16 @@ const shots = [
   { name: '盲者辨日', duration: '7.08 秒', src: '/demo/test-shot-3.mp4', poster: '/demo/test-storyboard-3.webp', transitionMode: 'hard_cut', boardSummary: '正面中景偏全景 · 7 秒 · 普通硬切', description: '从上一镜结束姿态开始，收低手势、向前半步并在稳定画面上切黑。' },
 ]
 
-function approveCurrent() {
-  currentStep.value = Math.min(steps.length - 1, currentStep.value + 1)
+/** 手动跳到任意一步：不花钱，不改真实数据，只切当前显示的那一份副本 */
+function goToStep(index) {
+  const next = Math.max(0, Math.min(steps.length - 1, Number(index)))
+  currentStep.value = next
+  revisits.value[next] = (revisits.value[next] || 0) + 1
   window.scrollTo({ top: 0, behavior: 'smooth' })
+}
+
+function approveCurrent() {
+  goToStep(currentStep.value + 1)
 }
 
 function openRejectDialog() {
@@ -223,12 +242,13 @@ function openRejectDialog() {
 function simulateReject() {
   revisions.value[currentStep.value] += 1
   rejectVisible.value = false
-  ElMessage.success(`已模拟生成 R${revisions.value[currentStep.value]}，评价会成为下一轮约束`)
+  ElMessage.success(`已模拟生成 R${revisions.value[currentStep.value]}，评价会成为下一轮约束；没有发出任何请求`)
 }
 
 function restartDemo() {
   currentStep.value = 0
   revisions.value = [1, 1, 1, 1, 1]
+  revisits.value = [1, 0, 0, 0, 0]
   directorMode.value = '跳过 3D 预演'
   window.scrollTo({ top: 0, behavior: 'smooth' })
 }
@@ -252,24 +272,30 @@ onMounted(async () => {
 .demo-title span { color: var(--text-muted); font-size:12px; }
 .demo-mode { display: inline-flex; align-items: center; gap: 5px; padding: 6px 9px; border: 1px solid var(--border-color); border-radius: 5px; color: var(--ui-accent); background: var(--bg-card); font-size:12px; white-space: nowrap; }
 .demo-main { max-width: 1320px; margin: 0 auto; padding: 22px 18px 46px; }
-.demo-steps { display: grid; grid-template-columns: repeat(5, minmax(120px, 1fr)); margin-bottom: 14px; border: 1px solid var(--border-color); border-radius: 8px; overflow: hidden; background: var(--bg-card); }
-.demo-step { min-width: 0; min-height: 72px; display: grid; grid-template-columns: 28px minmax(0,1fr); align-content: center; column-gap: 8px; padding: 9px 12px; border: 0; border-right: 1px solid var(--border-color); color: var(--text-muted); background: transparent; text-align: left; cursor: pointer; }
+.sim-banner { display: flex; align-items: flex-start; gap: 9px; margin: 0 0 14px; padding: 11px 14px; border: 1px solid var(--border-color); border-left: 2px solid var(--ui-warning); color: var(--text-muted); background: var(--bg-card); font-size: 12px; line-height: 1.7; }
+.sim-banner .el-icon { margin-top: 2px; color: var(--ui-warning); }
+.sim-banner b { color: var(--ui-warning); }
+.demo-steps { display: grid; grid-template-columns: repeat(5, minmax(120px, 1fr)); margin-bottom: 14px; border: 1px solid var(--border-color); border-radius: 8px; overflow: hidden; background: var(--bg-inner); }
+.demo-step { position: relative; min-width: 0; min-height: 74px; display: grid; grid-template-columns: 26px minmax(0,1fr); align-content: center; column-gap: 9px; padding: 9px 12px; border: 0; border-right: 1px solid var(--border-color); color: var(--text-muted); background: transparent; text-align: left; cursor: pointer; font: inherit; }
 .demo-step:last-child { border-right: 0; }
-.demo-step > span { grid-row: 1 / span 2; width: 26px; height: 26px; display: grid; place-items: center; align-self: center; border: 1px solid var(--border-color); border-radius: 50%; color: var(--text-muted); font-size:12px; }
+.step-index { grid-row: 1 / span 2; width: 24px; height: 24px; display: grid; place-items: center; align-self: center; border: 1px solid var(--border-muted); border-radius: 50%; color: var(--text-primary); font-size: 11px; }
 .demo-step strong { color: var(--text-primary); font-size: 13px; }
-.demo-step small { font-size:12px; }
+.demo-step small { color: var(--text-subtle); font-size: 11px; }
+.demo-step:hover { background: var(--bg-hover); }
 .demo-step.active { background: var(--bg-card); }
-.demo-step.active > span { border-color: var(--border-color); color: var(--text-primary); background: var(--ui-accent-soft); }
-.demo-step.complete > span { border-color: var(--border-color); color: var(--ui-accent); }
-.demo-step:disabled { cursor: default; opacity: .58; }
-.demo-status-line { display: flex; justify-content: space-between; gap: 12px; margin-bottom: 18px; color: var(--text-muted); font-size:12px; }
+.demo-step.active .step-index { border-color: var(--ui-accent); color: var(--text-bright); background: var(--ui-accent-soft); }
+.demo-step.complete .step-index { color: var(--ui-success); border-color: var(--ui-success); }
+.step-revision { position: absolute; top: 8px; right: 10px; color: var(--text-faint); font-size: 10.5px; }
+.demo-status-line { display: flex; justify-content: space-between; gap: 12px; margin-bottom: 18px; color: var(--text-subtle); font-size:11.5px; }
 .demo-status-line span { display: inline-flex; align-items: center; gap: 5px; }
 .demo-stage { min-height: 520px; padding: 26px; border: 1px solid var(--border-color); border-radius: 8px; background: var(--bg-card); }
 .stage-heading { display: flex; align-items: center; justify-content: space-between; gap: 18px; margin-bottom: 22px; }
-.stage-heading p { margin: 0 0 4px; color: var(--ui-accent); font-size:12px; font-weight: 700; }
-.stage-heading h1 { margin: 0; font-size: 22px; letter-spacing: 0; }
-.approval-state { display: inline-flex; align-items: center; gap: 5px; padding: 6px 9px; border: 1px solid var(--border-color); border-radius: 5px; color: var(--ui-warning); background: var(--bg-card); font-size:12px; white-space: nowrap; }
-.approval-state.is-approved { border-color: var(--border-color); color: var(--ui-accent); background: var(--bg-card); }
+.stage-heading p { display: inline-flex; align-items: center; gap: 6px; margin: 0 0 5px; color: var(--text-subtle); font-size: 11.5px; }
+.stage-dot, .step-dot { display: none; }
+.stage-heading .step-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--ui-accent); }
+.stage-heading h1 { margin: 0; font-family: var(--font-display); font-size: 22px; font-weight: 600; }
+.approval-state { display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px; border: 1px solid var(--border-color); border-radius: 0; color: var(--ui-warning); background: transparent; font-size: 11.5px; white-space: nowrap; }
+.approval-state.is-approved { color: var(--ui-success); }
 .script-layout { display: grid; grid-template-columns: minmax(0,1.8fr) minmax(260px,.7fr); gap: 24px; }
 .script-document { padding-right: 24px; border-right: 1px solid var(--border-color); }
 .script-document header { display: flex; justify-content: space-between; gap: 12px; padding-bottom: 15px; border-bottom: 1px solid var(--border-color); }
@@ -328,7 +354,8 @@ onMounted(async () => {
 .final-layout aside > p { color: var(--text-muted); font-size:12px; }
 .download-demo { min-height: 38px; display: inline-flex; align-items: center; gap: 6px; margin-top: 8px; padding: 0 13px; border-radius: 6px; color: var(--text-primary); background: var(--ui-accent-soft); text-decoration: none; font-size: 12px; }
 .demo-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 14px; }
-.demo-actions > div { display: flex; gap: 8px; }
+.demo-actions > div { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.sim-mark { color: var(--ui-warning); font-size: 11.5px; }
 .reject-intro { margin-top: 0; color: var(--text-muted); font-size: 12px; line-height: 1.65; }
 .demo-image-preview { position: fixed; inset: 0; z-index: 9999; display: grid; place-items: center; padding: 24px; background: var(--bg-card); cursor: zoom-out; }
 .demo-image-preview img { max-width: 94vw; max-height: 92vh; object-fit: contain; }

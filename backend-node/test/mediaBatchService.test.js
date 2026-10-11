@@ -81,6 +81,29 @@ describe('durable media batch queue', () => {
     }
   });
 
+  it('keeps automatic original-file recovery alive and adopts historical download failures', async () => {
+    let creates = 0;
+    service = createMediaBatchService(db, log, { dispatchVideo: request => {
+      creates++;
+      const result = insertVideo(db, request, { status: 'processing', generation_status: 'completed', submission_status: 'accepted' });
+      db.prepare("UPDATE video_generations SET download_status='failed',download_error='timeout',provider_task_id='same-original-task' WHERE id=?").run(result.id);
+      return result;
+    } });
+    const batch = service.create({ kind: 'video', idempotency_key: 'recover-file', items: [{ prompt: 'original' }] });
+    await service.pump(batch.id); await service.pump(batch.id);
+    const item = service.get(batch.id).items[0];
+    assert.equal(item.status, 'processing'); assert.equal(item.generation_status, 'completed'); assert.equal(item.download_status, 'failed');
+    // Recreate the legacy state from the real user incident.
+    db.prepare("UPDATE media_batch_items SET status='needs_review',error_code='DOWNLOAD_FAILED' WHERE id=?").run(item.id);
+    db.prepare("UPDATE media_batches SET status='needs_review' WHERE id=?").run(batch.id);
+    db.prepare("UPDATE video_generations SET status='completed',download_status='completed',video_url='https://fixture.test/original.mp4' WHERE id=?").run(item.video_id);
+    service.stop(); service = createMediaBatchService(db, log, { dispatchVideo: () => { creates++; throw Error('unexpected regeneration'); } });
+    const recovered = service.get(batch.id); // A normal canvas/batch read recovers the late receipt.
+    assert.equal(recovered.status, 'completed'); assert.equal(recovered.items[0].status, 'completed');
+    assert.equal(recovered.items[0].video_id, item.video_id); assert.equal(recovered.items[0].attempt, item.attempt);
+    assert.equal(creates, 1); service.resumeAll(); await service.pump(batch.id); assert.equal(creates, 1);
+  });
+
   it('reuses one logical batch for the same request key and rejects changed content', () => {
     service = createMediaBatchService(db, log, { dispatchImage: () => ({ id: 1 }) });
     const body = { idempotency_key: 'tab-shared-key', kind: 'image', concurrency: 1, prompt: '同一批任务', items: [{ prompt: 'A' }] };

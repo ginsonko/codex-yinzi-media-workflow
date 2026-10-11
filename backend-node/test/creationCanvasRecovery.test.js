@@ -15,6 +15,34 @@ function batches() {
   return { rows, get created() { return created; }, create() { const row = { id: 'batch-' + ++created, items: [{ id: 'item-' + created, status: 'processing' }] }; rows.set(row.id, row); return row; },
     get: id => rows.get(id), pause() {}, resume() {}, done(id, suffix) { Object.assign(rows.get(id).items[0], { status: 'completed', local_path: suffix + '.png', media_url: 'https://fixture.invalid/' + suffix + '.png' }); } };
 }
+
+test('download states and deduplicated completion survive restart and reach assistant context', async () => {
+  const h = await startCanvasHarness({ video: false }); await h.canvas.close();
+  const b = batches(); let s = createCanvasService(h.db, h.cfg, h.log, b, { terminalPollMs: 0 }), agent;
+  try {
+    const c = s.create(); edits(s, c.id, [{ type: 'add_node', id: 'video', kind: 'video', data: { title: '原视频', prompt: 'test' } }]);
+    const job = s.generate(c.id, { request_id: uid(), node_ids: ['video'] }); s.pump();
+    const item = b.rows.get('batch-1').items[0];
+    Object.assign(item, { status: 'needs_review', generation_status: 'completed', download_status: 'failed', download_error: 'timeout' });
+    s.pump(); s.pump();
+    assert.equal(s.store.read('job', job.job_id).status, 'running');
+    assert.equal(s.get(c.id).nodes[0].attempts[0].delivery.download_status, 'failed');
+    assert.equal(s.messages(c.id).filter(m => m.phase === 'download_recovery').length, 1);
+    Object.assign(item, { status: 'processing', download_status: 'downloading', progress_message: '分段下载 2/3 MB' }); s.pump();
+    Object.assign(item, { status: 'completed', download_status: 'completed', local_path: 'videos/original.mp4', download_url: '/api/v1/assets/1/download' });
+    s.pump(); await s.stop(); s = createCanvasService(h.db, h.cfg, h.log, b, { terminalPollMs: 0 }); s.pump(); s.pump();
+    const notices = s.messages(c.id).filter(m => m.phase === 'completed');
+    assert.equal(notices.length, 1); assert.equal(notices[0].results[0].url, '/api/v1/assets/1/download');
+    assert.equal(b.created, 1);
+    s.configure(c.id, { agent: { config_id: h.configs.text.id } }); agent = createCanvasAgent(s);
+    const run = agent.send(c.id, { request_id: uid(), message: '查询现有结果，不生成' });
+    await wait(() => agent.get(c.id, run.run_id), r => r.status === 'completed');
+    const request = h.completions.at(-1).request;
+    assert.ok(request.messages.some(m => m.content?.includes('后台实际交付通知') && m.content.includes('已生成并下载到本地')));
+    assert.ok(request.messages[0].content.includes('videos/original.mp4'));
+    assert.equal(b.created, 1);
+  } finally { await agent?.close(); await s.stop(); await h.close(); }
+});
 test('library and real research report imports preserve sources, pagination and idempotency', async () => {
   const h = await startCanvasHarness({ video: false }); await h.canvas.close();
   const research = require('../src/services/productResearchJobs').createResearchJobs({ root: path.join(h.root, 'research'), sessionManager: {} });

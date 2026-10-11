@@ -11,7 +11,7 @@
       <Handle type="source" :position="Position.Right" />
       <CanvasNodeStatusOverlay :node-id="id" />
       <div class="head">
-        <span class="badge">📜 剧本</span>
+        <span class="badge">剧本</span>
         <span class="ep">第 {{ data.episode?.episode_number ?? '?' }} 集</span>
       </div>
       <div class="preview">{{ previewText }}</div>
@@ -70,24 +70,23 @@ const isNodeBusy = computed(() => {
 .canvas-script-node {
   position: relative;
   width: 220px;
-  padding: 12px 14px;
-  border-radius: 12px;
-  border: 1px solid rgba(251, 191, 36, 0.45);
-  background: rgba(120, 53, 15, 0.35);
+  padding: 11px 13px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-muted);
+  background: var(--bg-card);
   cursor: pointer;
-  transition: border-color 0.15s, box-shadow 0.15s;
+  transition: border-color .15s, box-shadow .15s;
 }
 .canvas-script-node.focused {
-  border-color: #fbbf24;
-  box-shadow: 0 0 0 1px rgba(251, 191, 36, 0.4), 0 8px 24px rgba(0, 0, 0, 0.35);
+  border-color: var(--border-bright);
+  box-shadow: var(--shadow-glow);
 }
 .canvas-script-node.empty {
   border-style: dashed;
-  opacity: 0.92;
 }
 .canvas-script-node.processing {
-  border-color: #60a5fa;
-  animation: script-pulse 1.4s ease-in-out infinite;
+  border-color: var(--ui-warning);
+  animation: script-pulse 1.6s ease-in-out infinite;
 }
 .head {
   display: flex;
@@ -96,41 +95,44 @@ const isNodeBusy = computed(() => {
   margin-bottom: 6px;
 }
 .badge {
-  font-size: 12px;
-  font-weight: 700;
-  color: #fcd34d;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .04em;
+  color: var(--text-subtle);
 }
 .ep {
-  font-size: 11px;
-  color: #d4d4d8;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 10.5px;
+  color: var(--text-faint);
 }
 .preview {
   font-size: 11px;
-  line-height: 1.45;
-  color: #e4e4e7;
+  line-height: 1.5;
+  color: var(--text-primary);
   max-height: 56px;
   overflow: hidden;
   margin-bottom: 8px;
 }
 .meta {
   display: flex;
-  gap: 8px;
+  gap: 6px;
   flex-wrap: wrap;
   margin-bottom: 6px;
 }
 .meta span {
   font-size: 10px;
-  padding: 2px 6px;
+  padding: 1px 6px;
   border-radius: 4px;
-  background: rgba(255, 255, 255, 0.08);
-  color: #a1a1aa;
+  background: var(--bg-inner);
+  color: var(--text-subtle);
 }
 .hint {
   font-size: 10px;
-  color: #71717a;
+  color: var(--text-faint);
 }
 @keyframes script-pulse {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(96, 165, 250, 0.25); }
-  50% { box-shadow: 0 0 0 5px rgba(96, 165, 250, 0.06); }
+  0%, 100% { box-shadow: 0 0 0 0 var(--ui-warning-soft); }
+  50% { box-shadow: 0 0 0 5px transparent; }
 }
 </style>

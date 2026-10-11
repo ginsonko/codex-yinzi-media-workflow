@@ -29,7 +29,7 @@ jobs:
           . ./scripts/windows-common.ps1
           Install-YinziMediaTools $PWD.Path (Join-Path $env:RUNNER_TEMP 'yinzi-media-tools')
           node ./scripts/verify-runtime.cjs
-      - run: node --test test/*.test.js
+      - run: npm test
         working-directory: backend-node
       - run: node --test test/*.test.js
         working-directory: frontweb

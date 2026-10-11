@@ -1,6 +1,6 @@
 {
   "name": "yinzi-ai-video-workflow-desktop",
-  "version": "0.1.4",
+  "version": "0.2.0",
   "description": "银子AI视频工作流桌面客户端",
   "main": "main.js",
   "author": "银子 (ginsonko)",

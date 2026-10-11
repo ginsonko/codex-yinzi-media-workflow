@@ -1,16 +1,16 @@
 {
   "name": "codex-yinzi-universal-video-workflow",
-  "version": "0.2.1+codex.20260908.1",
-  "description": "\u8ba9 Codex \u52a8\u6001\u8bbe\u8ba1\u3001\u6267\u884c\u5e76\u5ba1\u8ba1\u56fe\u7247\u3001\u89c6\u9891\u3001\u526a\u8f91\u548c\u5185\u5bb9\u7814\u7a76\u4efb\u52a1\uff0c\u540c\u65f6\u4fdd\u7559\u4eba\u5de5\u63a5\u7ba1\u4e0e\u6062\u590d\u80fd\u529b\u3002",
+  "version": "0.3.0+codex.20261011.1",
+  "description": "让 Codex 动态设计、执行并审计图片、视频、剪辑和内容研究任务，同时保留人工接管与恢复能力。",
   "author": {
     "name": "Yinzi"
   },
   "skills": "./skills/",
   "mcpServers": "./.mcp.json",
   "interface": {
-    "displayName": "Codex \u94f6\u5b50\u4e07\u80fd\u89c6\u9891\u5de5\u4f5c\u6d41",
-    "shortDescription": "\u7531 Codex \u81ea\u7531\u7f16\u6392\u3001\u6267\u884c\u548c\u9a8c\u6536\u4efb\u610f\u89c6\u9891\u4efb\u52a1",
-    "longDescription": "\u7528\u6237\u53ea\u9700\u5411 Codex \u8bf4\u660e\u76ee\u6807\u5e76\u63d0\u4f9b\u6587\u4ef6\u6216\u6587\u4ef6\u5939\uff1b\u63d2\u4ef6\u8d1f\u8d23\u52a8\u6001\u89c4\u5212\u3001\u7d20\u6750\u590d\u7528\u3001\u7814\u7a76\u3001\u751f\u6210\u3001\u526a\u8f91\u3001\u9a8c\u6536\u3001\u8fdb\u5ea6\u5ba1\u8ba1\u4e0e\u91cd\u542f\u6062\u590d\u3002",
+    "displayName": "Codex 银子万能视频工作流",
+    "shortDescription": "由 Codex 自由编排、执行和验收任意视频任务",
+    "longDescription": "用户只需向 Codex 说明目标并提供文件或文件夹；插件负责动态规划、素材复用、研究、生成、剪辑、验收、进度审计与重启恢复。",
     "developerName": "Yinzi",
     "category": "Productivity",
     "capabilities": [
@@ -18,6 +18,6 @@
       "Dynamic orchestration",
       "Auditable execution"
     ],
-    "defaultPrompt": "\u4f7f\u7528 $codex-yinzi-universal-video \u8bfb\u53d6\u6211\u63d0\u4f9b\u7684\u7d20\u6750\uff0c\u5148\u5efa\u7acb\u53ef\u6062\u590d\u7684\u52a8\u6001\u8ba1\u5212\u5e76\u8bf4\u660e\u4ed8\u8d39\u6b65\u9aa4\uff0c\u518d\u6309\u786e\u8ba4\u540e\u7684\u8ba1\u5212\u5b8c\u6210\u89c6\u9891\u4efb\u52a1\u3002"
+    "defaultPrompt": "使用 $codex-yinzi-universal-video 读取我提供的素材，先建立可恢复的动态计划并说明付费步骤，再按确认后的计划完成视频任务。"
   }
 }

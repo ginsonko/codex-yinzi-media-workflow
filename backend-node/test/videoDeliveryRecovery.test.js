@@ -91,6 +91,35 @@ function insertGeneration(db, patch = {}) {
 }
 
 describe('video delivery recovery', () => {
+  it('recovers dead download owners and retains live owners across restart', () => {
+    const db = createDb();
+    try {
+      const base = { download_status: 'downloading', download_lease_expires_at: new Date(Date.now() + 60000).toISOString() };
+      const dead = insertGeneration(db, { ...base, download_lease_owner: 'download-1234-dead' });
+      const live = insertGeneration(db, { ...base, download_lease_owner: 'download-5678-live' });
+      videoService._backfillVideoDeliveryState(db, log, pid => pid === 5678);
+      assert.equal(videoService.getById(db, dead).download_status, 'failed');
+      assert.equal(videoService.getById(db, live).download_status, 'downloading');
+    } finally { db.close(); }
+  });
+  it('renews the same lease during a slow original-file download', async () => {
+    const db = createDb(), id = insertGeneration(db);
+    try {
+      let before;
+      const result = await videoService.resumeDownloadForVideoGeneration(db, log, id, {
+        config: { storage: { local_path: 'unused' } }, video_config: {}, lease_ms: 60, disable_retry: true,
+        download: async () => {
+          before = db.prepare('SELECT download_lease_expires_at FROM video_generations WHERE id=?').get(id).download_lease_expires_at;
+          await new Promise(resolve => setTimeout(resolve, 120));
+          const latest = db.prepare('SELECT download_lease_expires_at FROM video_generations WHERE id=?').get(id);
+          assert.ok(latest.download_lease_expires_at > before);
+          assert.ok(Date.parse(latest.download_lease_expires_at) > Date.now());
+          return 'videos/recovered.mp4';
+        },
+      });
+      assert.equal(result.state, 'completed');
+    } finally { db.close(); }
+  });
   it('uses the saved submitted prompt after restart and falls back for historical records', async () => {
     const db = createDb();
     const userPrompt = '角色走向镜头。';

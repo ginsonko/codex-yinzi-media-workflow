@@ -24,6 +24,11 @@
     </header>
 
     <main class="library-main">
+      <!-- 这一页在管什么：给用户看的说明，不是营销文案 -->
+      <section class="scope-note" aria-label="这一页在管什么">
+        <p>这一页只管「看和取」：把三个来源的素材按类型、来源、时间、分类、关键词筛出来，预览、下载、以及对手工素材改名或删除。筛选和排序只作用于当前这一个来源；批量删除只对「手动与上传」生效，其余来源在源头工作流里改。</p>
+      </section>
+
       <div class="source-switch">
         <el-radio-group v-model="librarySource" @change="changeSource">
           <el-radio-button value="orchestration">Codex 任务成果</el-radio-button>
@@ -62,6 +67,23 @@
           <el-option label="全部项目" value="all" />
           <el-option v-for="drama in dramas" :key="drama.id" :label="drama.title || `项目 ${drama.id}`" :value="String(drama.id)" />
         </el-select>
+        <el-select v-model="timeRange" class="time-filter" aria-label="时间范围" @change="applyTimeRange">
+          <el-option v-for="option in TIME_RANGES" :key="option.value" :label="option.label" :value="option.value" />
+        </el-select>
+        <el-select
+          v-if="categoryOptions.length > 1"
+          v-model="category"
+          class="category-filter"
+          filterable
+          aria-label="素材分类"
+          @change="resetAndLoad"
+        >
+          <el-option label="全部分类" value="all" />
+          <el-option v-for="name in categoryOptions" :key="name" :label="name" :value="name" />
+        </el-select>
+        <el-select v-model="sortBy" class="sort-filter" aria-label="排序方式">
+          <el-option v-for="option in SORT_OPTIONS" :key="option.value" :label="option.label" :value="option.value" />
+        </el-select>
         <el-input
           v-model="keyword"
           class="search-input"
@@ -80,28 +102,45 @@
       </div>
 
       <div class="result-summary">
-        <span>共 {{ total }} 项</span>
-        <span v-if="librarySource === 'production'">当前仅展示每个制作对象的最新批准版本</span>
+        <div class="summary-left">
+          <span>共 {{ total }} 项</span>
+          <span v-if="pageTotal > pageSize" class="page-hint">当前第 {{ page }} 页，本页 {{ mediaItems.length }} 项</span>
+          <span v-if="clientFiltered" class="page-hint">排序/时间/分类在本页内生效，需要更准的范围请缩小关键词</span>
+        </div>
+        <div class="summary-right">
+          <span v-if="librarySource === 'production'">仅展示每个制作对象的最新批准版本</span>
+          <el-radio-group v-model="viewMode" size="small" aria-label="显示方式" @change="savePrefs">
+            <el-radio-button value="grid" title="网格视图">网格</el-radio-button>
+            <el-radio-button value="list" title="列表视图">列表</el-radio-button>
+          </el-radio-group>
+        </div>
       </div>
 
-      <p v-if="loadError" role="alert">{{ loadError }}；保留上次成功读取的结果。</p>
+      <div v-if="loadError" class="load-error" role="alert">
+        <div>
+          <strong>素材列表读取失败</strong>
+          <span>{{ loadError }}；页面保留上次成功读取的结果。可先点「刷新」重试，仍失败说明本地后端没有响应。</span>
+        </div>
+        <el-button size="small" :loading="loading" @click="loadMedia">重试</el-button>
+      </div>
+
       <OrchestrationArtifactGallery v-if="librarySource === 'orchestration'" :items="mediaItems" :loading="loading" :error="loadError" />
-      <section v-else v-loading="loading" class="media-grid" aria-live="polite">
+      <section v-else v-loading="loading" :class="['media-grid', { 'is-list': viewMode === 'list' }]" aria-live="polite">
         <article
-          v-for="item in mediaItems"
+          v-for="item in visibleItems"
           :key="item.id"
           :class="['media-card', { selected: isSelected(item), unavailable: item.available === false }]"
           @click="handleCardClick(item)"
         >
           <div class="media-thumb">
-            <img v-if="item.type === 'image' && itemUrl(item)" :src="itemUrl(item)" class="thumb-media" :alt="item.name" loading="lazy" />
+            <img v-if="item.type === 'image' && itemUrl(item)" :src="itemUrl(item)" class="thumb-media" :alt="item.name" loading="lazy" decoding="async" />
             <video
               v-else-if="item.type === 'video' && itemUrl(item)"
               :src="`${itemUrl(item)}#t=0.1`"
               class="thumb-media"
               muted
               playsinline
-              preload="metadata"
+              preload="none"
             />
             <div v-else-if="item.type === 'audio'" class="media-placeholder audio-placeholder">
               <el-icon><Headset /></el-icon>
@@ -114,19 +153,22 @@
             <span v-if="item.library_source === 'production'" class="source-badge">
               <el-icon><Lock /></el-icon>{{ productionStageLabel(item.stage) }}
             </span>
-            <el-icon v-if="isSelected(item)" class="check-icon"><CircleCheck /></el-icon>
+            <span v-if="isSelected(item)" class="check-icon" aria-hidden="true"><el-icon><CircleCheck /></el-icon></span>
+            <span v-if="selectable" class="select-hint" :title="isSelected(item) ? '取消选择' : '加入选择'">
+              <el-icon><Files /></el-icon>
+            </span>
 
             <div class="media-overlay" @click.stop>
               <el-button
                 :icon="ZoomIn"
-                circle
-                title="预览"
+                size="small"
+                title="预览并查看元数据"
                 :disabled="!itemUrl(item)"
                 @click="openPreview(item)"
               />
               <el-button
                 :icon="Download"
-                circle
+                size="small"
                 title="下载"
                 :disabled="!itemUrl(item)"
                 @click="downloadItem(item)"
@@ -134,14 +176,14 @@
               <el-button
                 v-if="item.library_source === 'production'"
                 :icon="FolderOpened"
-                circle
+                size="small"
                 title="打开来源制作任务"
                 @click="openSource(item)"
               />
               <el-button
                 v-else
                 :icon="Delete"
-                circle
+                size="small"
                 type="danger"
                 plain
                 title="删除"
@@ -158,9 +200,12 @@
               <span>修订 {{ item.revision }}</span>
             </div>
             <div class="media-meta">
-              <span>{{ mediaTypeLabel(item.type) }}</span><span v-if="item.file_size">{{ formatBytes(item.file_size) }}</span>
-              <span v-if="formatDuration(item.duration_seconds || item.duration)">{{ formatDuration(item.duration_seconds || item.duration) }}</span>
-              <span>{{ formatDate(item.approved_at || item.created_at) }}</span>
+              <span>{{ mediaTypeLabel(item.type) }}</span><span v-if="item.file_size" class="num">{{ formatBytes(item.file_size) }}</span>
+              <span v-if="formatDuration(item.duration_seconds || item.duration)" class="num">{{ formatDuration(item.duration_seconds || item.duration) }}</span>
+              <span v-if="itemSize(item)" class="num">{{ itemSize(item) }}</span>
+            </div>
+            <div class="media-meta media-meta-time">
+              <span class="num">{{ formatDate(item.approved_at || item.created_at) }}</span>
             </div>
             <div v-if="item.library_source === 'production'" :class="['availability', `is-${availabilityTone(item)}`]">
               {{ availabilityLabel(item) }}
@@ -170,16 +215,21 @@
 
         <div v-if="!loading && mediaItems.length === 0" class="empty-media">
           <el-icon><Files /></el-icon>
-          <strong>{{ librarySource === 'production' ? '没有符合筛选条件的生产资产' : '还没有手工上传素材' }}</strong>
-          <span>{{ librarySource === 'production' ? '完成并批准资源后会自动出现在这里' : '上传后会保存在本地素材库中' }}</span>
+          <strong>{{ emptyTitle }}</strong>
+          <span>{{ emptyHint }}</span>
+          <div class="empty-actions">
+            <el-button v-if="librarySource === 'upload'" type="primary" @click="triggerUpload">选择文件上传</el-button>
+            <el-button v-if="librarySource === 'production'" @click="router.push('/workflow')">去制作流程</el-button>
+            <el-button @click="router.push('/asset-import')">从文件夹批量导入</el-button>
+          </div>
         </div>
       </section>
 
-      <div v-if="total > pageSize" class="pagination">
+      <div v-if="pageTotal > pageSize" class="pagination">
         <el-pagination
           v-model:current-page="page"
           v-model:page-size="pageSize"
-          :total="total"
+          :total="pageTotal"
           :page-sizes="[20, 30, 50, 100]"
           layout="total, sizes, prev, pager, next"
           @current-change="loadMedia"
@@ -188,38 +238,70 @@
       </div>
     </main>
 
-    <div v-if="librarySource === 'upload' && selectedIds.size" class="batch-bar">
+    <div v-if="selectable && selectedIds.size" class="batch-bar">
       <span>已选 {{ selectedIds.size }} 项</span>
+      <el-button size="small" :icon="Download" @click="batchDownload">批量下载</el-button>
+      <el-button size="small" :icon="Files" @click="selectAllVisible">全选本页</el-button>
       <el-button size="small" @click="selectedIds.clear()">取消</el-button>
       <el-button size="small" type="danger" plain :icon="Delete" @click="batchDelete">批量删除</el-button>
     </div>
 
-    <el-dialog v-model="showPreview" :title="previewItem?.name || '素材预览'" width="min(900px, 94vw)" destroy-on-close @closed="previewItem = null">
-      <div class="preview-content">
-        <video v-if="previewItem?.type === 'video'" :src="itemUrl(previewItem)" controls autoplay playsinline class="preview-video" />
-        <audio v-else-if="previewItem?.type === 'audio'" :src="itemUrl(previewItem)" controls autoplay class="preview-audio" />
-        <img v-else-if="previewItem" :src="itemUrl(previewItem)" class="preview-image" :alt="previewItem.name" />
+    <el-drawer
+      v-model="showPreview"
+      :with-header="false"
+      size="min(560px, 96vw)"
+      class="preview-drawer"
+      destroy-on-close
+      @closed="previewItem = null"
+    >
+      <div v-if="previewItem" class="drawer-body">
+        <header class="drawer-head">
+          <div class="drawer-title">
+            <h2>{{ previewItem.name || '未命名' }}</h2>
+            <p>{{ mediaTypeLabel(previewItem.type) }} · {{ sourceLabel }}</p>
+          </div>
+          <el-button :icon="Close" circle title="关闭" @click="showPreview = false" />
+        </header>
+
+        <div class="preview-content">
+          <video v-if="previewItem.type === 'video'" :src="itemUrl(previewItem)" controls autoplay playsinline class="preview-video" />
+          <audio v-else-if="previewItem.type === 'audio'" :src="itemUrl(previewItem)" controls autoplay class="preview-audio" />
+          <img v-else :src="itemUrl(previewItem)" class="preview-image" :alt="previewItem.name" loading="lazy" />
+        </div>
+
+        <dl class="meta-table">
+          <div v-for="row in previewMeta(previewItem)" :key="row.label">
+            <dt>{{ row.label }}</dt>
+            <dd :class="{ num: row.mono }">{{ row.value }}</dd>
+          </div>
+        </dl>
+
+        <el-alert
+          v-if="previewItem.available === false"
+          type="warning"
+          :closable="false"
+          show-icon
+          title="源文件当前不可用"
+          description="这条记录仍在，但磁盘上的文件不在原位。请回到来源任务重新准备，或检查素材是否被移动。"
+        />
+
+        <footer class="drawer-foot">
+          <el-button v-if="previewItem.library_source === 'production'" :icon="FolderOpened" @click="openSource(previewItem)">查看制作流程</el-button>
+          <el-button v-if="previewItem.library_source === 'upload'" :icon="Edit" @click="renameItem(previewItem)">重命名</el-button>
+          <el-button type="primary" :icon="Download" :disabled="!itemUrl(previewItem)" @click="downloadItem(previewItem)">下载</el-button>
+        </footer>
       </div>
-      <div v-if="previewItem" class="preview-meta">
-        <div><span>类型</span>{{ mediaTypeLabel(previewItem.type) }}</div>
-        <div v-if="previewItem.library_source === 'production'"><span>来源</span>{{ previewItem.drama_title }} · {{ productionStageLabel(previewItem.stage) }}</div>
-        <div><span>时间</span>{{ formatDate(previewItem.approved_at || previewItem.created_at) }}</div>
-      </div>
-      <template #footer>
-        <el-button v-if="previewItem?.library_source === 'production'" :icon="FolderOpened" @click="openSource(previewItem)">查看制作流程</el-button>
-        <el-button type="primary" :icon="Download" @click="downloadItem(previewItem)">下载</el-button>
-      </template>
-    </el-dialog>
+    </el-drawer>
   </div>
   </div>
 </template>
 
 <script setup>
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
-  ArrowLeft, CircleCheck, Delete, Download, Files, FolderOpened,
+  ArrowLeft, CircleCheck, Close, Delete, Download, Files, FolderOpened,
   Edit, Headset, Loading, Lock, Refresh, Search, Upload, ZoomIn,
 } from '@element-plus/icons-vue'
 import { uploadAPI } from '@/api/upload'
@@ -258,6 +340,88 @@ const previewItem = ref(null)
 const uploadInput = ref(null)
 let keywordTimer = null
 let loadSequence = 0
+
+/* ── 手动可控的视图参数：全部记在 localStorage（yinzi- 前缀） ── */
+const TIME_RANGES = [
+  { value: 'all', label: '不限时间' },
+  { value: '1', label: '最近 24 小时' },
+  { value: '7', label: '最近 7 天' },
+  { value: '30', label: '最近 30 天' },
+]
+const SORT_OPTIONS = [
+  { value: 'newest', label: '最新优先' },
+  { value: 'oldest', label: '最早优先' },
+  { value: 'size-desc', label: '文件从大到小' },
+  { value: 'size-asc', label: '文件从小到大' },
+  { value: 'name', label: '按名称' },
+]
+
+function pref(key, fallback) {
+  try { return localStorage.getItem(`yinzi-media-library-${key}`) ?? fallback } catch (_) { return fallback }
+}
+function savePrefs() {
+  try {
+    localStorage.setItem('yinzi-media-library-view', viewMode.value)
+    localStorage.setItem('yinzi-media-library-sort', sortBy.value)
+    localStorage.setItem('yinzi-media-library-range', timeRange.value)
+    localStorage.setItem('yinzi-media-library-page-size', String(pageSize.value))
+  } catch (_) { /* 隐私模式下写不进去，不影响使用 */ }
+}
+
+const viewMode = ref(pref('view', 'grid') === 'list' ? 'list' : 'grid')
+const sortBy = ref(SORT_OPTIONS.some(o => o.value === pref('sort', 'newest')) ? pref('sort', 'newest') : 'newest')
+const timeRange = ref(TIME_RANGES.some(o => o.value === pref('range', 'all')) ? pref('range', 'all') : 'all')
+const category = ref('all')
+pageSize.value = Number(pref('page-size', '30')) || 30
+
+const selectable = computed(() => librarySource.value === 'upload')
+const sourceLabel = computed(() => ({ orchestration: 'Codex 任务成果', production: '已批准生产资产', upload: '手动与上传' })[librarySource.value] || '')
+
+/* 时间 / 分类是本地筛选；后端只接受 page、page_size、type、keyword，所以先取回本页再筛 */
+const categoryOptions = computed(() => {
+  const names = new Set()
+  for (const item of mediaItems.value) if (item.category) names.add(String(item.category))
+  return [...names].sort((a, b) => a.localeCompare(b, 'zh-CN'))
+})
+const pageTotal = computed(() => total.value)
+const clientFiltered = computed(() => timeRange.value !== 'all' || category.value !== 'all' || sortBy.value !== 'newest')
+const visibleItems = computed(() => {
+  const now = Date.now()
+  const windowMs = timeRange.value === 'all' ? 0 : Number(timeRange.value) * 24 * 60 * 60 * 1000
+  let rows = mediaItems.value.filter((item) => {
+    if (category.value !== 'all' && String(item.category || '') !== category.value) return false
+    if (!windowMs) return true
+    const stamp = Date.parse(item.approved_at || item.created_at || '')
+    return Number.isFinite(stamp) ? now - stamp <= windowMs : true
+  })
+  const time = (item) => Date.parse(item.approved_at || item.created_at || '') || 0
+  const size = (item) => Number(item.file_size) || 0
+  const pick = {
+    newest: (a, b) => time(b) - time(a),
+    oldest: (a, b) => time(a) - time(b),
+    'size-desc': (a, b) => size(b) - size(a),
+    'size-asc': (a, b) => size(a) - size(b),
+    name: (a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'zh-CN'),
+  }[sortBy.value]
+  return pick && sortBy.value !== 'newest' ? [...rows].sort(pick) : rows
+})
+
+const emptyTitle = computed(() => {
+  if (mediaItems.value.length === 0) {
+    if (librarySource.value === 'production') return '没有符合筛选条件的生产资产'
+    if (librarySource.value === 'orchestration') return '还没有 Codex 任务成果'
+    return '还没有手工上传素材'
+  }
+  return '当前条件和排序下这一页没有素材'
+})
+const emptyHint = computed(() => {
+  if (mediaItems.value.length === 0) {
+    if (librarySource.value === 'production') return '在制作流程里完成并批准资产后会自动出现在这里'
+    if (librarySource.value === 'orchestration') return '让 Codex 跑完一步后，成果会自动登记到目录里'
+    return '上传后会保存在本地素材库中，可改名、下载和批量整理'
+  }
+  return '时间范围或分类过窄，放宽任意一项即可看到本页其余素材'
+})
 
 function triggerUpload() {
   uploadInput.value?.click()
@@ -303,6 +467,7 @@ function debouncedLoad() {
 function changeSource() {
   selectedIds.clear()
   mediaType.value = 'all'
+  category.value = 'all'
   page.value = 1
   loadMedia()
 }
@@ -310,6 +475,17 @@ function changeSource() {
 function resetAndLoad() {
   page.value = 1
   loadMedia()
+}
+
+/* 时间范围只筛本页，不用重新请求后端；清空选择避免指到看不见的项 */
+function applyTimeRange() {
+  savePrefs()
+  pruneSelection()
+}
+
+function pruneSelection() {
+  const visible = new Set(visibleItems.value.filter(item => item.library_source === 'upload').map(item => Number(item.id)))
+  for (const id of [...selectedIds]) if (!visible.has(id)) selectedIds.delete(id)
 }
 
 async function loadMedia() {
@@ -341,6 +517,7 @@ async function loadMedia() {
       total.value = result?.pagination?.total || 0
     }
     loadError.value = ''
+    pruneSelection()
   } catch (error) {
     if (sequence !== loadSequence) return
     loadError.value = error?.message || '素材暂时无法刷新'
@@ -397,12 +574,46 @@ function formatDate(value) {
   return date.toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
 }
 
+function formatFullDate(value) {
+  if (!value) return '未记录'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return '未记录'
+  return date.toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
+}
+
+/* 预览抽屉里的元数据：只列真实存在的字段，缺的写「未记录」，不猜 */
+function previewMeta(item) {
+  const rows = [
+    { label: '类型', value: mediaTypeLabel(item.type) },
+    { label: '来源', value: item.library_source === 'production' ? `${item.drama_title || `项目 ${item.drama_id}`} · ${productionStageLabel(item.stage)}` : sourceLabel.value },
+  ]
+  if (item.category) rows.push({ label: '分类', value: item.category })
+  if (item.file_size) rows.push({ label: '文件大小', value: formatBytes(item.file_size), mono: true })
+  if (item.width && item.height) rows.push({ label: '尺寸', value: `${item.width} × ${item.height}`, mono: true })
+  const duration = formatDuration(item.duration_seconds || item.duration)
+  if (duration) rows.push({ label: '时长', value: duration, mono: true })
+  if (item.mime_type) rows.push({ label: '格式', value: item.mime_type, mono: true })
+  if (item.revision != null) rows.push({ label: '修订', value: `v${item.revision}`, mono: true })
+  if (item.scope_type === 'shot') rows.push({ label: '镜头', value: `#${item.scope_id}`, mono: true })
+  if (item.run_id) rows.push({ label: '来源任务', value: item.run_id, mono: true })
+  rows.push({ label: '记录时间', value: formatFullDate(item.approved_at || item.created_at), mono: true })
+  if (item.local_path || item.media_path) rows.push({ label: '文件位置', value: item.local_path || item.media_path, mono: true })
+  rows.push({ label: '可用性', value: item.available === false ? '源文件当前不可用' : '文件在位，可预览下载' })
+  return rows
+}
+
+/* 列表视图里额外显示分辨率或时长 */
+function itemSize(item) {
+  if (item.width && item.height) return `${item.width}×${item.height}`
+  return ''
+}
+
 function isSelected(item) {
   return item.library_source === 'upload' && selectedIds.has(Number(item.id))
 }
 
 function handleCardClick(item) {
-  if (item.library_source === 'production') {
+  if (!selectable.value) {
     if (itemUrl(item)) openPreview(item)
     return
   }
@@ -411,8 +622,14 @@ function handleCardClick(item) {
   else selectedIds.add(id)
 }
 
+function selectAllVisible() {
+  for (const item of visibleItems.value) {
+    if (item.library_source === 'upload') selectedIds.add(Number(item.id))
+  }
+}
+
 function openPreview(item) {
-  if (!itemUrl(item)) return ElMessage.warning(availabilityLabel(item) || '文件当前不可预览')
+  if (!item) return
   previewItem.value = item
   showPreview.value = true
 }
@@ -437,24 +654,42 @@ function downloadItem(item) {
   anchor.remove()
 }
 
+/* 批量下载是浏览器逐个触发的，会有下载条；先说清楚数量 */
+async function batchDownload() {
+  const rows = visibleItems.value.filter(isSelected).filter(item => itemUrl(item) && item.available !== false)
+  const skipped = selectedIds.size - rows.length
+  if (!rows.length) return ElMessage.warning('选中的素材都没有可下载的本地文件')
+  try {
+    await ElMessageBox.confirm(
+      `将依次下载 ${rows.length} 个文件${skipped ? `，另有 ${skipped} 个因源文件不可用被跳过` : ''}。浏览器会逐个保存，可能弹出多个下载提示。`,
+      '批量下载',
+    )
+  } catch (_) { return }
+  rows.forEach((item, index) => setTimeout(() => downloadItem(item), index * 350))
+  ElMessage.success(`已开始下载 ${rows.length} 个素材`)
+}
+
 function formatBytes(value) { return Number(value) >= 1048576 ? `${(Number(value)/1048576).toFixed(1)} MB` : `${Math.ceil(Number(value)/1024)} KB` }
 async function renameItem(item) {
   try {
     const { value } = await ElMessageBox.prompt('修改显示名称，原素材引用和文件路径会保留。', '重命名素材', { inputValue: item.name, inputValidator: value => Boolean(value?.trim()) && value.trim().length <= 240 || '请输入1到240个字符' })
     await request.put(`/assets/${item.id}`, { name: value.trim() })
-    item.name = value.trim(); ElMessage.success('名称已保存')
+    item.name = value.trim()
+    if (previewItem.value?.id === item.id) previewItem.value = { ...item }
+    ElMessage.success('名称已保存')
   } catch (error) { if (error !== 'cancel' && error !== 'close') ElMessage.error(error.message || '重命名失败') }
 }
 
 async function deleteItem(item) {
   if (item.library_source !== 'upload') return
   try {
-    await ElMessageBox.confirm(`确定删除手工素材“${item.name || '未命名'}”？`, '删除确认', { type: 'warning' })
+    await ElMessageBox.confirm(`确定删除手工素材「${item.name || '未命名'}」？删除后从素材库消失，磁盘上的文件不会自动清理。`, '删除确认', { type: 'warning' })
   } catch (_) {
     return
   }
   await request.delete(`/assets/${item.id}`)
   selectedIds.delete(Number(item.id))
+  if (previewItem.value?.id === item.id) showPreview.value = false
   ElMessage.success('已删除')
   loadMedia()
 }
@@ -462,14 +697,14 @@ async function deleteItem(item) {
 async function batchDelete() {
   const ids = [...selectedIds]
   try {
-    await ElMessageBox.confirm(`确定删除选中的 ${ids.length} 个手工素材？`, '批量删除', { type: 'warning' })
+    await ElMessageBox.confirm(`确定删除选中的 ${ids.length} 个手工素材？只删素材库记录，源文件仍在本地目录里，需要自己清理。`, '批量删除', { type: 'warning' })
   } catch (_) {
     return
   }
   const results = await Promise.allSettled(ids.map((id) => request.delete(`/assets/${id}`)))
   const failed = results.filter((result) => result.status === 'rejected').length
   selectedIds.clear()
-  if (failed) ElMessage.warning(`${ids.length - failed} 个删除成功，${failed} 个失败`)
+  if (failed) ElMessage.warning(`${ids.length - failed} 个删除成功，${failed} 个失败；失败的记录还在列表里，可重试`)
   else ElMessage.success(`${ids.length} 个素材已删除`)
   loadMedia()
 }
@@ -480,6 +715,7 @@ onMounted(async () => {
   await loadProjects()
   await loadMedia()
 })
+onUnmounted(() => clearTimeout(keywordTimer))
 useWorkbenchPage({ refresh: loadMedia, error: () => loadError.value, loading: () => loading.value })
 </script>
 
@@ -507,7 +743,6 @@ useWorkbenchPage({ refresh: loadMedia, error: () => loadError.value, loading: ()
   gap: 16px;
   background: var(--bg-card);
   border-bottom: 1px solid var(--border-color);
-  backdrop-filter: blur(10px);
 }
 .header-left,
 .header-actions {
@@ -518,12 +753,29 @@ useWorkbenchPage({ refresh: loadMedia, error: () => loadError.value, loading: ()
 .page-title {
   margin: 0;
   font-size: 19px;
+  font-family: var(--font-display);
   letter-spacing: 0;
 }
 .page-subtitle {
   margin: 3px 0 0;
   color: var(--text-muted);
   font-size: 12px;
+}
+/* 页面职责说明：一句中文，讲清改了会影响什么 */
+.scope-note {
+  margin: 0 0 14px;
+  padding: 10px 13px;
+  border: 1px solid var(--border-color);
+  border-left: 2px solid var(--border-bright);
+  border-radius: var(--radius-sm);
+  background: var(--bg-inner);
+}
+.scope-note p {
+  margin: 0;
+  max-width: 96ch;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.75;
 }
 .library-main {
   max-width: 1440px;
@@ -550,13 +802,22 @@ useWorkbenchPage({ refresh: loadMedia, error: () => loadError.value, loading: ()
   flex-wrap: wrap;
   background: var(--bg-card);
   border: 1px solid var(--border-color);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
 }
 .stage-filter {
   width: 150px;
 }
 .project-filter {
   width: 190px;
+}
+.time-filter {
+  width: 140px;
+}
+.category-filter {
+  width: 150px;
+}
+.sort-filter {
+  width: 150px;
 }
 .search-input {
   width: min(280px, 100%);
@@ -576,39 +837,102 @@ useWorkbenchPage({ refresh: loadMedia, error: () => loadError.value, loading: ()
 .result-summary {
   min-height: 38px;
   justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
 }
+.summary-left,
+.summary-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.summary-right :deep(.el-radio-button__inner) {
+  font-size: 12px;
+}
+/* 数字、字节、时间一律等宽 + 表格数字 */
+.page-hint,
+.num,
+.media-meta,
+.media-provenance,
+.meta-table dd {
+  font-variant-numeric: tabular-nums;
+}
+.media-meta .num,
+.page-hint {
+  font-family: var(--font-mono);
+}
+.page-hint {
+  color: var(--text-subtle);
+  font-size: 11px;
+}
+.load-error {
+  margin: 10px 0;
+  padding: 10px 13px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  color: var(--text-primary);
+  background: var(--bg-inner);
+  border: 1px solid var(--ui-danger);
+  border-left-width: 2px;
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  line-height: 1.7;
+}
+.load-error strong {
+  display: block;
+  color: var(--ui-danger);
+  font-size: 12px;
+}
+.load-error span {
+  color: var(--text-muted);
+}
+/* 大列表：网格自带分页，卡片再加 content-visibility，滚出视口的行不参与布局 */
 .media-grid {
   min-height: 280px;
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(min(230px, 100%), 1fr));
   gap: 12px;
+  align-content: start;
+}
+.media-grid.is-list {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 6px;
 }
 .media-card {
   min-width: 0;
   overflow: hidden;
   background: var(--bg-card);
   border: 1px solid var(--border-color);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   cursor: pointer;
-  transition: border-color .18s, box-shadow .18s, transform .18s;
+  content-visibility: auto;
+  contain-intrinsic-size: 240px 236px;
+  transition: border-color .16s ease-out, background .16s ease-out;
 }
+/* 悬停只换颜色，不做位移和投影动画 */
 .media-card:hover {
-  border-color: var(--border-color);
-  box-shadow: 0 8px 20px rgba(35, 60, 56, .1);
-  transform: translateY(-2px);
+  border-color: var(--border-muted);
+  background: var(--bg-hover);
+}
+.media-card:focus-visible {
+  outline: 2px solid var(--ui-accent);
+  outline-offset: 1px;
 }
 .media-card.selected {
-  border-color: var(--border-color);
-  box-shadow: 0 0 0 1px #0f766e;
+  border-color: var(--border-bright);
+  box-shadow: inset 0 0 0 1px var(--ui-accent-soft);
 }
 .media-card.unavailable {
-  background: var(--bg-card);
+  opacity: .72;
 }
 .media-thumb {
   position: relative;
   aspect-ratio: 16 / 10;
   overflow: hidden;
-  background: var(--bg-card);
+  background: var(--bg-deep);
 }
 .thumb-media {
   width: 100%;
@@ -623,9 +947,9 @@ useWorkbenchPage({ refresh: loadMedia, error: () => loadError.value, loading: ()
   place-content: center;
   justify-items: center;
   gap: 8px;
-  color: var(--text-muted);
-  background: var(--bg-card);
-  font-size:12px;
+  color: var(--text-subtle);
+  background: var(--bg-inner);
+  font-size: 12px;
   text-align: center;
 }
 .media-placeholder .el-icon {
@@ -633,7 +957,7 @@ useWorkbenchPage({ refresh: loadMedia, error: () => loadError.value, loading: ()
 }
 .audio-placeholder {
   color: var(--ui-accent);
-  background: var(--bg-card);
+  background: var(--bg-inner);
 }
 .audio-placeholder .el-icon {
   font-size: 46px;
@@ -643,15 +967,16 @@ useWorkbenchPage({ refresh: loadMedia, error: () => loadError.value, loading: ()
   top: 8px;
   left: 8px;
   max-width: calc(100% - 54px);
-  padding: 4px 7px;
+  padding: 3px 7px;
   display: inline-flex;
   align-items: center;
   gap: 4px;
   overflow: hidden;
   color: var(--text-primary);
-  background: rgba(15, 118, 110, .88);
-  border-radius: 4px;
-  font-size:12px;
+  background: rgba(14, 16, 19, .72);
+  border: 1px solid var(--border-muted);
+  border-radius: var(--radius-sm);
+  font-size: 11px;
   white-space: nowrap;
   text-overflow: ellipsis;
 }
@@ -659,21 +984,51 @@ useWorkbenchPage({ refresh: loadMedia, error: () => loadError.value, loading: ()
   position: absolute;
   top: 8px;
   right: 8px;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
   color: var(--ui-accent);
-  background: var(--bg-card);
+  background: var(--bg-deep);
+  border: 1px solid var(--border-bright);
   border-radius: 50%;
-  font-size: 21px;
+  font-size: 14px;
+}
+/* 只在能多选的来源上给一个可选提示，避免用户以为点了会预览 */
+.select-hint {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  color: var(--text-subtle);
+  background: rgba(14, 16, 19, .6);
+  border: 1px solid var(--border-muted);
+  border-radius: 50%;
+  font-size: 12px;
+  opacity: 0;
+  transition: opacity .16s ease-out;
+}
+.media-card:hover .select-hint,
+.media-card:focus-within .select-hint {
+  opacity: 1;
+}
+.media-card.selected .select-hint {
+  opacity: 0;
 }
 .media-overlay {
   position: absolute;
-  inset: 0;
+  inset: auto 0 0 0;
+  padding: 8px;
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 6px;
   opacity: 0;
-  background: rgba(9, 13, 15, .58);
-  transition: opacity .18s;
+  background: linear-gradient(to top, rgba(8, 9, 12, .92), rgba(8, 9, 12, .2) 70%, transparent);
+  transition: opacity .16s ease-out;
 }
 .media-card:hover .media-overlay,
 .media-card:focus-within .media-overlay {
@@ -698,8 +1053,8 @@ useWorkbenchPage({ refresh: loadMedia, error: () => loadError.value, loading: ()
   align-items: center;
   gap: 5px;
   overflow: hidden;
-  color: var(--text-muted);
-  font-size:12px;
+  color: var(--text-subtle);
+  font-size: 12px;
   white-space: nowrap;
 }
 .media-provenance span,
@@ -712,17 +1067,43 @@ useWorkbenchPage({ refresh: loadMedia, error: () => loadError.value, loading: ()
   content: '·';
   margin-right: 5px;
 }
+/* 时间单独一行：四段元数据挤一行会互相截断 */
+.media-meta-time {
+  color: var(--text-faint);
+}
+.media-meta-time span::before {
+  content: none;
+  margin: 0;
+}
 .availability {
-  font-size:12px;
+  font-size: 12px;
 }
 .availability.is-ready {
-  color: var(--ui-accent);
+  color: var(--text-subtle);
 }
 .availability.is-prepare {
   color: var(--ui-warning);
 }
 .availability.is-missing {
   color: var(--ui-danger);
+}
+/* 列表视图：一行一条，缩略图固定宽度，信息在一行里摊开 */
+.media-grid.is-list .media-card {
+  display: grid;
+  grid-template-columns: 116px minmax(0, 1fr);
+  align-items: stretch;
+  content-visibility: visible;
+}
+.media-grid.is-list .media-thumb {
+  aspect-ratio: 16 / 10;
+  height: 100%;
+}
+.media-grid.is-list .media-info {
+  padding: 10px 12px;
+  align-content: center;
+}
+.media-grid.is-list .media-name {
+  font-size: 13.5px;
 }
 .empty-media {
   grid-column: 1 / -1;
@@ -736,13 +1117,20 @@ useWorkbenchPage({ refresh: loadMedia, error: () => loadError.value, loading: ()
 }
 .empty-media .el-icon {
   font-size: 44px;
-  color: var(--text-muted);
+  color: var(--text-subtle);
 }
 .empty-media strong {
-  color: var(--text-muted);
+  color: var(--text-primary);
 }
 .empty-media span {
   font-size: 12px;
+}
+.empty-actions {
+  margin-top: 10px;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: center;
 }
 .pagination {
   margin-top: 20px;
@@ -758,44 +1146,88 @@ useWorkbenchPage({ refresh: loadMedia, error: () => loadError.value, loading: ()
   display: flex;
   align-items: center;
   gap: 10px;
+  flex-wrap: wrap;
   color: var(--text-primary);
   background: var(--bg-card);
-  border-radius: 6px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, .24);
+  border: 1px solid var(--border-muted);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-md);
   font-size: 12px;
   transform: translateX(-50%);
 }
+.batch-bar .el-button + .el-button {
+  margin-left: 0;
+}
+.drawer-body {
+  display: grid;
+  gap: 16px;
+  color: var(--text-primary);
+}
+.drawer-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.drawer-title h2 {
+  margin: 0;
+  font-size: 17px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+.drawer-title p {
+  margin: 5px 0 0;
+  color: var(--text-subtle);
+  font-size: 12px;
+}
 .preview-content {
-  min-height: 330px;
+  min-height: 240px;
   display: grid;
   place-items: center;
   overflow: hidden;
-  background: #090b0d;
-  border-radius: 6px;
+  background: var(--bg-deep);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
 }
 .preview-image,
 .preview-video {
   max-width: 100%;
-  max-height: 66vh;
+  max-height: 52vh;
   object-fit: contain;
 }
 .preview-audio {
   width: min(620px, 90%);
 }
-.preview-meta {
-  padding-top: 12px;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px 20px;
-  color: var(--text-muted);
+.meta-table {
+  margin: 0;
+  display: grid;
+  gap: 1px;
+  background: var(--border-color);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+.meta-table > div {
+  padding: 8px 11px;
+  display: grid;
+  grid-template-columns: 84px minmax(0, 1fr);
+  gap: 12px;
+  background: var(--bg-card);
   font-size: 12px;
 }
-.preview-meta div {
-  display: flex;
-  gap: 7px;
+.meta-table dt {
+  color: var(--text-subtle);
 }
-.preview-meta span {
-  color: var(--text-muted);
+.meta-table dd {
+  margin: 0;
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+}
+.drawer-foot {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding-top: 4px;
 }
 @media (max-width: 760px) {
   .page-header {
@@ -816,6 +1248,9 @@ useWorkbenchPage({ refresh: loadMedia, error: () => loadError.value, loading: ()
   }
   .stage-filter,
   .project-filter,
+  .time-filter,
+  .category-filter,
+  .sort-filter,
   .search-input {
     width: 100%;
     margin-left: 0;
@@ -823,8 +1258,17 @@ useWorkbenchPage({ refresh: loadMedia, error: () => loadError.value, loading: ()
   .result-summary span:last-child {
     display: none;
   }
+  .media-grid.is-list .media-card {
+    grid-template-columns: 92px minmax(0, 1fr);
+  }
   .preview-content {
-    min-height: 220px;
+    min-height: 200px;
+  }
+  .batch-bar {
+    left: 12px;
+    right: 12px;
+    transform: none;
+    justify-content: center;
   }
 }
 </style>

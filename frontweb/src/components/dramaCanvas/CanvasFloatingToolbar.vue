@@ -20,6 +20,7 @@ function create(type) {
 </script>
 
 <style scoped>
+/* 一直悬在画布左下角，所以不加毛玻璃、不加阴影 */
 .canvas-floating-toolbar {
   position: absolute;
   left: 12px;
@@ -28,18 +29,18 @@ function create(type) {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 8px 12px;
-  border-radius: 10px;
-  border: 1px solid #3f3f46;
-  background: rgba(24, 24, 27, 0.94);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  padding: 7px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-muted);
+  background: var(--bg-card);
   flex-wrap: wrap;
   max-width: calc(100% - 24px);
 }
 .toolbar-label {
-  font-size: 11px;
-  color: #71717a;
-  margin-right: 4px;
+  font-size: 10.5px;
+  letter-spacing: .04em;
+  color: var(--text-faint);
+  margin-right: 2px;
   white-space: nowrap;
 }
 </style>

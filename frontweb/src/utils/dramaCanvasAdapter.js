@@ -25,8 +25,8 @@ const SB_PIPELINE_WIDTH = MEDIA_OFFSET_X + 5 * MEDIA_GAP_X + 200
 
 const ASSET_EDGE_STYLE = { stroke: '#34d399', strokeWidth: 1.5, strokeDasharray: '6 4' }
 const SCRIPT_EDGE_STYLE = { stroke: '#fbbf24', strokeWidth: 2, strokeDasharray: '8 4' }
-const PIPELINE_EDGE_STYLE = { stroke: '#818cf8', strokeWidth: 2 }
-const CHAIN_EDGE_STYLE = { stroke: '#a78bfa', strokeWidth: 1.5, strokeDasharray: '4 3' }
+const PIPELINE_EDGE_STYLE = { stroke: 'var(--border-bright, #8b929b)', strokeWidth: 2 }
+const CHAIN_EDGE_STYLE = { stroke: 'var(--text-faint, #5a606a)', strokeWidth: 1.5, strokeDasharray: '4 3' }
 
 /** Vue Flow 贝塞尔曲线（curvature 越大弧线越明显） */
 function makeEdge(props) {
@@ -483,7 +483,9 @@ export function getAssetRelationHighlight(drama, assetNodeId) {
   return { nodeIds, edgeIds }
 }
 
-export function applyCanvasHighlight(nodes, edges, highlightNodeId, drama) {
+export function applyCanvasHighlight(nodes, edges, highlightNodeId, drama, options = {}) {
+  // 流动虚线只在效果档位允许时开（低档位保留静态边线样式）
+  const allowAnim = options.anim !== false
   if (!highlightNodeId) {
     return {
       nodes: nodes.map((n) => ({ ...n, class: undefined, data: { ...n.data, dimmed: false, highlighted: false } })),
@@ -512,9 +514,9 @@ export function applyCanvasHighlight(nodes, edges, highlightNodeId, drama) {
       return {
         ...e,
         _baseStyle: baseStyle,
-        animated: highlighted,
+        animated: highlighted && allowAnim,
         style: highlighted
-          ? { ...baseStyle, stroke: '#34d399', strokeWidth: 2.5, opacity: 1 }
+          ? { ...baseStyle, stroke: 'var(--ui-success)', strokeWidth: 2.5, opacity: 1 }
           : { ...baseStyle, opacity: 0.15 },
       }
     }),

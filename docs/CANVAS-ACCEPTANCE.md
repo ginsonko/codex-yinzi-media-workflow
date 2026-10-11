@@ -1,5 +1,7 @@
 # 画布创作本地验收记录
 
+> 以下保留 2026-10-10 本地开发阶段记录；当前配套版本及更新方式见 [v0.2.0 发布说明](RELEASE-2026-10-11.md)。旧预览端口和未发布状态仅描述当时阶段。
+
 日期：2026-10-10。基线 `05b8a5ea093a083f6507e4a660dd0b912f1a2239`，本地分支 `feat/canvas-agent-20261010`。报告只覆盖本分支新增画布能力及相关回归；没有把本地接线验证等同于付费模型创作质量。
 
 | 检查 | 实际结果 | 证据 |
@@ -20,7 +22,7 @@
 | 完整应用预览 | 首页/批量/手动/研究/画布均渲染；MCP实际读取本预览画布，page_errors为空 | `.yinzi-local/canvas-preview/evidence/full-app-check.json` |
 | 独立对抗验收 | R1–R4四项确认缺陷已全部修复并定点复查 | `CANVAS-INDEPENDENT-REVIEW.md` |
 
-最后一次浏览器临时测试目录：`C:/Users/ADMINI~1/AppData/Local/Temp/yinzi-canvas-8hjRyl`。核心证据已复制到源码内 Git 忽略的 `.yinzi-local/canvas-preview/evidence/`，不依赖用户记住临时目录：
+浏览器验收使用隔离临时目录。核心证据已复制到源码内 Git 忽略的 `.yinzi-local/canvas-preview/evidence/`，不依赖用户记住临时目录：
 
 - `browser-evidence.json`：真实节点、请求次数、合成任务回执。
 - `canvas-desktop.png`、`canvas-mobile.png`：页面截图。

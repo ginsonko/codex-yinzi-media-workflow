@@ -489,14 +489,15 @@ onBeforeUnmount(() => {
   padding: 6px 2px 0;
   flex-shrink: 0;
 }
+/* 提及/复制按钮的强调色：银盐里没有紫，强调色一律用铬面 */
 .omni-at-copy-btn {
-  color: #a78bfa !important;
+  color: #d9dde3 !important;
 }
 .omni-at-copy-btn:hover {
-  color: #c4b5fd !important;
+  color: #ffffff !important;
 }
 html.light .omni-at-copy-btn {
-  color: #6d28d9 !important;
+  color: #4b5563 !important;
 }
 .omni-at-editor {
   flex: 1;
@@ -515,8 +516,8 @@ html.light .omni-at-copy-btn {
   word-break: break-word;
 }
 .omni-at-editor:focus {
-  border-color: #a78bfa;
-  box-shadow: 0 0 0 1px rgba(167, 139, 250, 0.25) inset;
+  border-color: #d9dde3;
+  box-shadow: 0 0 0 1px rgba(217, 221, 227, 0.22) inset;
 }
 .omni-at-editor:empty::before {
   content: attr(data-placeholder);
@@ -531,16 +532,16 @@ html.light .omni-at-copy-btn {
   padding: 0 5px;
   border-radius: 4px;
   font-weight: 600;
-  color: #c4b5fd;
-  background: rgba(139, 92, 246, 0.22);
-  border: 1px solid rgba(167, 139, 250, 0.45);
+  color: #e9ecf0;
+  background: rgba(217, 221, 227, 0.14);
+  border: 1px solid rgba(217, 221, 227, 0.38);
   cursor: pointer;
   user-select: none;
   white-space: nowrap;
 }
 :deep(.omni-at-chip:hover) {
-  background: rgba(139, 92, 246, 0.38);
-  border-color: #a78bfa;
+  background: rgba(217, 221, 227, 0.24);
+  border-color: #e9ecf0;
 }
 html.light .omni-at-editor {
   color: #1f2937;
@@ -701,7 +702,7 @@ html.light .omni-at-menu-name {
 .omni-at-menu-at {
   font-size: 11px;
   font-family: ui-monospace, monospace;
-  color: #a78bfa;
+  color: #d9dde3;
 }
 .omni-at-menu-at-sub {
   font-size: 10px;
@@ -709,7 +710,7 @@ html.light .omni-at-menu-name {
   color: #94a3b8;
 }
 html.light .omni-at-menu-at {
-  color: #6d28d9;
+  color: #4b5563;
 }
 html.light .omni-at-menu-at-sub {
   color: #64748b;

@@ -1,159 +1,510 @@
-*,*::before,*::after { box-sizing:border-box; }
+*,*::before,*::after{box-sizing:border-box}
+
+/* ═══════════════════════════════════════════════════════════════
+   银盐 · SILVER HALIDE — token system
+   石墨暗房底 · 抛光铬为主色 · 安全灯琥珀只留给「正在执行 / 需要你」
+   ─────────────────────────────────────────────────────────────
+   变量名保持不变：views 与 components 里已经有 269 处 var(--text-muted)、
+   158 处 var(--ui-accent) 等引用，改这里的值等于把 20 个路由一起换皮。
+   ═══════════════════════════════════════════════════════════════ */
+
+/* ── 暗房（默认） ───────────────────────────────────────────── */
 :root, html.dark {
- --bg-page:#08110f; --bg-card:#101b18; --bg-inner:#0d1714; --bg-hover:#1a2c25; --border-color:#263d33; --border-muted:#456155; --text-primary:#e8f1ed; --text-bright:#f5fcf8; --text-muted:#98afa3; --text-subtle:#829b8e; --text-faint:#718b7e; --shadow:0 2px 12px rgba(0,0,0,.3);
- --el-color-primary:#2f9f82; --el-color-primary-light-3:#65c6aa; --el-color-primary-light-5:#40836e; --el-color-primary-light-7:#2a5447; --el-color-primary-light-8:#213e35; --el-color-primary-light-9:#152b23; --el-color-primary-dark-2:#217a62;
+  color-scheme: dark;
+
+  /* 画布底：石墨，带一点冷调 */
+  --bg-page:    #121418;
+  --bg-card:    #1d2025;
+  --bg-inner:   #17191d;
+  --bg-hover:   #252930;
+  --bg-glass:   rgba(255,255,255,.035);
+  --bg-glass-strong: rgba(255,255,255,.075);
+  --bg-deep:    #0e1013;
+
+  /* 描边 */
+  --border-color:  rgba(214,222,235,.085);
+  --border-muted:  rgba(214,222,235,.15);
+  --border-bright: rgba(233,236,240,.34);
+  --line:          rgba(214,222,235,.085);
+  --line-2:        rgba(214,222,235,.15);
+
+  /* 主色：抛光铬（无彩色，靠高光与渐变读出「金属」） */
+  --ui-accent:        #d9dde3;
+  --ui-accent-2:      #a9afb8;
+  --ui-accent-warm:   #f2a23a;
+  --ui-accent-soft:   rgba(217,221,227,.10);
+  --ui-accent-glow:   rgba(217,221,227,.16);
+  --on-accent:        #15171b;
+  --chrome-hi:        #f7f8fa;
+  --chrome-mid:       #a9afb8;
+  --chrome-lo:        #6f7680;
+
+  /* 缓动：某些页面（如任务页阶段条）会在 transition 简写里引用，
+     令牌缺失会让整条 animation/transition 作废、动效静默失效。 */
+  --ease-out:    cubic-bezier(.22,.61,.36,1);
+  --ease-in-out: cubic-bezier(.4,0,.2,1);
+
+  /* 状态：只有「正在执行」用琥珀，成功用绿，失败用红 */
+  --ui-success:  #86d4a8;  --ui-success-soft: rgba(134,212,168,.11);
+  --ui-warning:  #f2a23a;  --ui-warning-soft: rgba(242,162,58,.12);
+  --ui-danger:   #ee6b5d;  --ui-danger-soft:  rgba(238,107,93,.12);
+  --ui-info:     #8fc3ee;  --ui-info-soft:    rgba(143,195,238,.11);
+
+  /* 文字 */
+  --text-primary: #eceef2;
+  --text-bright:  #f7f8fa;
+  --text-muted:   #b4bac4;
+  --text-subtle:  #808792;
+  --text-faint:   #5a606a;
+  --text-secondary: #b4bac4;
+  --text-tertiary:  #808792;
+
+  /* 阴影 */
+  --shadow-xs:    0 1px 3px rgba(0,0,0,.45);
+  --shadow-sm:    0 2px 10px rgba(0,0,0,.5);
+  --shadow-md:    0 8px 26px -12px rgba(0,0,0,.7);
+  --shadow-lg:    0 18px 44px -22px rgba(0,0,0,.78);
+  --shadow-float: 0 40px 80px -30px rgba(0,0,0,.85);
+  --shadow:       0 2px 12px rgba(0,0,0,.4);
+  /* 铬的「光晕」其实是内描边，不是彩色发光 */
+  --shadow-glow:  0 0 0 1px rgba(233,236,240,.28), 0 0 22px -6px rgba(220,228,240,.18);
+  --shadow-warm-glow: 0 0 0 1px rgba(242,162,58,.34), 0 0 20px -4px rgba(242,162,58,.22);
+
+  /* 渐变 */
+  --gradient-mesh:
+    radial-gradient(ellipse 70% 55% at 12% 8%, rgba(220,228,240,.055) 0%, transparent 58%),
+    radial-gradient(ellipse 55% 45% at 88% 82%, rgba(242,162,58,.045) 0%, transparent 58%),
+    #121418;
+  --gradient-hero:
+    radial-gradient(ellipse 85% 65% at 18% 28%, rgba(226,232,240,.10) 0%, transparent 62%),
+    radial-gradient(ellipse 55% 45% at 82% 72%, rgba(242,162,58,.06) 0%, transparent 58%),
+    linear-gradient(168deg, #1b1e23 0%, #121418 100%);
+  --gradient-card: linear-gradient(168deg, rgba(255,255,255,.05) 0%, rgba(255,255,255,.014) 100%);
+  /* 金属渐变：光在上、暗带在中、回光在下 —— 这是「铬」读起来像金属的关键 */
+  --gradient-accent:
+    linear-gradient(172deg, #fbfcfd 0%, #d4d8de 34%, #9aa1ab 52%, #e4e7eb 70%, #b7bdc6 100%);
+  --gradient-chrome-text:
+    linear-gradient(176deg, #ffffff 8%, #c9ced6 42%, #7d848e 58%, #e9ecf0 78%, #a7aeb8 100%);
+  --gradient-warm:
+    linear-gradient(160deg, #f7b45c 0%, #e08a2a 100%);
+  --gradient-canvas-cta:
+    radial-gradient(ellipse 80% 60% at 20% 30%, rgba(226,232,240,.08) 0%, transparent 58%),
+    linear-gradient(168deg, #1c1f24 0%, #121418 100%);
+
+  /* 玻璃 */
+  --glass-blur: blur(14px) saturate(1.15);
+  --glass-blur-lg: blur(22px) saturate(1.2);
+
+  /* 圆角：随层级递增，不再一个值用到底 */
+  --radius-sm:  6px;
+  --radius-md:  10px;
+  --radius-lg:  14px;
+  --radius-xl:  20px;
+  --radius-full: 9999px;
+
+  /* Element Plus 主色映射到铬 */
+  --el-color-primary: #d9dde3;
+  --el-color-primary-light-3: #eef0f3;
+  --el-color-primary-light-5: #b8bec7;
+  --el-color-primary-light-7: #3b4149;
+  --el-color-primary-light-8: #2b3038;
+  --el-color-primary-light-9: #21252b;
+  --el-color-primary-dark-2:  #a9afb8;
+
+  /* 字体：显示体只在标题用，正文用无衬线 */
+  --font-display: "Noto Serif SC","Source Han Serif SC","Songti SC",serif;
+  --font-ui: "Noto Sans SC","Microsoft YaHei UI","Microsoft YaHei","PingFang SC",system-ui,sans-serif;
+  --font-mono: "JetBrains Mono","Cascadia Mono",Consolas,monospace;
+}
+
+/* ── 相纸（浅色） ───────────────────────────────────────────── */
+html.light {
+  color-scheme: light;
+
+  --bg-page:    #eef0f2;
+  --bg-card:    #fafbfc;
+  --bg-inner:   #f3f5f7;
+  --bg-hover:   #e6e9ed;
+  --bg-glass:   rgba(255,255,255,.62);
+  --bg-glass-strong: rgba(255,255,255,.9);
+  --bg-deep:    #dfe2e6;
+
+  --border-color:  rgba(20,26,36,.10);
+  --border-muted:  rgba(20,26,36,.17);
+  --border-bright: rgba(20,26,36,.34);
+  --line:          rgba(20,26,36,.10);
+  --line-2:        rgba(20,26,36,.17);
+
+  --ui-accent:      #2b3038;
+  --ui-accent-2:    #59616c;
+  --ui-accent-warm: #b8701a;
+  --ui-accent-soft: rgba(43,48,56,.07);
+  --ui-accent-glow: rgba(43,48,56,.12);
+  --on-accent:      #f7f8fa;
+  --chrome-hi:      #3a4049;
+  --chrome-mid:     #59616c;
+  --chrome-lo:      #8b929b;
+
+  --ui-success:  #2f9566;  --ui-success-soft: rgba(47,149,102,.12);
+  --ui-warning:  #b8701a;  --ui-warning-soft: rgba(184,112,26,.12);
+  --ui-danger:   #c9473a;  --ui-danger-soft:  rgba(201,71,58,.10);
+  --ui-info:     #2f72a8;  --ui-info-soft:    rgba(47,114,168,.10);
+
+  --text-primary: #16191e;
+  --text-bright:  #0c0e12;
+  --text-muted:   #434a54;
+  --text-subtle:  #6b727c;
+  --text-faint:   #9aa0a8;
+  --text-secondary: #434a54;
+  --text-tertiary:  #6b727c;
+
+  --shadow-xs:    0 1px 2px rgba(20,26,36,.07);
+  --shadow-sm:    0 2px 8px rgba(20,26,36,.09);
+  --shadow-md:    0 8px 22px -12px rgba(20,26,36,.28);
+  --shadow-lg:    0 16px 38px -22px rgba(20,26,36,.34);
+  --shadow-float: 0 30px 64px -28px rgba(20,26,36,.4);
+  --shadow:       0 2px 10px rgba(20,26,36,.1);
+  --shadow-glow:  0 0 0 1px rgba(43,48,56,.22), 0 0 18px -6px rgba(43,48,56,.14);
+  --shadow-warm-glow: 0 0 0 1px rgba(184,112,26,.3), 0 0 16px -4px rgba(184,112,26,.18);
+
+  --gradient-mesh:
+    radial-gradient(ellipse 70% 55% at 12% 8%, rgba(20,26,36,.035) 0%, transparent 58%),
+    radial-gradient(ellipse 55% 45% at 88% 82%, rgba(184,112,26,.035) 0%, transparent 58%),
+    #eef0f2;
+  --gradient-hero:
+    radial-gradient(ellipse 85% 65% at 18% 28%, rgba(20,26,36,.05) 0%, transparent 62%),
+    linear-gradient(168deg, #fafbfc 0%, #e9ebef 100%);
+  --gradient-card: linear-gradient(168deg, rgba(255,255,255,.9) 0%, rgba(243,245,247,.8) 100%);
+  --gradient-accent:
+    linear-gradient(172deg, #3a4049 0%, #20242a 45%, #4a515b 70%, #262a31 100%);
+  --gradient-chrome-text:
+    linear-gradient(176deg, #23272d 10%, #59616c 45%, #1b1e23 70%, #4b525c 100%);
+  --gradient-warm:
+    linear-gradient(160deg, #cf8433 0%, #a8600f 100%);
+  --gradient-canvas-cta:
+    radial-gradient(ellipse 80% 60% at 20% 30%, rgba(20,26,36,.04) 0%, transparent 58%),
+    linear-gradient(168deg, #fafbfc 0%, #e9ebef 100%);
+
+  --glass-blur: blur(12px) saturate(1.2);
+  --glass-blur-lg: blur(20px) saturate(1.25);
+
+  --el-color-primary: #2b3038;
+  --el-color-primary-light-3: #59616c;
+  --el-color-primary-light-5: #8b929b;
+  --el-color-primary-light-7: #c3c8ce;
+  --el-color-primary-light-8: #dfe2e6;
+  --el-color-primary-light-9: #f3f5f7;
+  --el-color-primary-dark-2:  #16191e;
+
+  --font-display: "Noto Serif SC","Source Han Serif SC","Songti SC",serif;
+  --font-ui: "Noto Sans SC","Microsoft YaHei UI","Microsoft YaHei","PingFang SC",system-ui,sans-serif;
+  --font-mono: "JetBrains Mono","Cascadia Mono",Consolas,monospace;
+}
+
+/* ── Element Plus 表面映射 ─────────────────────────────────── */
+:root, html.dark {
+  --el-bg-color:              var(--bg-card);
+  --el-bg-color-page:         var(--bg-page);
+  --el-bg-color-overlay:      #1f2329;
+  --el-fill-color-blank:      var(--bg-inner);
+  --el-fill-color-light:      var(--bg-inner);
+  --el-fill-color:            var(--bg-hover);
+  --el-fill-color-dark:       var(--border-muted);
+  --el-fill-color-darker:     var(--border-muted);
+  --el-fill-color-extra-light:var(--bg-inner);
+  --el-text-color-primary:    var(--text-primary);
+  --el-text-color-regular:    var(--text-primary);
+  --el-text-color-secondary:  var(--text-muted);
+  --el-text-color-placeholder:var(--text-subtle);
+  --el-text-color-disabled:   var(--text-faint);
+  --el-border-color:          var(--border-color);
+  --el-border-color-light:    var(--border-color);
+  --el-border-color-lighter:  var(--border-color);
+  --el-border-color-extra-light: var(--border-color);
+  --el-disabled-bg-color:     var(--bg-inner);
+  --el-disabled-text-color:   var(--text-faint);
+  --el-mask-color:            rgba(6,7,9,.7);
+  --el-color-success: #86d4a8;
+  --el-color-warning: #f2a23a;
+  --el-color-danger:  #ee6b5d;
+  --el-color-info:    #8fc3ee;
 }
 html.light {
- --bg-page:#f4f8f6; --bg-card:#ffffff; --bg-inner:#edf5f1; --bg-hover:#dcece4; --border-color:#b9cec3; --border-muted:#94b2a4; --text-primary:#173329; --text-bright:#10271e; --text-muted:#3e5d50; --text-subtle:#537568; --text-faint:#6a887a; --shadow:0 2px 14px rgba(16,62,42,.09);
- --el-color-primary:#217b62; --el-color-primary-light-3:#4d9b82; --el-color-primary-light-5:#85bda8; --el-color-primary-light-7:#bbdcca; --el-color-primary-light-8:#d2e9dd; --el-color-primary-light-9:#e6f3ec; --el-color-primary-dark-2:#175c49;
+  --el-bg-color:              var(--bg-card);
+  --el-bg-color-page:         var(--bg-page);
+  --el-bg-color-overlay:      #ffffff;
+  --el-fill-color-blank:      var(--bg-inner);
+  --el-fill-color-light:      var(--bg-inner);
+  --el-fill-color:            var(--bg-hover);
+  --el-fill-color-dark:       var(--border-muted);
+  --el-fill-color-darker:     var(--border-muted);
+  --el-fill-color-extra-light:var(--bg-inner);
+  --el-text-color-primary:    var(--text-primary);
+  --el-text-color-regular:    var(--text-primary);
+  --el-text-color-secondary:  var(--text-muted);
+  --el-text-color-placeholder:var(--text-subtle);
+  --el-text-color-disabled:   var(--text-faint);
+  --el-border-color:          var(--border-color);
+  --el-border-color-light:    var(--border-color);
+  --el-border-color-lighter:  var(--border-color);
+  --el-border-color-extra-light: var(--border-color);
+  --el-disabled-bg-color:     var(--bg-inner);
+  --el-disabled-text-color:   var(--text-faint);
+  --el-mask-color:            rgba(20,26,36,.36);
+  --el-color-success: #2f9566;
+  --el-color-warning: #b8701a;
+  --el-color-danger:  #c9473a;
+  --el-color-info:    #2f72a8;
 }
-:root,html.dark {
- color-scheme:dark; --el-bg-color:var(--bg-card); --el-bg-color-page:var(--bg-page); --el-bg-color-overlay:var(--bg-card); --el-fill-color-blank:var(--bg-card); --el-fill-color-light:var(--bg-inner); --el-fill-color:var(--bg-hover); --el-fill-color-dark:var(--border-muted); --el-fill-color-darker:var(--border-muted); --el-fill-color-extra-light:var(--bg-inner); --el-text-color-primary:var(--text-primary); --el-text-color-regular:var(--text-primary); --el-text-color-secondary:var(--text-muted); --el-text-color-placeholder:var(--text-subtle); --el-text-color-disabled:var(--text-faint); --el-border-color:var(--border-color); --el-border-color-light:var(--border-color); --el-border-color-lighter:var(--border-color); --el-border-color-extra-light:var(--border-color); --el-disabled-bg-color:var(--bg-inner); --el-disabled-text-color:var(--text-faint); --el-mask-color:rgba(0,0,0,.62); --el-color-success:#3dbb7a; --el-color-warning:#d69b34; --el-color-danger:#d96b77; --el-color-info:#6e8b9f;
+
+
+/* ── shell-* 别名 ──────────────────────────────────────────────
+   workspace.css 里引用了这些名字，但此前没有任何地方定义过 ——
+   它们一直解析为空值。这里把别名接到真正的 token 上。 */
+:root, html.dark, html.light {
+  --shell-bg:     var(--bg-page);
+  --shell-panel:  var(--bg-card);
+  --shell-line:   var(--border-color);
+  --shell-text:   var(--text-primary);
+  --shell-muted:  var(--text-muted);
+  --shell-accent: var(--ui-accent);
 }
-html.light {
- color-scheme:light; --el-bg-color:var(--bg-card); --el-bg-color-page:var(--bg-page); --el-bg-color-overlay:var(--bg-card); --el-fill-color-blank:var(--bg-card); --el-fill-color-light:var(--bg-inner); --el-fill-color:var(--bg-hover); --el-fill-color-dark:var(--border-muted); --el-fill-color-darker:var(--border-muted); --el-fill-color-extra-light:var(--bg-inner); --el-text-color-primary:var(--text-primary); --el-text-color-regular:var(--text-primary); --el-text-color-secondary:var(--text-muted); --el-text-color-placeholder:var(--text-subtle); --el-text-color-disabled:var(--text-faint); --el-border-color:var(--border-color); --el-border-color-light:var(--border-color); --el-border-color-lighter:var(--border-color); --el-border-color-extra-light:var(--border-color); --el-disabled-bg-color:var(--bg-inner); --el-disabled-text-color:var(--text-faint); --el-mask-color:rgba(0,0,0,.38); --el-color-success:#20834f; --el-color-warning:#8a5a0a; --el-color-danger:#a12b44; --el-color-info:#285f90;
+
+/* ── 基础 ──────────────────────────────────────────────────── */
+body {
+  font-family: var(--font-ui);
+  background: var(--bg-page);
+  color: var(--text-primary);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
-body {font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Microsoft YaHei",sans-serif;background:var(--bg-page);color:var(--text-primary)}
-button,input,textarea {font:inherit}
-a {color:var(--el-color-primary)}
-.el-input__wrapper,.el-select__wrapper,.el-textarea__inner {background:var(--bg-inner)}
-.el-dialog,.el-message-box,.el-popper,.el-select-dropdown,.el-dropdown-menu { background:var(--bg-card); color:var(--text-primary); border-color:var(--border-color); }
-.el-dialog__title,.el-message-box__title,.el-form-item__label,.el-dialog__body,.el-message-box__content { color:var(--text-primary); }
+button, input, textarea, select { font: inherit; }
+a { color: var(--ui-accent); }
+
+/* 网格底纹取代原来的彩色 mesh：静止的，不再做无谓的每帧重绘 */
+body::before {
+  content: '';
+  position: fixed; inset: 0; z-index: -1;
+  background: var(--gradient-mesh);
+  pointer-events: none;
+}
+/* 极细的网格线，像放大机的对焦屏 */
+body::after {
+  content: '';
+  position: fixed; inset: 0; z-index: -1; pointer-events: none;
+  background-image:
+    linear-gradient(to right, var(--line) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--line) 1px, transparent 1px);
+  background-size: 48px 48px;
+  opacity: .5;
+  -webkit-mask-image: radial-gradient(ellipse 90% 70% at 50% 0%, #000 0%, transparent 78%);
+          mask-image: radial-gradient(ellipse 90% 70% at 50% 0%, #000 0%, transparent 78%);
+}
+
+/* ── 效果档位（由 js/effects.js 写在 <html data-fx="...">） ────
+   毛玻璃与滤镜是最贵的部分：它们让浏览器每个动画帧都重新采样下层。
+   低档位换成不透明实色 —— 面板本来就在暗底上，几乎看不出区别。 */
+:root[data-fx="eco"] .shell-topbar,
+:root[data-fx="off"] .shell-topbar { backdrop-filter: none !important; background: var(--bg-page) !important; }
+:root[data-fx="eco"] body::after,
+:root[data-fx="off"] body::after { display: none; }
+:root[data-fx="eco"] .el-input__wrapper,
+:root[data-fx="off"] .el-input__wrapper,
+:root[data-fx="eco"] .el-select__wrapper,
+:root[data-fx="off"] .el-select__wrapper,
+:root[data-fx="eco"] .el-textarea__inner,
+:root[data-fx="off"] .el-textarea__inner { backdrop-filter: none !important; background: var(--bg-inner) !important; }
+:root[data-fx="eco"] .el-dialog,
+:root[data-fx="off"] .el-dialog,
+:root[data-fx="eco"] .el-message-box,
+:root[data-fx="off"] .el-message-box,
+:root[data-fx="eco"] .el-popper,
+:root[data-fx="off"] .el-popper,
+:root[data-fx="eco"] .el-select-dropdown,
+:root[data-fx="off"] .el-select-dropdown,
+:root[data-fx="eco"] .el-dropdown-menu,
+:root[data-fx="off"] .el-dropdown-menu,
+:root[data-fx="eco"] .creation-node,
+:root[data-fx="off"] .creation-node,
+:root[data-fx="eco"] .module-card,
+:root[data-fx="off"] .module-card { backdrop-filter: none !important; }
+:root[data-fx="off"] .el-message { backdrop-filter: none !important; }
+:root[data-fx="off"] .app-shell * { animation: none !important; }
+:root[data-fx="eco"] .runtime-chip i { animation: none !important; }
+
+/* 兜底：各页面里还有不少直接写死的 blur(…)（有的叠了 saturate），
+   一条一条改容易漏，也会和正在改的页面打架。轻量/极简档统一在这里全部拿掉，
+   不管它是谁写的、写在伪元素上还是弹层里（弹层会被挂到 body 下，不在 .app-shell 里）。 */
+:root[data-fx="eco"] *,
+:root[data-fx="eco"] *::before,
+:root[data-fx="eco"] *::after,
+:root[data-fx="off"] *,
+:root[data-fx="off"] *::before,
+:root[data-fx="off"] *::after { -webkit-backdrop-filter: none !important; backdrop-filter: none !important; }
+/* 极简档停掉全部动画，但「正在加载」的转圈是状态信息，不是装饰，必须留下 */
+:root[data-fx="off"] .app-shell .is-loading { animation: rotating 2s linear infinite !important; }
+:root[data-fx="off"] .el-loading-spinner .circular { animation: loading-rotate 2s linear infinite !important; }
+
+/* ── 玻璃表单控件 ──────────────────────────────────────────── */
+.el-input__wrapper,
+.el-select__wrapper,
+.el-textarea__inner {
+  background: var(--bg-inner);
+  backdrop-filter: var(--glass-blur);
+  border-color: var(--border-color);
+}
+.el-input__wrapper:hover,
+.el-select__wrapper:hover { border-color: var(--border-muted); }
+.el-input__wrapper.is-focus,
+.el-select__wrapper.is-focused {
+  border-color: var(--border-bright);
+  box-shadow: var(--shadow-glow);
+}
+
+/* ── 浮层 ──────────────────────────────────────────────────── */
+.el-dialog,
+.el-message-box,
+.el-popper,
+.el-select-dropdown,
+.el-dropdown-menu {
+  background: var(--bg-card);
+  backdrop-filter: var(--glass-blur-lg);
+  border: 1px solid var(--border-color);
+  color: var(--text-primary);
+}
+html.dark .el-dialog,
+html.dark .el-message-box,
+html.dark .el-popper,
+html.dark .el-select-dropdown,
+html.dark .el-dropdown-menu {
+  background: #1f2329;
+}
+.el-dialog { border-radius: var(--radius-lg); box-shadow: var(--shadow-float); max-width: calc(100vw - 24px); }
+.el-dialog__header { border-bottom: 1px solid var(--border-color); padding-bottom: 16px; }
+.el-dialog__title,
+.el-message-box__title,
+.el-form-item__label,
+.el-dialog__body,
+.el-message-box__content { color: var(--text-primary); }
+.el-message { max-width: calc(100vw - 24px); white-space: normal; border-radius: var(--radius-md); backdrop-filter: var(--glass-blur); }
+.el-message__content { line-height: 1.6; }
+.cfg-tip-popper.el-popper { max-width: 300px; }
+.cfg-tip-content { font-size: 12px; line-height: 1.7; }
+
+/* ── 标签 ──────────────────────────────────────────────────── */
+.el-tag { color: var(--text-primary); border-color: var(--border-color); background: var(--bg-inner); border-radius: var(--radius-sm); }
+.el-tag--success { color: var(--ui-success); background: var(--ui-success-soft); border-color: transparent; }
+.el-tag--warning { color: var(--ui-warning); background: var(--ui-warning-soft); border-color: transparent; }
+.el-tag--danger  { color: var(--ui-danger);  background: var(--ui-danger-soft);  border-color: transparent; }
+.el-tag--info    { color: var(--ui-info);    background: var(--ui-info-soft);    border-color: transparent; }
+
+/* ── 表格 ──────────────────────────────────────────────────── */
 .el-table {
- --el-table-bg-color:var(--bg-card);
- --el-table-tr-bg-color:var(--bg-card);
- --el-table-row-hover-bg-color:var(--bg-hover);
- --el-table-current-row-bg-color:var(--ui-accent-soft);
- --el-table-header-bg-color:var(--bg-inner);
- --el-table-text-color:var(--text-primary);
- --el-table-header-text-color:var(--text-primary);
- --el-table-border-color:var(--border-color);
+  --el-table-bg-color:             transparent;
+  --el-table-tr-bg-color:          transparent;
+  --el-table-row-hover-bg-color:   var(--bg-hover);
+  --el-table-current-row-bg-color: var(--ui-accent-soft);
+  --el-table-header-bg-color:      var(--bg-inner);
+  --el-table-text-color:           var(--text-primary);
+  --el-table-header-text-color:    var(--text-subtle);
+  --el-table-border-color:         var(--border-color);
+  background: transparent;
 }
-.el-table,.el-table__inner-wrapper,.el-table tr,.el-table th.el-table__cell,.el-table td.el-table__cell { background:var(--bg-card); color:var(--text-primary); border-color:var(--border-color); }
-.el-table th.el-table__cell { background:var(--bg-inner); color:var(--text-primary); }
-.el-table--enable-row-hover .el-table__body tr:hover>td.el-table__cell,
-.el-table__body tr.hover-row>td.el-table__cell { background:var(--bg-hover) !important; color:var(--text-primary) !important; }
-.el-table__body tr.current-row>td.el-table__cell,
-.el-table__body tr.current-row:hover>td.el-table__cell,
-.el-table__body tr.config-selected-row>td.el-table__cell,
-.el-table__body tr.config-selected-row:hover>td.el-table__cell,
-.el-table__fixed-right .el-table__body tr.config-selected-row>td.el-table__cell { background:var(--ui-accent-soft) !important; color:var(--text-primary) !important; }
-.el-table__body tr.el-table__row--striped>td.el-table__cell { background:var(--bg-card); color:var(--text-primary); }
-.el-table__body tr.el-table__row--striped:hover>td.el-table__cell { background:var(--bg-hover) !important; }
-.el-table__body tr.config-selected-row.el-table__row--striped>td.el-table__cell,
-.el-table__body tr.config-selected-row.el-table__row--striped:hover>td.el-table__cell { background:var(--ui-accent-soft) !important; color:var(--text-primary) !important; }
-.el-table__fixed-right .el-table__body tr:hover>td.el-table__cell,
-.el-table__fixed-right .el-table__body tr.hover-row>td.el-table__cell { color:var(--text-primary) !important; }
-.el-table tr.config-selected-row .el-button.is-link,
-.el-table tr.config-selected-row .el-button--text { color:var(--ui-accent) !important; }
-.el-table tr.config-selected-row .el-button--danger { color:var(--ui-danger) !important; }
-.el-table tr.config-selected-row .el-tag { color:var(--text-primary) !important; border-color:var(--border-muted) !important; background:var(--bg-inner) !important; }
-.el-table tr.config-selected-row .el-checkbox__label { color:var(--text-primary) !important; }
-.el-table__fixed-right, .el-table__fixed, .el-table__fixed-right-patch { background:var(--bg-card) !important; }
-.el-table__fixed-right::before, .el-table__fixed::before { background:var(--border-color) !important; }
-.el-table .cell { color:inherit; }/* Explicit high-contrast selection palette. Keep this after stripe rules so the
-   component cannot reintroduce its light default selection background. */
-html.dark .el-table__body tr.config-selected-row > td.el-table__cell,
-html.dark .el-table__fixed-right .el-table__body tr.config-selected-row > td.el-table__cell {
-  background-color:#173d32 !important;
-  background:#173d32 !important;
-  color:#f5fcf8 !important;
-}
-html.dark .el-table__body tr.config-selected-row > td.el-table__cell .cell,
-html.dark .el-table__fixed-right .el-table__body tr.config-selected-row > td.el-table__cell .cell,
-html.dark .el-table__body tr.config-selected-row > td.el-table__cell :is(span,small,strong) {
-  color:#f5fcf8 !important;
-}
-html.light .el-table__body tr.config-selected-row > td.el-table__cell,
-html.light .el-table__fixed-right .el-table__body tr.config-selected-row > td.el-table__cell {
-  background-color:#e4f2eb !important;
-  background:#e4f2eb !important;
-  color:#173329 !important;
-}
-html.light .el-table__body tr.config-selected-row > td.el-table__cell .cell,
-html.light .el-table__fixed-right .el-table__body tr.config-selected-row > td.el-table__cell .cell,
-html.light .el-table__body tr.config-selected-row > td.el-table__cell :is(span,small,strong) {
-  color:#173329 !important;
-}
-.el-table__body tr.config-selected-row:hover > td.el-table__cell,
-.el-table__fixed-right .el-table__body tr.config-selected-row:hover > td.el-table__cell {
-  filter:brightness(1.04);
-}
-.el-tag { color:var(--text-primary); border-color:var(--border-color); background:var(--bg-inner); }
-.el-tag--success { color:var(--ui-accent); background:var(--ui-accent-soft); }
-.el-tag--warning { color:var(--ui-warning); background:var(--ui-warning-soft); }
-.el-tag--danger { color:var(--ui-danger); background:var(--ui-danger-soft); }
-.el-tag--info { color:var(--ui-info); background:var(--ui-info-soft); }
-.el-dialog,.el-message-box {max-width:calc(100vw - 24px)}
-.el-message {max-width:calc(100vw - 24px);white-space:normal}
-.el-message__content {line-height:1.6}
-.cfg-tip-popper.el-popper {max-width:300px}
-.cfg-tip-content {font-size:12px;line-height:1.7}
-/* One palette owns both page and shell colors; descendants inherit meaning. */
-:root, html.dark { --on-accent:#061c14; --accent-soft:#193c30; --text-subtle:#a4b9af; --text-faint:#8ca497; }
-html.light { --on-accent:#ffffff; --accent-soft:#e0f0e7; --text-subtle:#4e6b5e; --text-faint:#587366; }
-.app-shell { --shell-accent:var(--el-color-primary); --shell-accent-2:var(--el-color-primary); }
-html.dark .app-shell { --shell-accent:#77e3c5; --on-accent:#061c14; }
-.app-shell .shell-brand-mark { color:var(--on-accent); border-radius:10px; }
-.app-shell .shell-nav-item { border-radius:9px; }
-.app-shell .shell-nav-item.router-link-active { background:var(--accent-soft); color:var(--text-primary) !important; }
-.app-shell .shell-nav-item :is(span,.el-icon) { color:inherit; }
-.app-shell .shell-nav-item:hover { background:var(--bg-hover); color:var(--text-primary) !important; }
-.app-shell .shell-help { border-radius:12px; }
-.app-shell :is(.shell-theme,.shell-refresh,.shell-menu,.runtime-chip) { border-radius:8px; }
-.app-shell .el-button > span, .app-shell .el-button > span > .el-icon { color:inherit; }
-.app-shell .el-button:not(.el-button--primary):not(.is-link):not(.is-text):hover { color:var(--text-primary); border-color:var(--ui-accent); background:var(--bg-hover); }
-.app-shell .el-button--primary:hover { color:#fff !important; }
-html.light .app-shell .el-button--primary:not(.is-plain):not(.is-link):not(.is-text) { background:#167a5d !important; border-color:#167a5d !important; }
-.app-shell .dashboard-page .welcome-copy h2 em { color:var(--shell-accent); }
-.app-shell .dashboard-page :is(.dashboard-freshness,.dashboard-freshness span,.metric-top span,.chart-axis,.chart-empty>span,.recent-head) { color:var(--text-muted); }
-.app-shell .dashboard-page :is(.welcome-band,.metric-card,.panel,.latest-card) { border-radius:16px; }
-.app-shell .dashboard-page .welcome-actions { flex-wrap:wrap; }
-.app-shell .dashboard-page .desktop-shortcut-button { margin-left:0; }
-.app-shell .dashboard-page :is(.visual-core strong,.visual-core small) { color:#123329; }
-.app-shell .dashboard-page .latest-type { color:#fff !important; }
-.app-shell .dashboard-page .empty-current>span { background:var(--accent-soft); color:var(--shell-accent); }
-.app-shell .director-studio .director-toolbar { overflow-x:auto; }
-.app-shell .director-studio .object-row.selected { background:var(--accent-soft); color:var(--text-primary); }
-.app-shell .director-studio :is(.object-name,.object-kind,.inspector-heading,.field-label,.empty-inspector,.timecode) { color:var(--text-primary); }
-.app-shell .director-studio .viewport-hint { color:#d9e5ef; }
-.app-shell :is(button,a,input,textarea,select):focus-visible { outline:2px solid var(--el-color-primary); outline-offset:3px; }
-@media(prefers-reduced-motion:reduce) { .app-shell * { animation:none !important; transition:none !important; } }
+.el-table,
+.el-table__inner-wrapper,
+.el-table tr,
+.el-table th.el-table__cell,
+.el-table td.el-table__cell { background: transparent; color: var(--text-primary); border-color: var(--border-color); }
+.el-table th.el-table__cell { background: var(--bg-inner); color: var(--text-subtle); font-size: 11px; letter-spacing: .04em; }
+.el-table--enable-row-hover .el-table__body tr:hover > td.el-table__cell,
+.el-table__body tr.hover-row > td.el-table__cell { background: var(--bg-hover) !important; }
+.el-table__body tr.current-row > td.el-table__cell,
+.el-table__body tr.config-selected-row > td.el-table__cell { background: var(--ui-accent-soft) !important; }
+.el-table__fixed-right,
+.el-table__fixed,
+.el-table__fixed-right-patch { background: var(--bg-card) !important; }
+.el-table .cell { color: inherit; }
+html.dark .el-table__body tr.config-selected-row > td.el-table__cell { background: rgba(217,221,227,.08) !important; color: #f7f8fa !important; }
+html.light .el-table__body tr.config-selected-row > td.el-table__cell { background: rgba(43,48,56,.06) !important; color: #16191e !important; }
 
+/* ── 按钮 ──────────────────────────────────────────────────── */
+/* 主按钮是铬：金属渐变 + 一道扫光，这是整个界面唯一「炫」的地方之一 */
+.el-button--primary:not(.is-plain):not(.is-link):not(.is-text) {
+  background: var(--gradient-accent) !important;
+  border-color: transparent !important;
+  color: var(--on-accent) !important;
+  box-shadow: 0 0 0 1px rgba(255,255,255,.22) inset, var(--shadow-sm);
+  position: relative; overflow: hidden;
+  transition: filter .2s, transform .15s;
+}
+.el-button--primary:not(.is-plain):not(.is-link):not(.is-text):hover { filter: brightness(1.06); }
+.el-button--primary:not(.is-plain):not(.is-link):not(.is-text):active { transform: translateY(1px); }
+.el-button:not(.el-button--primary):not(.is-link):not(.is-text):hover {
+  border-color: var(--border-bright); color: var(--text-bright); background: var(--bg-hover);
+}
+.el-button--warning:not(.is-plain):not(.is-link) {
+  background: var(--gradient-warm) !important; border-color: transparent !important;
+  color: #1a1206 !important; box-shadow: var(--shadow-warm-glow);
+}
+.app-shell :is(button,a,input,select,textarea):focus-visible {
+  outline: 2px solid var(--border-bright); outline-offset: 2px;
+}
 
-/* Semantic aliases are intentionally one-way: page tokens -> workspace. */
-:root,html.dark {
- --ui-accent:#77e3c5; --ui-accent-soft:#193c30;
- --ui-warning:#f4ca7d; --ui-warning-soft:#302716;
- --ui-danger:#f2a2ae; --ui-danger-soft:#352129;
- --ui-info:#9bc9ef; --ui-info-soft:#1c3042;
-}
-html.light {
- --ui-accent:#176f55; --ui-accent-soft:#e4f2eb;
- --ui-warning:#83530b; --ui-warning-soft:#fff3d8;
- --ui-danger:#a12b44; --ui-danger-soft:#fce9ed;
- --ui-info:#285f90; --ui-info-soft:#e6f1fc;
-}
-.app-shell {
- --shell-bg:var(--bg-page); --shell-panel:var(--bg-card);
- --shell-panel-2:var(--bg-inner); --shell-text:var(--text-primary);
- --shell-muted:var(--text-muted); --shell-faint:var(--text-subtle);
- --shell-line:var(--border-color); --shell-accent:var(--ui-accent);
- --shell-accent-2:var(--ui-accent);
-}
-.app-shell .shell-sidebar {background:var(--bg-card)}
-.app-shell .shell-topbar {background:var(--bg-page)}
-.app-shell .shell-nav-item.router-link-active {background:var(--ui-accent-soft);color:var(--text-primary)}
-.app-shell .runtime-chip {color:var(--ui-accent);border-color:var(--border-color)}
-.app-shell .runtime-chip.warning {color:var(--ui-warning)}
-.app-shell .dashboard-page .welcome-band {background:linear-gradient(115deg,var(--bg-card),var(--ui-accent-soft));border-color:var(--border-color)}
-.app-shell .dashboard-page .sparkline-wrap polyline,.app-shell .dashboard-page .sparkline-wrap circle {stroke:var(--ui-accent)}
-.app-shell .dashboard-page .sparkline-wrap circle {fill:var(--bg-card)}
-.app-shell .dashboard-page .visual-core {background:#78e4c4;color:#123329;border-radius:14px}
-.app-shell .dashboard-page .latest-type {color:#fff}
+/* ── 画布节点徽章 ──────────────────────────────────────────── */
+.creation-node .node-kind-text  { background: var(--ui-info-soft);    color: var(--ui-info); }
+.creation-node .node-kind-image { background: var(--ui-success-soft); color: var(--ui-success); }
+.creation-node .node-kind-video { background: var(--ui-accent-soft);  color: var(--text-bright); }
+.creation-node .node-kind-audio { background: var(--ui-danger-soft);  color: var(--ui-danger); }
 
-.app-shell .node-card:last-child .node-rail i {background:linear-gradient(var(--border-muted),transparent)}
-.app-shell .module-card {border-radius:14px;transition:border-color .16s,box-shadow .16s}
-.app-shell .module-card:hover {border-color:var(--border-muted);box-shadow:var(--shadow)}
-.app-shell .phase {background:var(--bg-inner)}
-.app-shell .catalog-hero,.app-shell .catalog-page>.panel {border-radius:14px}
+/* ── 画布节点卡片 ──────────────────────────────────────────── */
+.creation-node {
+  backdrop-filter: var(--glass-blur);
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+}
+.creation-node.selected { border-color: var(--border-bright); box-shadow: var(--shadow-glow); }
+
+/* ── 画布工具条 ────────────────────────────────────────────── */
+.canvas-toolbar .toolbar-sep { width: 1px; height: 22px; background: var(--border-color); flex-shrink: 0; margin: 0 2px; }
+.canvas-toolbar .toolbar-group { display: contents; }
+
+/* ── 画布侧栏 ──────────────────────────────────────────────── */
+.canvas-panel .el-tabs__header { position: sticky; top: 0; z-index: 5; background: var(--bg-card); backdrop-filter: var(--glass-blur); }
+.canvas-panel .chat-log { scrollbar-width: thin; scrollbar-color: var(--border-color) transparent; }
+
+/* ── 模块卡片 ──────────────────────────────────────────────── */
+.app-shell .module-card { border-radius: var(--radius-md); transition: border-color .2s, box-shadow .2s; backdrop-filter: var(--glass-blur); }
+.app-shell .module-card:hover { border-color: var(--border-muted); box-shadow: var(--shadow-md); }
+.app-shell .phase { background: var(--bg-inner); }
+
+/* ── 导演台 ────────────────────────────────────────────────── */
+.app-shell .director-studio .object-row.selected { background: var(--ui-accent-soft); }
+.app-shell .director-studio :is(.object-name,.object-kind,.inspector-heading,.field-label,.empty-inspector,.timecode) { color: var(--text-primary); }
+
+/* ── 排印工具类（供新的页面结构使用） ─────────────────────── */
+.silver-display { font-family: var(--font-display); font-weight: 600; letter-spacing: -.01em; }
+.silver-chrome-text {
+  background: var(--gradient-chrome-text);
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+}
+.silver-mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; letter-spacing: -.01em; }
+.silver-num  { font-variant-numeric: tabular-nums; }
+
+/* ── 动效 ──────────────────────────────────────────────────── */
+@keyframes spin { to { transform: rotate(360deg); } }
+@keyframes fade-up {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes sweep {
+  0%, 70% { transform: translateX(-70%); }
+  100%    { transform: translateX(70%); }
+}
+@keyframes dot-pulse {
+  0%,100% { opacity: .6; transform: scale(1); }
+  50%     { opacity: 1;  transform: scale(1.25); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-shell * { animation: none !important; transition: none !important; }
+}

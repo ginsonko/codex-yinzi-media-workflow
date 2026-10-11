@@ -8,8 +8,28 @@
           <span>{{ storyboardLabel }}</span>
         </div>
       </div>
+      <p class="director-note">在三维棚里摆人物、道具和镜头，记录随时间移动的姿态，再导出预演。<span class="mono">{{ stageItems.length }}</span> 个对象 · 时长 <span class="mono">{{ timelineDuration.toFixed(1) }}</span> 秒 · 渲染 <span class="mono">{{ perf.live }}</span></p>
       <div class="director-header-actions">
         <span class="save-state">{{ saveState }}</span>
+        <el-tooltip :content="`当前档位 ${fxCurrent.label}：像素比上限 ${perf.maxDpr}、${perf.fps} 帧。静止时不重绘，离屏时停止。`" placement="bottom">
+          <el-dropdown trigger="click" @command="onPerfCommand">
+            <el-button size="small" class="perf-button">
+              <el-icon><Odometer /></el-icon>
+              <span class="mono">{{ perf.live }}</span>
+              <span class="perf-sep">·</span>
+              <span class="mono">{{ perf.maxDpr }}x</span>
+            </el-button>
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item command="tier">跟随效果档位（{{ fxCurrent.label }}）</el-dropdown-item>
+                <el-dropdown-item command="60-1.5" divided>流畅 · 60 帧 / 1.5x</el-dropdown-item>
+                <el-dropdown-item command="30-1.25">均衡 · 30 帧 / 1.25x</el-dropdown-item>
+                <el-dropdown-item command="24-1">省电 · 24 帧 / 1x</el-dropdown-item>
+                <el-dropdown-item command="12-1">最低 · 12 帧 / 1x</el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
+        </el-tooltip>
         <el-button :icon="QuestionFilled" circle title="打开 3D 导演台教程" aria-label="打开 3D 导演台教程" @click="tutorialVisible = true" />
         <el-button
           :icon="DocumentChecked"
@@ -104,10 +124,14 @@
     </section>
 
     <main class="director-main">
-      <section ref="viewportRef" class="director-viewport">
+      <section ref="viewportRef" :class="['director-viewport', { 'is-recording': recording }]">
         <div v-if="previewMode === 'shot'" class="preview-indicator">
           <span class="record-dot" />
           {{ activeCameraName }}
+        </div>
+        <div v-if="recording" class="record-indicator">
+          <span class="record-dot" />
+          正在录制 · <span class="mono">{{ currentTime.toFixed(1) }}</span> / <span class="mono">{{ timelineDuration.toFixed(1) }}</span> 秒
         </div>
         <div v-if="!webglReady" class="webgl-fallback">{{ initError || '正在初始化 3D 场景…' }}</div>
       </section>
@@ -350,7 +374,7 @@
 </template>
 
 <script setup>
-import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import {
@@ -366,6 +390,7 @@ import {
   FullScreen,
   Grid,
   House,
+  Odometer,
   OfficeBuilding,
   Plus,
   QuestionFilled,
@@ -402,6 +427,7 @@ import {
 } from '@/utils/directorScene'
 import { productionAspectSpec } from '@/utils/aspectRatio'
 import { applyDirectorCameraAim } from '@/utils/directorThree'
+import { useEffects } from '@/composables/useEffects'
 import {
   createDirectorObject,
   disposeDirectorObject,
@@ -459,6 +485,52 @@ const tutorialVisible = ref(false)
 const autoRecordKeyframes = ref(true)
 const workflowAspectRatio = ref('16:9')
 
+/* ── 渲染性能档位 ────────────────────────────────────────────
+   3D 棚拍是最吃显卡的一页，所以渲染循环听效果档位：
+   完整档按像素比 1.5、45 帧画；均衡档 1.25、30 帧；轻量及以下用 1 倍像素、20 帧。
+   静止且没有交互时不画（按需渲染），离屏时整个循环停下。 */
+const { level: fxLevel, current: fxCurrent } = useEffects()
+function frameBudget(levelId) {
+  if (levelId === 'high') return { maxDpr: 1.5, fps: 45 }
+  if (levelId === 'balanced') return { maxDpr: 1.25, fps: 30 }
+  if (levelId === 'eco') return { maxDpr: 1, fps: 20 }
+  return { maxDpr: 1, fps: 12 }
+}
+const perf = reactive({ maxDpr: 1.25, fps: 30, manual: false, live: '待机', rendered: 0 })
+function applyFrameBudget() {
+  perf.maxDpr = perf.manual ? perf.maxDpr : frameBudget(fxLevel.value).maxDpr
+  perf.fps = perf.manual ? perf.fps : frameBudget(fxLevel.value).fps
+  applyPixelRatio()
+  requestRender()
+}
+/** 像素比上限随档位走：这是三档里最直接的性能开关 */
+function applyPixelRatio() {
+  if (!renderer) return
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, perf.maxDpr))
+  resizeRenderer()
+  requestRender()
+}
+
+// 顶栏切档位时按新档重建画质，而不是让旧开销赖着不动
+watch(fxLevel, () => { if (!perf.manual) applyFrameBudget() })
+
+/** 手动覆盖：用户可以直接指定帧率与像素比上限，不必依赖自动档 */
+function setPerfPreset(fps, maxDpr) {
+  perf.manual = true
+  perf.fps = fps
+  perf.maxDpr = maxDpr
+  applyPixelRatio()
+}
+function useTierPerf() {
+  perf.manual = false
+  applyFrameBudget()
+}
+function onPerfCommand(command) {
+  if (command === 'tier') return useTierPerf()
+  const [fps, dpr] = command.split('-').map(Number)
+  setPerfPreset(fps, dpr)
+}
+
 const blenderRenderLinks = computed(() => blenderLinks(blenderJob.value || blenderRenderResult.value))
 
 const selectedForm = reactive({
@@ -483,6 +555,7 @@ let orbit
 let transform
 let transformHelper
 let resizeObserver
+let visibilityObserver
 let animationFrame
 let mediaRecorder
 let recordChunks = []
@@ -591,7 +664,7 @@ function createStageObject(record) {
     object.updateProjectionMatrix()
     const helper = new THREE.CameraHelper(object)
     helper.userData.directorHelper = true
-    helper.material?.color?.set('#54b9ff')
+    helper.material?.color?.set('#8fc3ee')
     scene.add(helper)
     cameraHelpers.set(record.id, helper)
   }
@@ -656,7 +729,7 @@ function addCatalogAsset(asset) {
   commitHistory()
   object.userData.directorReady.then(() => {
     updateDirectorObjectAtTime(object, currentTime.value)
-    renderScene()
+    requestRender()
   }).catch(() => {})
 }
 
@@ -686,7 +759,7 @@ function replaceSelectedCharacter(assetId) {
   commitHistory()
   replacement.userData.directorReady.then(() => {
     updateDirectorObjectAtTime(replacement, currentTime.value)
-    renderScene()
+    requestRender()
   }).catch(() => {})
 }
 
@@ -872,6 +945,7 @@ function selectObject(id) {
   if (object && previewMode.value === 'free' && !object.userData.props?.attach_to) transform.attach(object)
   else transform?.detach()
   syncSelectedForm()
+  requestRender()
 }
 
 function applyInspector(shouldCommit = false) {
@@ -973,6 +1047,7 @@ function applyInspector(shouldCommit = false) {
   }
   syncStageItems()
   cameraHelpers.get(selectedId.value)?.update()
+  requestRender()
   if (shouldCommit) {
     if (autoRecordKeyframes.value && currentTime.value > 0 && !nextAttachTo) {
       recordSelectedKeyframe(currentTime.value, { commit: false })
@@ -1003,6 +1078,7 @@ function onPreviewModeChange(value) {
   orbit.enabled = previewMode.value === 'free'
   if (previewMode.value === 'free' && selectedId.value) transform.attach(objectById.get(selectedId.value))
   else transform.detach()
+  requestRender()
 }
 
 function resetEditorCamera() {
@@ -1373,6 +1449,7 @@ function applyTimeline(time) {
   for (const object of objectById.values()) updateDirectorObjectAtTime(object, time)
   applyDirectorAttachments(serializeDocument(), objectById, time)
   syncSelectedForm()
+  requestRender()
 }
 
 function scrubTimeline(value) {
@@ -1436,6 +1513,7 @@ function resizeRenderer() {
   renderer.setSize(width, height, false)
   editorCamera.aspect = width / height
   editorCamera.updateProjectionMatrix()
+  needsRender = true
 }
 
 function orientTargetCameras() {
@@ -1479,9 +1557,29 @@ function renderScene() {
   } else {
     renderer.render(scene, editorCamera)
   }
+  needsRender = false
+}
+
+/* ── 按需渲染 ────────────────────────────────────────────────
+   以前是每帧无条件 renderScene()，鼠标一动就满负荷跑，还带上阻尼的
+   惯性循环。现在改成：只有「真的会变」的时候才画，并且固定节奏
+   （1000/fps）重绘，不跟着显示器的 120Hz 空转。 */
+let needsRender = true
+let lastPaint = 0
+let visible = true
+let paintTimes = []
+let idleTimer = 0
+
+/** 标记画面需要重画；下一帧（或立即，若已在循环里）会画一次 */
+function requestRender() {
+  needsRender = true
+  if (visible && !animationFrame) animationFrame = requestAnimationFrame(animate)
 }
 
 function animate(now) {
+  animationFrame = 0
+  if (!renderer || !scene) return
+  if (visible) animationFrame = requestAnimationFrame(animate)
   if (playing.value) {
     const next = (now - playStartedAt) / 1000
     if (next >= timelineDuration.value) {
@@ -1492,10 +1590,43 @@ function animate(now) {
       currentTime.value = next
     }
     applyTimeline(currentTime.value)
+    needsRender = true
   }
-  orbit?.update()
+  // 阻尼还在收敛时继续画：update() 自己会 dispatch change，
+  // 所以它返回 true 就说明相机还在动，返回 false 就彻底停手。
+  if (orbit?.enabled && orbit.update()) needsRender = true
+  if (!needsRender) {
+    /* 循环马上要停了：连着半秒没有新的一帧，就把读数收回「待机」，
+       不然松手之后页面上还挂着一个早已不成立的 fps。 */
+    if (!playing.value && paintTimes.length && !idleTimer) {
+      idleTimer = window.setTimeout(() => {
+        idleTimer = 0
+        if (!playing.value) {
+          paintTimes = []
+          perf.live = '待机'
+        }
+      }, 600)
+    }
+    return
+  }
+  if (idleTimer) {
+    window.clearTimeout(idleTimer)
+    idleTimer = 0
+  }
+  const budget = 1000 / Math.max(1, perf.fps)
+  if (now - lastPaint < budget) return
+  lastPaint = now
   renderScene()
-  animationFrame = requestAnimationFrame(animate)
+  /* 读数按「最近一秒真的画了几帧」算，而不是按 rAF 回调次数，
+     否则显示的是显示器的刷新率，不是这一页真正付出的代价。 */
+  paintTimes.push(now)
+  while (paintTimes.length && paintTimes[0] < now - 1000) paintTimes.shift()
+  if (paintTimes.length >= 2) {
+    perf.live = `${Math.round((paintTimes.length * 1000) / Math.max(1, now - paintTimes[0]))} fps`
+  } else if (!playing.value) {
+    perf.live = '待机'
+  }
+  perf.rendered++
 }
 
 async function initScene() {
@@ -1506,7 +1637,7 @@ async function initScene() {
   editorCamera.position.set(7.5, 5.5, 9)
 
   renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true, alpha: false })
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2))
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, perf.maxDpr))
   renderer.shadowMap.enabled = true
   renderer.outputColorSpace = THREE.SRGBColorSpace
   viewportRef.value.appendChild(renderer.domElement)
@@ -1520,6 +1651,8 @@ async function initScene() {
   orbit.maxPolarAngle = Math.PI * 0.495
   orbit.minDistance = 2
   orbit.maxDistance = 60
+  // 拖拽/滚轮/阻尼收敛都会走这里，按需重画，不再靠空转的 rAF
+  orbit.addEventListener('change', requestRender)
 
   transform = new TransformControls(editorCamera, renderer.domElement)
   transform.setMode(transformMode.value)
@@ -1528,12 +1661,13 @@ async function initScene() {
   transform.addEventListener('objectChange', () => {
     syncSelectedForm()
     cameraHelpers.get(selectedId.value)?.update()
+    requestRender()
   })
   transform.addEventListener('mouseUp', onTransformMouseUp)
   transformHelper = transform.getHelper ? transform.getHelper() : transform
   scene.add(transformHelper)
 
-  const grid = new THREE.GridHelper(80, 80, '#257a6c', '#28313f')
+  const grid = new THREE.GridHelper(80, 80, '#4a515c', '#2a2e35')
   grid.material.opacity = 0.62
   grid.material.transparent = true
   grid.userData.directorHelper = true
@@ -1567,7 +1701,23 @@ async function initScene() {
       ? '已从分镜恢复'
     : saved ? '已从本机恢复' : '默认场景'
   webglReady.value = true
-  animationFrame = requestAnimationFrame(animate)
+  // 离屏就停手：切到别的标签、滚动到看不见的地方，都不再占着 GPU
+  if (typeof IntersectionObserver !== 'undefined') {
+    visibilityObserver = new IntersectionObserver(([entry]) => {
+      visible = entry.isIntersecting
+      if (visible) requestRender()
+      else if (animationFrame) { cancelAnimationFrame(animationFrame); animationFrame = 0 }
+    }, { threshold: 0.01 })
+    visibilityObserver.observe(viewportRef.value)
+  }
+  document.addEventListener('visibilitychange', onVisibilityChange)
+  requestRender()
+}
+
+function onVisibilityChange() {
+  visible = !document.hidden
+  if (visible) requestRender()
+  else if (animationFrame) { cancelAnimationFrame(animationFrame); animationFrame = 0 }
 }
 
 function goBack() {
@@ -1612,24 +1762,55 @@ onMounted(async () => {
   }
 })
 
+/** 彻底释放：几何 / 材质 / 贴图 / 天空盒，再把 WebGL 上下文还回去。
+    只调 renderer.dispose() 在浏览器里仍会留着显存，所以必须显式回收。 */
+function disposeStageResources() {
+  if (scene) {
+    scene.traverse((child) => {
+      child.geometry?.dispose?.()
+      const materials = Array.isArray(child.material) ? child.material : child.material ? [child.material] : []
+      for (const material of materials) {
+        for (const value of Object.values(material)) {
+          if (value && value.isTexture) value.dispose?.()
+        }
+        material.dispose?.()
+      }
+    })
+    scene.clear?.()
+    scene.environment?.dispose?.()
+    scene.background?.dispose?.()
+  }
+  orbit?.dispose?.()
+  transform?.dispose?.()
+  scene = undefined
+  objectById.clear()
+  cameraHelpers.clear()
+}
+
 onBeforeUnmount(() => {
   stopBlenderPolling()
   if (mediaRecorder?.state === 'recording') mediaRecorder.stop()
-  cancelAnimationFrame(animationFrame)
+  if (animationFrame) cancelAnimationFrame(animationFrame)
+  animationFrame = 0
+  if (idleTimer) window.clearTimeout(idleTimer)
+  idleTimer = 0
   resizeObserver?.disconnect()
+  visibilityObserver?.disconnect()
+  document.removeEventListener('visibilitychange', onVisibilityChange)
   window.removeEventListener('keydown', onKeyDown)
   renderer?.domElement?.removeEventListener('pointerdown', onCanvasPointerDown)
-  transform?.dispose?.()
-  orbit?.dispose?.()
-  clearStageObjects()
+  disposeStageResources()
   renderer?.dispose?.()
+  // 显式丢失上下文，避免反复进出导演台把显存吃满
+  renderer?.forceContextLoss?.()
   renderer?.domElement?.remove()
+  renderer = undefined
 })
 </script>
 
 <style scoped>
 .blender-render-result { min-height: 0; max-height: 250px; overflow: auto; padding: 12px 14px; border-bottom: 1px solid var(--border-color); background: var(--bg-inner); color: var(--text-muted); display: grid; gap: 9px; }
-.director-studio.has-blender-result { grid-template-rows: 56px 48px auto minmax(180px, 1fr) 76px; }
+.director-studio.has-blender-result { grid-template-rows: 52px 44px auto minmax(180px, 1fr) 68px; }
 .blender-render-actions { display: flex; flex-wrap: wrap; gap: 6px; }
 .blender-previews { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
 .blender-previews > * { width: 100%; min-width: 0; height: 150px; object-fit: contain; }
@@ -1646,9 +1827,9 @@ onBeforeUnmount(() => {
   height: 100vh;
   min-height: 560px;
   display: grid;
-  grid-template-rows: 56px 48px minmax(0, 1fr) 76px;
+  grid-template-rows: 52px 44px minmax(0, 1fr) 68px;
   overflow: hidden;
-  background: #090c12;
+  background: var(--bg-deep, #0e1013);
   color: var(--text-primary);
 }
 .director-header,
@@ -1662,10 +1843,28 @@ onBeforeUnmount(() => {
   background: var(--bg-inner);
 }
 .director-header {
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 18px;
   padding: 0 14px;
   border-bottom: 1px solid var(--border-color);
 }
+/* 这一页在管什么：一行说明，不写营销话术 */
+.director-note {
+  margin: 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-subtle);
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+.director-note .mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; color: var(--text-muted); }
+.perf-button { display: inline-flex; align-items: center; gap: 5px; }
+.perf-button .mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: 11.5px; }
+.perf-sep { color: var(--text-faint); }
 .director-brand,
 .director-header-actions {
   display: flex;
@@ -1679,14 +1878,16 @@ onBeforeUnmount(() => {
   flex-direction: column;
 }
 .director-brand strong {
-  font-size: 15px;
+  font-family: var(--font-display);
+  font-size: 16px;
+  font-weight: 600;
   line-height: 1.2;
-  letter-spacing: 0;
+  letter-spacing: -.01em;
   white-space: nowrap;
 }
 .director-brand span,
 .save-state {
-  color: var(--text-muted);
+  color: var(--text-subtle);
   font-size: 11px;
   white-space: nowrap;
 }
@@ -1705,9 +1906,10 @@ onBeforeUnmount(() => {
 }
 .toolbar-divider {
   flex: 0 0 1px;
-  align-self: stretch;
-  background: var(--bg-inner);
-  margin: 0 2px;
+  align-self: center;
+  height: 20px;
+  background: var(--border-muted);
+  margin: 0 4px;
 }
 .director-main {
   min-height: 0;
@@ -1719,7 +1921,7 @@ onBeforeUnmount(() => {
   min-width: 0;
   min-height: 0;
   overflow: hidden;
-  background: #090c12;
+  background: var(--bg-deep, #0e1013);
 }
 .director-viewport :deep(.director-canvas) {
   display: block;
@@ -1727,6 +1929,7 @@ onBeforeUnmount(() => {
   height: 100%;
   outline: none;
 }
+/* 拖动 / 平移时会扫过这一块，所以不加毛玻璃、不加阴影 */
 .preview-indicator {
   position: absolute;
   top: 12px;
@@ -1735,21 +1938,37 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   gap: 7px;
-  padding: 6px 9px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  border-radius: 4px;
-  background: rgba(11, 14, 20, 0.78);
-  color: var(--text-primary);
-  font-size: 12px;
-  backdrop-filter: blur(8px);
+  padding: 6px 10px;
+  border: 1px solid var(--border-muted);
+  border-radius: var(--radius-sm);
+  background: var(--bg-deep, #0e1013);
+  color: var(--text-bright);
+  font-size: 11.5px;
 }
 .record-dot {
   width: 7px;
   height: 7px;
   border-radius: 50%;
-  background: #f05b68;
-  box-shadow: 0 0 0 3px rgba(240, 91, 104, 0.18);
+  background: var(--ui-warning);
 }
+/* 只有真的在录才呼吸，这是「活着」的信号 */
+.director-viewport.is-recording .record-dot { animation: dot-pulse 1.4s ease-in-out infinite; }
+.record-indicator {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 10px;
+  border: 1px solid rgba(242, 162, 58, .38);
+  border-radius: var(--radius-sm);
+  background: var(--ui-warning-soft, rgba(242, 162, 58, .12));
+  color: var(--ui-warning);
+  font-size: 11.5px;
+}
+.record-indicator .mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
 .webgl-fallback {
   position: absolute;
   inset: 0;
@@ -1766,6 +1985,8 @@ onBeforeUnmount(() => {
   background: var(--bg-card);
   overflow: hidden;
 }
+.object-list,
+.transform-panel { scrollbar-width: thin; scrollbar-color: var(--border-muted) transparent; }
 .panel-title,
 .inspector-heading {
   display: flex;
@@ -1774,15 +1995,18 @@ onBeforeUnmount(() => {
   gap: 8px;
 }
 .panel-title {
-  min-height: 42px;
+  min-height: 40px;
   padding: 0 12px;
   border-bottom: 1px solid var(--border-color);
-  color: var(--text-primary);
-  font-size: 13px;
+  color: var(--text-muted);
+  font-size: 11.5px;
   font-weight: 600;
+  letter-spacing: .02em;
 }
 .panel-title span:last-child {
-  color: var(--text-muted);
+  color: var(--text-faint);
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
   font-size: 11px;
   font-weight: 500;
 }
@@ -1795,30 +2019,29 @@ onBeforeUnmount(() => {
 }
 .object-row {
   width: 100%;
-  height: 34px;
+  height: 32px;
   display: grid;
-  grid-template-columns: 42px minmax(0, 1fr) auto;
+  grid-template-columns: 40px minmax(0, 1fr) auto;
   align-items: center;
   gap: 8px;
   border: 1px solid transparent;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   padding: 0 8px;
   background: transparent;
   color: var(--text-primary);
   cursor: pointer;
   text-align: left;
 }
-.object-row:hover {
-  background: var(--bg-inner);
-}
+.object-row:hover { background: var(--bg-hover); }
 .object-row.selected {
-  border-color: var(--border-color);
-  background: var(--bg-inner);
-  color: var(--text-primary);
+  border-color: var(--border-bright);
+  background: var(--ui-accent-soft);
+  color: var(--text-bright);
 }
 .object-kind {
-  color: var(--text-muted);
-  font-size: 11px;
+  color: var(--text-subtle);
+  font-size: 10.5px;
+  letter-spacing: .02em;
 }
 .object-name {
   min-width: 0;
@@ -1829,12 +2052,12 @@ onBeforeUnmount(() => {
 }
 .attachment-status {
   margin: 6px 0 10px;
-  padding: 7px 8px;
-  border-left: 3px solid var(--border-color);
-  color: var(--el-color-primary);
-  background: rgba(53, 182, 160, .12);
-  font-size: 12px;
-  line-height: 1.45;
+  padding: 7px 9px;
+  border-left: 2px solid var(--border-bright);
+  color: var(--text-muted);
+  background: var(--bg-inner);
+  font-size: 11.5px;
+  line-height: 1.5;
 }
 .keyframe-editor {
   display: grid;
@@ -1842,7 +2065,7 @@ onBeforeUnmount(() => {
   margin-top: 14px;
   padding: 10px;
   border: 1px solid var(--border-color);
-  border-radius: 5px;
+  border-radius: var(--radius-sm);
   background: var(--bg-inner);
 }
 .keyframe-editor-heading,
@@ -1871,9 +2094,10 @@ onBeforeUnmount(() => {
   min-width: 0;
   padding: 4px 3px;
   border: 1px solid var(--border-color);
-  color: var(--text-muted);
-  background: var(--bg-inner);
-  font-size: 9px;
+  border-radius: var(--radius-sm);
+  color: var(--text-subtle);
+  background: var(--bg-card);
+  font-size: 9.5px;
   text-align: center;
   white-space: nowrap;
 }
@@ -1919,13 +2143,14 @@ onBeforeUnmount(() => {
 }
 .keyframe-row > button:hover,
 .keyframe-row > button:focus-visible {
-  background: var(--bg-inner);
-  outline: 1px solid #3e8e80;
+  background: var(--bg-hover);
+  outline: 1px solid var(--border-bright);
 }
 .keyframe-row strong {
-  color: #f1bd59;
-  font-family: 'Menlo', 'Consolas', monospace;
-  font-size: 10px;
+  color: var(--text-bright);
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 10.5px;
 }
 .keyframe-row small {
   min-width: 0;
@@ -1945,7 +2170,7 @@ onBeforeUnmount(() => {
   line-height: 1.45;
 }
 .keyframe-attached-note {
-  color: var(--el-color-primary);
+  color: var(--text-muted);
 }
 .aspect-lock-note {
   margin-top: 6px;
@@ -1953,9 +2178,14 @@ onBeforeUnmount(() => {
   border-left: 3px solid var(--border-color);
 }
 .active-camera-mark {
-  color: var(--text-primary);
+  padding: 1px 5px;
+  border-radius: 4px;
+  color: var(--ui-warning);
+  background: var(--ui-warning-soft, rgba(242, 162, 58, .12));
+  font-family: var(--font-mono);
   font-size: 9px;
   font-weight: 700;
+  letter-spacing: .04em;
 }
 .transform-panel {
   flex: 1;
@@ -1964,16 +2194,16 @@ onBeforeUnmount(() => {
   padding: 10px 12px 16px;
 }
 .inspector-heading {
-  height: 30px;
+  height: 28px;
   margin-bottom: 7px;
-  color: var(--text-primary);
-  font-size: 12px;
+  color: var(--text-muted);
+  font-size: 11.5px;
   font-weight: 600;
 }
 .field-label {
   display: block;
   margin: 12px 0 5px;
-  color: var(--text-muted);
+  color: var(--text-subtle);
   font-size: 11px;
 }
 .vector-row,
@@ -2019,16 +2249,21 @@ onBeforeUnmount(() => {
   padding: 0 14px;
   border-top: 1px solid var(--border-color);
 }
+.director-timeline :deep(.el-input-number .el-input__inner) {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
 .timeline-track {
   position: relative;
   flex: 1;
   min-width: 120px;
 }
 .timecode {
-  min-width: 46px;
-  color: var(--text-primary);
-  font-family: 'Menlo', 'Consolas', monospace;
-  font-size: 11px;
+  min-width: 52px;
+  color: var(--text-bright);
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 11.5px;
   text-align: center;
 }
 .keyframe-mark {
@@ -2037,8 +2272,8 @@ onBeforeUnmount(() => {
   width: 7px;
   height: 7px;
   transform: translate(-50%, -50%) rotate(45deg);
-  border: 1px solid var(--border-color);
-  background: #f1bd59;
+  border: 1px solid var(--bg-deep, #0e1013);
+  background: var(--ui-warning);
   pointer-events: none;
 }
 .director-timeline :deep(.el-input-number) {

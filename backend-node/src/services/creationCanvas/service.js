@@ -73,7 +73,8 @@ function createCanvasService(db, cfg, log, mediaBatch, injected = {}) {
     store.mutate(job.canvas_id, canvas => {
       const node = canvas.nodes.find(n => n.id === step.node_id); if (!node) return;
       const attempt = node.attempts.find(a => a.id === step.attempt_id); if (!attempt) return;
-      Object.assign(attempt, { status: step.status, batch_id: step.batch_id, media: step.media, error: step.error, updated_at: now() });
+      Object.assign(attempt, { status: step.status, batch_id: step.batch_id, media: step.media, error: step.error,
+        delivery: step.delivery, updated_at: now() });
       // Result ownership stays with its attempt; older generations cannot replace a newer one.
       if (node.active_attempt_id === attempt.id && step.status === 'completed') node.data.media = clone(step.media);
     });
@@ -83,12 +84,27 @@ function createCanvasService(db, cfg, log, mediaBatch, injected = {}) {
       const batch = mediaBatch.get(step.batch_id);
       const item = batch?.items?.[0];
       if (!item) { step.status = 'needs_review'; step.error = '原生成记录未找到，记录已保留，可重新生成'; updateAttempt(job, step); continue; }
-      const status = item.status === 'completed' ? 'completed' : ['failed', 'needs_review', 'cancelled'].includes(item.status) ? item.status : 'processing';
+      const awaitingDownload = item.generation_status === 'completed' && ['pending','downloading','failed','waiting_provider'].includes(item.download_status);
+      const status = awaitingDownload ? 'processing' : item.status === 'completed' ? 'completed' : ['failed', 'needs_review', 'cancelled'].includes(item.status) ? item.status : 'processing';
+      const delivery = { generation_status: item.generation_status || null, download_status: item.download_status || null,
+        download_error: clean(item.download_error || null), progress: item.progress ?? null, message: clean(item.progress_message || null) };
       const media = status === 'completed' ? { url: item.media_url || item.download_url, local_path: item.local_path, asset_id: item.asset_id,
         download_url: item.download_url, batch_id: batch.id, item_id: item.id, type: step.kind, download_status: item.download_status } : undefined;
-      if (step.status !== status || JSON.stringify(step.media) !== JSON.stringify(media) || step.error !== item.error_message) {
-        step.status = status; step.media = media; step.error = clean(item.error_message || null); updateAttempt(job, step);
+      const error = awaitingDownload ? null : clean(item.error_message || null);
+      if (step.status !== status || JSON.stringify(step.media) !== JSON.stringify(media) || step.error !== error || JSON.stringify(step.delivery) !== JSON.stringify(delivery)) {
+        step.status = status; step.media = media; step.error = error; step.delivery = delivery; updateAttempt(job, step);
       }
+      const phase = status === 'completed' ? 'completed' : awaitingDownload ? (delivery.download_status === 'failed' ? 'download_recovery' : 'downloading') : null;
+      if (phase) store.once(job.canvas_id, `delivery:${step.attempt_id}:${phase}`, { attempt_id: step.attempt_id, phase }, () => {
+        const url = media?.download_url || (media?.local_path ? `/static/${media.local_path.split('/').map(encodeURIComponent).join('/')}` : media?.url);
+        const text = phase === 'completed' ? (media?.local_path ? '已生成并下载到本地，可以打开查看。' : '已生成，结果可以打开查看。')
+          : phase === 'download_recovery' ? '上游生成成功；下载暂时失败，后台正在恢复原文件，无需重新生成。'
+            : '上游生成成功，正在下载到本地；下载完成后会自动回填画布并在此通知。';
+        message(job.canvas_id, { role: 'event', event: 'media_delivery', phase, content: `「${step.data.title}」${text}`,
+          job_id: job.id, node_id: step.node_id, attempt_id: step.attempt_id, delivery,
+          ...(url ? { results: [{ title: step.data.title, url, local_path: media.local_path || null }] } : {}) });
+        return { notified: true };
+      });
     }
   }
   function schedule() { if (closed || timer) return; timer = setTimeout(() => { timer = null; pump(); }, injected.pollMs || 600); timer.unref?.(); }

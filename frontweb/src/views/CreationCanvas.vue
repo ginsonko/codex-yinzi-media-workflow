@@ -12,18 +12,30 @@
         <el-button type="primary" @click="generateSelected">生成选中</el-button>
         <el-button @click="openExport">导出成片</el-button>
         <el-button @click="showConfig = true">Agent 配置</el-button>
-        <el-button text @click="layout">整理画布</el-button>
         <a :href="`/api/v1/creation-canvases/${canvas.id}/export.json`" target="_blank">项目 JSON</a>
+
+        <span class="toolbar-sep" />
+        <div class="view-tools" role="toolbar" aria-label="画布视图控制">
+          <el-button text :disabled="zoomPercent<=10" title="缩小（Ctrl+滚轮同效）" aria-label="缩小" @click="zoomByStep(-1)"><el-icon><ZoomOut /></el-icon></el-button>
+          <span class="zoom-readout mono" aria-live="polite">{{ zoomPercent }}%</span>
+          <el-button text :disabled="zoomPercent>=250" title="放大（Ctrl+滚轮同效）" aria-label="放大" @click="zoomByStep(1)"><el-icon><ZoomIn /></el-icon></el-button>
+          <span class="toolbar-sep" />
+          <el-button text :type="showGrid ? 'primary' : 'default'" title="显示或隐藏背景网格" @click="toggleGrid"><el-icon><Grid /></el-icon>网格</el-button>
+          <el-button text :type="showMiniMap ? 'primary' : 'default'" title="显示或隐藏右下角小地图" @click="toggleMiniMap"><el-icon><MapLocation /></el-icon>小地图</el-button>
+          <el-button text title="把全部节点收进视野" @click="fitCanvas"><el-icon><Aim /></el-icon>适配</el-button>
+          <el-button text title="按 4 列重新排列节点并适配视图" @click="alignCanvas"><el-icon><Rank /></el-icon>对齐</el-button>
+        </div>
       </template>
     </header>
-    <p class="canvas-tip">从剧本、角色图、参考素材到视频成片。连线表示参考关系；Shift 多选可按依赖生成。右侧助手与手动操作共用这张画布。</p>
+    <p class="canvas-tip">画布管这条创作的链路：每个节点是一段剧本、一张参考、一个画面或一段声音，连线表示「谁给谁做参考」。改节点或连线只影响它下游的生成，不会动别人的内容。视图按钮只管看的方式，不改数据。</p>
+    <p class="canvas-tip sub">快捷键：Shift 多选节点 · 拖动空白平移 · Ctrl+滚轮缩放 · 拖动圆点连线 · 点连线改用途（首帧 / 尾帧 / 普通参考）。</p>
     <p v-if="loadError" class="error" role="alert">{{ loadError }} <el-button text @click="refresh">重新连接</el-button></p>
     <div v-if="pending.length" class="pending-requests"><div v-for="item in pending" :key="item.body.request_id">上次「{{ actionNames[item.action] || item.action }}」提交结果待确认。<el-button text @click="recoverRequest(item)">查询并恢复这次提交</el-button></div></div>
     <div v-if="canvas" class="canvas-layout">
       <div class="flow-area" @dragover.prevent @drop.prevent="dropFiles">
         <VueFlow :key="canvas.id" v-model:nodes="flowNodes" v-model:edges="flowEdges" :node-types="nodeTypes" :default-viewport="canvas.viewport" :min-zoom="0.1" :max-zoom="2.5" :delete-key-code="null" :selection-key-code="'Shift'" fit-view-on-init
-          @node-click="selectNode" @node-double-click="selectNode" @connect="connect" @node-drag-start="dragging = true" @node-drag-stop="moveNodes" @selection-change="selectionChanged" @move-end="saveViewport" @edge-click="selectEdge">
-          <Background :gap="22" /><Controls /><MiniMap pannable zoomable />
+          @node-click="selectNode" @node-double-click="selectNode" @connect="connect" @node-drag-start="dragging = true" @node-drag-stop="moveNodes" @selection-change="selectionChanged" @move-end="onViewportMoveEnd" @viewport-change="syncZoom" @edge-click="selectEdge">
+          <Background v-if="showGrid" :gap="22" pattern-color="var(--border-muted)" /><Controls :show-fit-view="false" :show-interactive="false" /><MiniMap v-if="showMiniMap" pannable zoomable :width="140" :height="95" node-color="#6f7680" mask-color="rgba(9, 11, 14, .72)" />
           <div v-if="!canvas.nodes.length" class="canvas-empty"><strong>把创意放上画布</strong><p>上传图片或视频，添加剧本节点，或告诉右侧助手你想做什么。</p><el-button @click="addNode('text')">写一段创意</el-button></div>
         </VueFlow>
       </div>
@@ -49,7 +61,7 @@
               <p class="muted">ID：{{ selected.id }} · 版本 {{ selected.version }}</p>
               <div v-if="selected.data.media" class="selected-media"><img v-if="selected.kind==='image'" :src="mediaUrl(selected)" alt="选中素材预览" /><video v-else-if="selected.kind==='video'" :src="mediaUrl(selected)" controls /><audio v-else-if="selected.kind==='audio'" :src="mediaUrl(selected)" controls /><a :href="mediaUrl(selected)" target="_blank">打开 / 下载素材</a><el-button @click="inspectNode" :loading="inspecting">分析素材</el-button></div>
               <h4>连接的参考</h4><p v-if="!inputs.length" class="muted">从其他节点右侧圆点拖到这个节点左侧。点击连线可设为首帧、尾帧或普通参考。</p><div v-for="edge in inputs" :key="edge.id" class="reference-row"><span>{{ nodeTitle(edge.source) }}</span><el-select :model-value="edge.role" @change="value => setRole(edge,value)"><el-option v-for="(label,key) in roles" :key="key" :label="label" :value="key" /></el-select></div>
-              <h4>生成版本</h4><div v-for="attempt in [...selected.attempts].reverse()" :key="attempt.id" class="attempt"><strong>{{ statusLabel(attempt.status) }}</strong><small>{{ attempt.created_at }}</small><p v-if="attempt.error" class="error">{{ attempt.error }}</p><el-button v-if="attempt.media" size="small" @click="chooseAttempt(attempt)">{{ selected.active_attempt_id===attempt.id ? '当前版本' : '使用此版本' }}</el-button><a v-if="attempt.media?.url" :href="safeUrl(attempt.media.download_url || attempt.media.url)" target="_blank">查看</a></div>
+              <h4>生成版本</h4><div v-for="attempt in [...selected.attempts].reverse()" :key="attempt.id" class="attempt"><strong>{{ statusLabel(attempt) }}</strong><small>{{ attempt.created_at }}</small><p v-if="attempt.delivery?.message && attempt.status!=='completed'" class="muted">{{ attempt.delivery.message }}</p><p v-if="attempt.error" class="error">{{ attempt.error }}</p><el-button v-if="attempt.media" size="small" @click="chooseAttempt(attempt)">{{ selected.active_attempt_id===attempt.id ? '当前版本' : '使用此版本' }}</el-button><a v-if="attempt.media?.url" :href="safeUrl(attempt.media.download_url || attempt.media.url)" target="_blank">查看</a></div>
             </div>
             <p v-else-if="!selectedEdge" class="muted">点击一个节点编辑内容。手动操作无需配置文本模型。</p>
           </el-tab-pane>
@@ -57,10 +69,10 @@
             <div class="agent-summary"><strong>{{ agentLabel }}</strong><el-button text @click="showConfig=true">配置</el-button><el-button v-if="activeRun" type="warning" size="small" @click="stopAgent">停止</el-button></div>
             <p v-if="activeRun" class="muted">正在推进第 {{ activeRun.turn }} 步；关闭页面后仍会继续。发新消息会停止旧轮并按你的纠正继续。</p>
             <p v-if="lastRun?.error" class="error">{{ lastRun.error }}</p>
-            <div class="chat-log" ref="chatLog"><template v-for="message in messages" :key="message.seq"><details v-if="['tool','analysis'].includes(message.role)" class="chat-tool"><summary>{{ message.tool || '素材分析' }} · 实际回执</summary><pre>{{ message.content }}</pre></details><div v-else class="chat-message" :class="message.role"><small>{{ roleNames[message.role] || message.role }}</small><p>{{ message.content }}</p></div></template><p v-if="!messages.length" class="muted">描述目标，例如：根据我上传的角色图，设计三段连续分镜。先写方案与提示词。</p></div>
+            <div class="chat-log" ref="chatLog"><template v-for="message in messages" :key="message.seq"><details v-if="['tool','analysis'].includes(message.role)" class="chat-tool"><summary>{{ message.tool || '素材分析' }} · 实际回执</summary><pre>{{ message.content }}</pre></details><div v-else class="chat-message" :class="message.role"><small>{{ roleNames[message.role] || message.role }}</small><p>{{ message.content }}</p><a v-for="result in message.results || []" :key="result.url" :href="safeUrl(result.url)" target="_blank" rel="noopener">打开 / 下载 · {{ result.title }}</a></div></template><p v-if="!messages.length" class="muted">描述目标，例如：根据我上传的角色图，设计三段连续分镜。先写方案与提示词。</p></div>
             <el-input v-model="chat" type="textarea" :rows="4" aria-label="画布助手消息" placeholder="输入要求、修改意见，或让助手继续完成…" @keydown.ctrl.enter.prevent="sendMessage" /><el-button type="primary" class="send-button" :loading="sending" @click="sendMessage">{{ activeRun ? '发送纠正并继续' : '发送给创作助手' }}</el-button>
           </el-tab-pane>
-          <el-tab-pane :label="`任务 (${canvas.jobs.length})`" name="jobs"><div v-for="job in canvas.jobs" :key="job.id" class="job-card"><strong>{{ job.kind==='export' ? '成片导出' : `${job.steps?.length || 0} 个节点生成` }} · {{ statusLabel(job.status) }}</strong><small>{{ job.id }}</small><div v-for="step in job.steps" :key="step.attempt_id"><p>{{ step.data.title }}：{{ statusLabel(step.status) }}</p><p v-if="step.error" class="error">{{ step.error }}</p><a v-if="step.batch_id" :href="`/batch?batch_id=${step.batch_id}`" target="_blank">查看生成队列</a></div><p v-if="job.error" class="error">{{ job.error }}</p><div v-if="job.kind==='generation'"><el-button size="small" @click="control(job,'pause')">暂停</el-button><el-button size="small" @click="control(job,'resume')">继续</el-button><el-button size="small" @click="control(job,'cancel')">停止后续</el-button><el-button size="small" @click="regenerate(job)">重新生成</el-button></div><a v-if="job.media" :href="`/api/v1/creation-canvases/${canvas.id}/exports/${job.id}/file`" target="_blank">打开 / 下载成片</a><details><summary>参数与结果快照</summary><pre>{{ JSON.stringify(job,null,2) }}</pre></details></div><p v-if="!canvas.jobs.length" class="muted">生成与导出任务会保留在这里，刷新页面不会丢失。</p></el-tab-pane>
+          <el-tab-pane :label="`任务 (${canvas.jobs.length})`" name="jobs"><div v-for="job in canvas.jobs" :key="job.id" class="job-card"><strong>{{ job.kind==='export' ? '成片导出' : `${job.steps?.length || 0} 个节点生成` }} · {{ statusLabel(job.status) }}</strong><small>{{ job.id }}</small><div v-for="step in job.steps" :key="step.attempt_id"><p>{{ step.data.title }}：{{ statusLabel(step) }}</p><p v-if="step.delivery?.message && step.status!=='completed'" class="muted">{{ step.delivery.message }}</p><p v-if="step.error" class="error">{{ step.error }}</p><a v-if="step.batch_id" :href="`/batch?batch_id=${step.batch_id}`" target="_blank">查看生成队列</a></div><p v-if="job.error" class="error">{{ job.error }}</p><div v-if="job.kind==='generation'"><el-button size="small" @click="control(job,'pause')">暂停</el-button><el-button size="small" @click="control(job,'resume')">继续</el-button><el-button size="small" @click="control(job,'cancel')">停止后续</el-button><el-button size="small" @click="regenerate(job)">重新生成</el-button></div><a v-if="job.media" :href="`/api/v1/creation-canvases/${canvas.id}/exports/${job.id}/file`" target="_blank">打开 / 下载成片</a><details><summary>参数与结果快照</summary><pre>{{ JSON.stringify(job,null,2) }}</pre></details></div><p v-if="!canvas.jobs.length" class="muted">生成与导出任务会保留在这里，刷新页面不会丢失。</p></el-tab-pane>
         </el-tabs>
       </aside>
     </div>
@@ -78,7 +90,7 @@
 <script setup>
 import { computed, markRaw, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { VueFlow } from '@vue-flow/core'
+import { VueFlow, useVueFlow } from '@vue-flow/core'
 import { Background } from '@vue-flow/background'
 import { Controls } from '@vue-flow/controls'
 import { MiniMap } from '@vue-flow/minimap'
@@ -87,6 +99,7 @@ import '@vue-flow/core/dist/theme-default.css'
 import '@vue-flow/controls/dist/style.css'
 import '@vue-flow/minimap/dist/style.css'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { Aim, Grid, MapLocation, Rank, ZoomIn, ZoomOut } from '@element-plus/icons-vue'
 import CreationCanvasNode from '@/components/CreationCanvasNode.vue'
 import { canvasAPI } from '@/api/creationCanvas'
 import { aiAPI } from '@/api/ai'
@@ -94,15 +107,30 @@ import { uploadAPI } from '@/api/upload'
 import request from '@/utils/request'
 import { batchModelOptions, batchModelSelection } from '@/utils/batchModels'
 import { imageRatios, imageTiers, imageSizeFor, usesImageSizePresets } from '@/utils/imageSizes'
+import { fxEnabled, useEffects } from '@/composables/useEffects'
 const route=useRoute(),router=useRouter(),clone=v=>JSON.parse(JSON.stringify(v)),rid=()=>crypto.randomUUID()
 const names={text:'文本 / 剧本',image:'图片',video:'视频',audio:'音频'},roles={reference:'普通参考',first_frame:'首帧',last_frame:'尾帧',context:'上下文参考'}
 const roleNames={user:'你 / 宿主Agent',assistant:'画布助手',event:'任务动态',tool_start:'执行中',error:'错误'}
-const statusLabel=s=>({queued:'等待执行',running:'运行中',processing:'生成中',completed:'已完成',failed:'失败',cancelled:'已停止',paused:'已暂停',interrupted:'已中断',needs_review:'待核对'}[s]||s)
+const statusLabel=value=>{const s=typeof value==='string'?value:value?.status,d=value?.delivery;if(d?.generation_status==='completed'&&s!=='completed'){return ({failed:'生成成功 · 下载恢复中',downloading:'生成成功 · 下载中',pending:'生成成功 · 等待下载',waiting_provider:'生成成功 · 等待文件就绪'}[d.download_status]||'生成成功 · 正在交付')}return ({queued:'等待执行',running:'运行中',processing:'生成中',completed:'已完成',failed:'失败',cancelled:'已停止',paused:'已暂停',interrupted:'已中断',needs_review:'待核对'}[s]||s)}
 const actionNames={generate:'生成',messages:'助手消息','export-video':'导出成片','import-assets':'导入素材','import-research':'导入研究'}
 const canvases=ref([]),canvasId=ref(''),canvas=ref(null),flowNodes=ref([]),flowEdges=ref([]),messages=ref([]),loadError=ref(''),panel=ref('agent'),dragging=ref(false),selectedIds=ref([]),selectedId=ref(''),draft=ref(null),draftVersion=ref(0),advanced=ref('{}')
 const nodeTypes={creation:markRaw(CreationCanvasNode)},selectedEdge=ref(null),edgeRole=ref('reference'),configs=ref([]),showConfig=ref(false),agentForm=ref({mode:'tools',max_turns:24}),agentTimeout=ref(120),newConfig=ref({name:'画布专用模型',base_url:'',api_key:'',model:''}),savingConfig=ref(false)
 const chat=ref(''),chatLog=ref(null),sending=ref(false),inspecting=ref(false),showLibrary=ref(false),libraryTab=ref('assets'),libraryAssets=ref([]),assetIds=ref([]),assetKeyword=ref(''),assetPage=ref(1),assetTotal=ref(0),researchJobs=ref([]),showExport=ref(false),exportIds=ref([]),exportTitle=ref(''),exportRatio=ref('16:9'),pending=ref([])
 let alive=true,timer,polling=false,epoch=0
+const { zoomIn, zoomOut, fitView, getViewport } = useVueFlow()
+const { level: fxLevel } = useEffects()
+const zoomPercent=ref(100), showGrid=ref(true), showMiniMap=ref(true)
+const gridKey=ref('yinzi-canvas-grid'), mapKey=ref('yinzi-canvas-map')
+try { showGrid.value=localStorage.getItem(gridKey.value)!=='0'; showMiniMap.value=localStorage.getItem(mapKey.value)!=='0' } catch(_) {}
+function persistLayoutPref(){try{localStorage.setItem(gridKey.value,showGrid.value?'1':'0');localStorage.setItem(mapKey.value,showMiniMap.value?'1':'0')}catch(_){}}
+function toggleGrid(){showGrid.value=!showGrid.value;persistLayoutPref()}
+function toggleMiniMap(){showMiniMap.value=!showMiniMap.value;persistLayoutPref()}
+function syncZoom(){try{const v=getViewport?.();if(v)zoomPercent.value=Math.round(v.zoom*100)}catch(_){}}
+function zoomByStep(step){step>0?zoomIn({duration:180}):zoomOut({duration:180});setTimeout(syncZoom,220)}
+async function fitCanvas(){await fitView({padding:0.18,duration:260});syncZoom()}
+async function alignCanvas(){if(!canvas.value)return;await layout();await fitView({padding:0.18,duration:260});syncZoom()}
+// 连线动效只在「完整」档开：它是持续跑的 CSS 动画，节点一多最吃鼠标
+const edgeAnimationOn=computed(()=>fxEnabled('anim'))
 const selected=computed(()=>canvas.value?.nodes.find(n=>n.id===selectedId.value)),inputs=computed(()=>canvas.value?.edges.filter(e=>e.target===selectedId.value)||[]),editConflict=computed(()=>selected.value&&selected.value.version!==draftVersion.value)
 const textConfigs=computed(()=>configs.value.filter(c=>c.service_type==='text'))
 const modelOptions=computed(()=>({image:batchModelOptions(configs.value.filter(c=>['image','storyboard_image'].includes(c.service_type))),video:batchModelOptions(configs.value.filter(c=>c.service_type==='video'))}))
@@ -112,10 +140,10 @@ const activeRun=computed(()=>canvas.value?.runs.find(r=>['queued','running'].inc
 const safeUrl=value=> /^(https?:\/\/|\/(?!\/))/.test(String(value||''))?value:''
 function mediaUrl(n){return n?.data.media?.local_path?`/api/v1/creation-canvases/${canvasId.value}/nodes/${encodeURIComponent(n.id)}/media?v=${encodeURIComponent(n.active_attempt_id||n.data.media.local_path)}`:safeUrl(n?.data.media?.download_url||n?.data.media?.url)}
 function nodeTitle(id){return canvas.value?.nodes.find(n=>n.id===id)?.data.title||id}
-function viewGraph(){if(dragging.value)return;flowNodes.value=canvas.value.nodes.map(n=>({id:n.id,type:'creation',position:n.position,selected:selectedIds.value.includes(n.id),data:{...n.data,kind:n.kind,mediaUrl:mediaUrl(n),attemptCount:n.attempts.length,statusLabel:statusLabel(n.attempts.find(a=>a.id===n.active_attempt_id)?.status)}}));flowEdges.value=canvas.value.edges.map(e=>({...e,label:roles[e.role],animated:canvas.value.jobs.some(j=>['running','queued'].includes(j.status)&&j.steps?.some(s=>s.node_id===e.target)),style:{stroke:'var(--ui-accent)'}}))}
+function viewGraph(){if(dragging.value)return;flowNodes.value=canvas.value.nodes.map(n=>({id:n.id,type:'creation',position:n.position,selected:selectedIds.value.includes(n.id),data:{...n.data,kind:n.kind,mediaUrl:mediaUrl(n),attemptCount:n.attempts.length,statusLabel:statusLabel(n.attempts.find(a=>a.id===n.active_attempt_id))}}));flowEdges.value=canvas.value.edges.map(e=>({...e,label:roles[e.role],animated:edgeAnimationOn.value&&canvas.value.jobs.some(j=>['running','queued'].includes(j.status)&&j.steps?.some(s=>s.node_id===e.target)),style:{stroke:'var(--ui-accent)'}}))}
 async function refresh(){const id=canvasId.value,token=epoch;if(!id||polling)return;polling=true;try{const [data,events]=await Promise.all([canvasAPI.get(id),canvasAPI.messages(id,messages.value.at(-1)?.seq||0)]);if(!alive||token!==epoch||id!==canvasId.value)return;if(!canvas.value||data.revision>=canvas.value.revision)canvas.value=data;messages.value.push(...events.items.filter(item=>!messages.value.some(m=>m.seq===item.seq)));loadError.value='';viewGraph();if(events.items.length)await nextTick(()=>chatLog.value?.scrollTo({top:chatLog.value.scrollHeight,behavior:'smooth'}))}catch(e){if(token===epoch)loadError.value=e.message}finally{polling=false}}
 async function tick(){await refresh();if(alive)timer=setTimeout(tick,1500)}
-async function switchCanvas(id){const token=++epoch;canvasId.value=id;canvas.value=null;showConfig.value=false;showLibrary.value=false;showExport.value=false;chat.value='';selectedId.value='';selectedIds.value=[];draft.value=null;messages.value=[];selectedEdge.value=null;loadPending();await router.replace({name:'creation-canvas',params:{id}});const data=await canvasAPI.get(id);if(token!==epoch||id!==canvasId.value)return;canvas.value=data;agentForm.value={mode:'tools',max_turns:24,...data.agent};agentTimeout.value=(data.agent.timeout_ms||120000)/1000;viewGraph();await refresh()}
+async function switchCanvas(id){const token=++epoch;canvasId.value=id;canvas.value=null;showConfig.value=false;showLibrary.value=false;showExport.value=false;chat.value='';selectedId.value='';selectedIds.value=[];draft.value=null;messages.value=[];selectedEdge.value=null;loadPending();await router.replace({name:'creation-canvas',params:{id}});const data=await canvasAPI.get(id);if(token!==epoch||id!==canvasId.value)return;canvas.value=data;agentForm.value={mode:'tools',max_turns:24,...data.agent};agentTimeout.value=(data.agent.timeout_ms||120000)/1000;viewGraph();await refresh();await nextTick();syncZoom()}
 async function newCanvas(){try{const {value}=await ElMessageBox.prompt('给创作起个名字','新建画布',{inputValue:'新的漫剧 / 视频创作'});const created=await canvasAPI.create({title:value});canvases.value.unshift(created);await switchCanvas(created.id)}catch(e){if(e!=='cancel'&&e!=='close')ElMessage.error(e.message)}}
 function actionContext(){return {canvasId:canvasId.value,nodeId:selectedId.value,epoch}}
 function currentContext(context,node=false){return alive&&context.epoch===epoch&&context.canvasId===canvasId.value&&(!node||context.nodeId===selectedId.value)}
@@ -133,6 +161,7 @@ async function setRole(edge,role){await ops([{type:'disconnect',id:edge.id},{typ
 async function changeEdgeRole(role){await setRole(selectedEdge.value,role)}
 async function removeEdge(){await ops([{type:'disconnect',id:selectedEdge.value.id}]);selectedEdge.value=null}
 async function saveViewport({viewport}){if(canvas.value&&viewport)await canvasAPI.configure(canvas.value.id,{viewport})}
+async function onViewportMoveEnd({viewport}){syncZoom();await saveViewport({viewport})}
 async function layout(){const nodes=canvas.value.nodes;await ops(nodes.map((n,i)=>({type:'move_node',id:n.id,position:{x:(i%4)*320,y:Math.floor(i/4)*300}})))}
 function loadPending(){try{pending.value=JSON.parse(localStorage.getItem('canvas-pending:'+canvasId.value)||'[]')}catch{pending.value=[]}}
 async function submit(action,input,id=canvasId.value){const entry={canvas_id:id,action,body:clone({...input,request_id:rid()})};const key='canvas-pending:'+id;let saved;try{saved=JSON.parse(localStorage.getItem(key)||'[]')}catch{saved=[]}saved.push(entry);localStorage.setItem(key,JSON.stringify(saved));if(id===canvasId.value)pending.value=saved;return recoverRequest(entry)}
@@ -162,6 +191,7 @@ async function importResearch(job){await submit('import-research',{job_id:job.id
 function openExport(){const videos=canvas.value.nodes.filter(n=>n.kind==='video'&&n.data.media);const picked=videos.filter(n=>selectedIds.value.includes(n.id));exportIds.value=(picked.length?picked:videos).sort((a,b)=>a.position.y-b.position.y||a.position.x-b.position.x).map(n=>n.id);exportTitle.value=canvas.value.title;showExport.value=true}
 function moveExport(index,delta){const other=index+delta;[exportIds.value[index],exportIds.value[other]]=[exportIds.value[other],exportIds.value[index]]}
 async function exportVideo(){if(!exportIds.value.length)return ElMessage.info('先生成或上传视频');await submit('export-video',{node_ids:exportIds.value,title:exportTitle.value,aspect_ratio:exportRatio.value});showExport.value=false;panel.value='jobs'}
+watch(fxLevel,()=>{if(canvas.value)viewGraph()})
 watch(showConfig,value=>{if(value&&canvas.value){agentForm.value={mode:'tools',max_turns:24,...canvas.value.agent};agentTimeout.value=(canvas.value.agent.timeout_ms||120000)/1000}})
 onMounted(async()=>{try{canvases.value=(await canvasAPI.list()).items;await loadConfigs();const initial=String(route.params.id||canvases.value[0]?.id||'');if(initial)await switchCanvas(initial)}catch(e){loadError.value=e.message}finally{tick()}})
 onBeforeUnmount(()=>{alive=false;epoch++;clearTimeout(timer)})
@@ -169,4 +199,54 @@ onBeforeUnmount(()=>{alive=false;epoch++;clearTimeout(timer)})
 
 <style scoped>
 .creation-workspace{display:grid;gap:10px}.canvas-toolbar{display:flex;align-items:center;flex-wrap:wrap;gap:8px}.canvas-toolbar>.el-select{width:215px}.canvas-toolbar .el-button+.el-button{margin-left:0}.canvas-tip,.muted{font-size:12px;color:var(--text-muted);line-height:1.65;margin:4px 0}.canvas-layout{display:grid;grid-template-columns:minmax(350px,1fr) 355px;border:1px solid var(--border-color);height:calc(100vh - 242px);min-height:580px;border-radius:10px;overflow:hidden}.flow-area{min-width:0;position:relative;background:var(--bg-inner)}.canvas-panel{background:var(--bg-card);border-left:1px solid var(--border-color);padding:0 14px;min-width:0;overflow:auto}.canvas-panel :deep(.el-tab-pane){padding-bottom:16px}.node-editor,.config-form{display:grid;gap:12px}.node-editor label,.config-form label{display:grid;gap:7px;font-size:12px}.node-editor .el-select,.config-form .el-select,.field-pair .el-input-number{width:100%}.field-pair{display:grid;grid-template-columns:1fr 1fr;gap:10px}.editor-actions{display:flex;gap:6px;flex-wrap:wrap}.editor-actions .el-button{margin:0}.error{color:var(--ui-danger,#d55252);font-size:12px;white-space:pre-wrap;overflow-wrap:anywhere}.file-button{position:relative;cursor:pointer;border:1px solid var(--border-color);border-radius:4px;font-size:13px;padding:8px 12px;color:var(--text-primary);background:var(--bg-card)}.file-button input{position:absolute;inset:0;opacity:0;width:100%;cursor:pointer}.canvas-empty{position:absolute;left:50%;top:35%;transform:translate(-50%,-50%);width:290px;text-align:center;z-index:2;color:var(--text-muted);font-size:13px;line-height:1.7;pointer-events:none}.canvas-empty .el-button{pointer-events:auto}.selected-media{display:grid;gap:8px}.selected-media img,.selected-media video,.selected-media audio{width:100%;max-height:240px;object-fit:contain}.reference-row{display:grid;grid-template-columns:1fr 130px;gap:8px;align-items:center;font-size:12px}.attempt,.job-card{padding:12px;border:1px solid var(--border-color);border-radius:6px;display:grid;gap:8px;margin:8px 0;font-size:12px}.attempt small,.job-card small{display:block;color:var(--text-muted);overflow-wrap:anywhere}.job-card .el-button{margin:4px}.edge-editor{display:grid;gap:10px;padding:12px 0}.agent-summary{display:flex;gap:8px;align-items:center;font-size:13px}.agent-summary strong{overflow-wrap:anywhere}.chat-log{height:calc(100vh - 525px);min-height:250px;overflow:auto;padding:8px 0;margin-bottom:12px}.chat-message{border-radius:6px;padding:10px;margin:8px 0;background:var(--bg-inner);font-size:13px;line-height:1.65}.chat-message.user{background:var(--ui-accent-soft)}.chat-message small{color:var(--text-muted)}.chat-message p{margin:4px 0;white-space:pre-wrap;overflow-wrap:anywhere}.chat-message.tool_start,.chat-message.event{font-size:11px;padding:6px}.chat-tool{font-size:11px;color:var(--text-muted);margin:8px 0}.send-button{width:100%;margin-top:8px}.welcome{padding:80px 30px;text-align:center}pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:11px;max-height:340px;overflow:auto}details summary{cursor:pointer;color:var(--text-muted);font-size:12px;padding:6px 0}.library-search{display:flex;gap:8px}.library-row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 0;border-bottom:1px solid var(--border-color);font-size:13px}.export-row{display:flex;gap:8px;align-items:center;margin:12px 0}.export-row span{flex:1}.pending-requests{padding:8px;background:var(--ui-accent-soft);font-size:12px}a{color:var(--ui-accent);font-size:12px}h4{margin:10px 0 0;font-size:13px}@media(max-width:1100px){.canvas-layout{grid-template-columns:minmax(280px,1fr) 310px}}@media(max-width:750px){.canvas-layout{grid-template-columns:1fr;height:auto;min-height:0}.flow-area{height:440px}.canvas-panel{border-left:0;border-top:1px solid var(--border-color);max-height:650px}.chat-log{height:280px}.canvas-toolbar>.el-select{width:100%}}
+</style>
+
+<style scoped>
+/* ── 画布视图工具条 ──────────────────────────────────────────
+   全部是看得见、点得到的显式开关：缩放、网格、小地图、适配、对齐。
+   这里刻意不用毛玻璃和大阴影 —— 它就在鼠标最常扫过的位置。 */
+.view-tools { display: flex; align-items: center; gap: 2px; }
+.view-tools :deep(.el-button) {
+  margin-left: 0;
+  padding: 6px 9px;
+  font-size: 12px;
+  border-radius: var(--radius-sm);
+}
+.view-tools :deep(.el-button.is-text) { background: transparent; }
+.view-tools :deep(.el-button.is-text:hover) { background: var(--bg-hover); }
+.view-tools :deep(.el-button.is-text.el-button--primary) {
+  background: var(--ui-accent-soft);
+  color: var(--text-bright);
+}
+.view-tools :deep(.el-button .el-icon) { margin-right: 4px; }
+.view-tools .zoom-readout {
+  min-width: 46px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+}
+.canvas-tip.sub { color: var(--text-subtle); font-size: 11.5px; }
+
+/* 拖节点 / 平移画布时，整页不要有任何毛玻璃、滤镜或大阴影：
+   这些属性会让浏览器每帧重新合成下层，是鼠标卡顿的主要来源。 */
+.flow-area :deep(.vue-flow__node) { backdrop-filter: none; filter: none; }
+.flow-area :deep(.vue-flow__edge-path) { transition: stroke .2s; }
+.flow-area :deep(.vue-flow__edge.animated path) { animation-duration: 1s; }
+.flow-area :deep(.vue-flow__edge.selected .vue-flow__edge-path),
+.flow-area :deep(.vue-flow__edge:focus .vue-flow__edge-path) { stroke: var(--text-bright); stroke-width: 2.2; }
+.flow-area :deep(.vue-flow__edge-text) { fill: var(--text-muted); font-size: 10px; }
+.flow-area :deep(.vue-flow__edge-textbg) { fill: var(--bg-page); }
+.flow-area :deep(.vue-flow__handle) {
+  width: 13px; height: 13px;
+  background: var(--ui-accent);
+  border: 2px solid var(--bg-inner);
+  transition: transform .12s var(--ease-out);
+}
+.flow-area :deep(.vue-flow__handle:hover) { transform: scale(1.25); }
+.flow-area :deep(.vue-flow__minimap){background:var(--bg-page);border:1px solid var(--border-color);border-radius:8px;overflow:hidden}
+.flow-area :deep(.vue-flow__controls){border:1px solid var(--border-color);border-radius:8px;overflow:hidden;box-shadow:var(--shadow-sm)}
+.flow-area :deep(.vue-flow__controls-button){background:var(--bg-page);color:var(--text-primary);border-bottom-color:var(--border-color)}
+.flow-area :deep(.vue-flow__controls-button:hover){background:var(--bg-hover)}
+.flow-area :deep(.vue-flow__controls-button svg){fill:currentColor}
 </style>

@@ -68,18 +68,19 @@ const isNodeBusy = computed(() => {
 .canvas-sb-node {
   position: relative;
   width: 200px;
-  padding: 12px 14px;
-  border-radius: 12px;
-  border: 1px solid rgba(129, 140, 248, 0.35);
-  background: var(--bg-card, #18181b);
+  padding: 11px 13px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-muted);
+  background: var(--bg-card);
   cursor: pointer;
-  transition: border-color 0.15s, box-shadow 0.15s;
+  transition: border-color .15s, box-shadow .15s;
 }
+/* 悬停 / 选中 / 展开编辑：铬色亮线，不用紫色 */
 .canvas-sb-node:hover,
 .canvas-sb-node.selected,
 .canvas-sb-node.focused {
-  border-color: #818cf8;
-  box-shadow: 0 0 0 1px rgba(129, 140, 248, 0.35), 0 8px 24px rgba(0, 0, 0, 0.35);
+  border-color: var(--border-bright);
+  box-shadow: var(--shadow-glow);
 }
 .head {
   display: flex;
@@ -88,16 +89,19 @@ const isNodeBusy = computed(() => {
   margin-bottom: 4px;
 }
 .num {
-  font-size: 12px;
-  font-weight: 700;
-  color: #a5b4fc;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--text-muted);
 }
 .wf-badge {
   font-size: 10px;
   padding: 1px 6px;
-  border-radius: 999px;
-  background: rgba(251, 191, 36, 0.18);
-  color: #fcd34d;
+  border-radius: var(--radius-full);
+  border: 1px solid var(--border-muted);
+  background: var(--bg-inner);
+  color: var(--text-subtle);
   max-width: 88px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -105,7 +109,7 @@ const isNodeBusy = computed(() => {
 }
 .seg {
   font-size: 10px;
-  color: #71717a;
+  color: var(--text-faint);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -113,14 +117,15 @@ const isNodeBusy = computed(() => {
 .mode-badge {
   font-size: 10px;
   padding: 1px 6px;
-  border-radius: 999px;
-  background: rgba(167, 139, 250, 0.2);
-  color: #c4b5fd;
+  border-radius: var(--radius-full);
+  border: 1px solid var(--border-muted);
+  background: var(--bg-inner);
+  color: var(--text-subtle);
 }
 .title {
-  font-size: 13px;
+  font-size: 12.5px;
   font-weight: 600;
-  color: var(--text-bright, #fafafa);
+  color: var(--text-bright);
   margin-bottom: 6px;
   line-height: 1.35;
 }
@@ -132,30 +137,42 @@ const isNodeBusy = computed(() => {
 }
 .chips span {
   font-size: 10px;
-  padding: 2px 6px;
+  padding: 1px 6px;
   border-radius: 4px;
-  background: rgba(255, 255, 255, 0.06);
-  color: #a1a1aa;
+  background: var(--bg-inner);
+  color: var(--text-subtle);
 }
-.st-completed { color: #34d399 !important; background: rgba(52, 211, 153, 0.12) !important; }
-.st-processing { color: #60a5fa !important; }
-.st-failed { color: #f87171 !important; }
+/* 状态只管状态：琥珀=在跑，绿=成了，红=砸了 */
+.chips .st-completed { color: var(--ui-success); background: var(--ui-success-soft); }
+.chips .st-processing { color: var(--ui-warning); background: var(--ui-warning-soft); }
+.chips .st-failed { color: var(--ui-danger); background: var(--ui-danger-soft); }
+/* 正在生成的分镜给一圈琥珀呼吸，这是「活着」的信号；
+   低档位 theme.css 会整体停掉动画，这里不用再写开关 */
 .processing {
-  animation: sb-pulse 1.4s ease-in-out infinite;
-  border-color: #60a5fa;
+  border-color: var(--ui-warning);
+}
+.processing::after {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  border: 1px solid var(--ui-warning);
+  animation: sb-pulse 1.6s ease-in-out infinite;
+  pointer-events: none;
 }
 .highlighted {
-  box-shadow: 0 0 0 2px rgba(129, 140, 248, 0.75), 0 8px 28px rgba(99, 102, 241, 0.25);
+  border-color: var(--border-bright);
+  box-shadow: var(--shadow-glow);
 }
 .dimmed {
-  opacity: 0.28;
+  opacity: .3;
 }
 @keyframes sb-pulse {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(96, 165, 250, 0.35); }
-  50% { box-shadow: 0 0 0 6px rgba(96, 165, 250, 0.08); }
+  0%, 100% { opacity: .55; }
+  50% { opacity: 0; }
 }
 .hint {
   font-size: 10px;
-  color: #52525b;
+  color: var(--text-faint);
 }
 </style>

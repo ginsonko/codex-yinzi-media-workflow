@@ -10,10 +10,10 @@ defineProps({
 
 <style scoped>
 .canvas-label-node {
-  font-size: 13px;
+  font-size: 11.5px;
   font-weight: 600;
-  color: var(--text-muted, #a1a1aa);
-  letter-spacing: 0.02em;
+  letter-spacing: .06em;
+  color: var(--text-subtle);
   user-select: none;
   pointer-events: none;
 }

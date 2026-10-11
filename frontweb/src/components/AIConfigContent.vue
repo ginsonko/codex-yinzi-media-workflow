@@ -3414,17 +3414,17 @@ onMounted(async () => {
   flex-shrink: 0;
 }
 
-/* 文本/对话 — 蓝色 */
+/* 文本/对话 — 铬面（银盐主强调色） */
 .type-text {
-  background: rgba(59, 130, 246, 0.12);
-  color: #3b82f6;
-  border-color: rgba(59, 130, 246, 0.25);
+  background: rgba(217, 221, 227, 0.12);
+  color: #d9dde3;
+  border-color: rgba(217, 221, 227, 0.25);
 }
-/* 文本生成图片 — 绿色 */
+/* 文本生成图片 — 银盐绿 */
 .type-image {
-  background: rgba(16, 185, 129, 0.12);
-  color: #10b981;
-  border-color: rgba(16, 185, 129, 0.25);
+  background: rgba(134, 212, 168, 0.12);
+  color: #86d4a8;
+  border-color: rgba(134, 212, 168, 0.25);
 }
 /* 分镜图片生成 — 紫色 */
 .type-storyboard_image {
@@ -3512,14 +3512,14 @@ onMounted(async () => {
 .type-text,.type-image,.type-storyboard_image,.type-video,.type-jimeng2_character_auth,.type-model_ark_asset {
   border-color: var(--border-color);
 }
-:global(html.dark) .type-text { color:#b9d8ff; background:#193453; }
-:global(html.dark) .type-image { color:#8ce5c5; background:#173d32; }
+:global(html.dark) .type-text { color:#e6e9ee; background:#232a33; }
+:global(html.dark) .type-image { color:#9fe3bd; background:#1b2f26; }
 :global(html.dark) .type-storyboard_image { color:#d2b8ff; background:#30234d; }
 :global(html.dark) .type-video { color:#ffc18c; background:#4a2c1b; }
 :global(html.dark) .type-jimeng2_character_auth { color:#8fe9dc; background:#16433f; }
 :global(html.dark) .type-model_ark_asset { color:#bfc5ff; background:#252a55; }
-:global(html.light) .type-text { color:#155aa8; background:#e8f2ff; }
-:global(html.light) .type-image { color:#08744e; background:#e5f7ef; }
+:global(html.light) .type-text { color:#3c424b; background:#eef0f3; }
+:global(html.light) .type-image { color:#1f6b4a; background:#eaf6f0; }
 :global(html.light) .type-storyboard_image { color:#6941a5; background:#f1eaff; }
 :global(html.light) .type-video { color:#a44809; background:#fff0e5; }
 :global(html.light) .type-jimeng2_character_auth { color:#08756b; background:#e4f8f5; }

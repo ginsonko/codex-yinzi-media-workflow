@@ -10,7 +10,7 @@ test('manual video remains recoverable until original downloads and restart neve
   const body={kind:'video',idempotency_key:'manual-delivery',settings:{_origin:'manual'},concurrency:1,prompt:'fixture',items:[{}]};const batch=service.create(body);
   await service.pump(batch.id);const item=service.get(batch.id).items[0];assert.ok(item.video_id);
   db.prepare("UPDATE video_generations SET generation_status='completed',download_status='failed',download_error='HTTP 401' WHERE id=?").run(item.video_id);
-  await service.pump(batch.id);const failed=service.get(batch.id).items[0];assert.equal(failed.status,'needs_review');assert.equal(failed.can_retry_download,true);assert.equal(failed.download_url,null);
+  await service.pump(batch.id);const failed=service.get(batch.id).items[0];assert.equal(failed.status,'processing');assert.equal(failed.download_status,'failed');assert.equal(failed.generation_status,'completed');assert.equal(failed.can_retry_download,true);assert.equal(failed.download_url,null);
   service.stop();
   service=createMediaBatchService(db,log,{config:cfg,dispatchVideo,retryDownload:async(_db,_log,id)=>{retryCalls++;fs.writeFileSync(path.join(root,'recovered.mp4'),Buffer.alloc(5000));db.prepare("UPDATE video_generations SET status='completed',download_status='completed',download_error=NULL,local_path='recovered.mp4' WHERE id=?").run(id)}});
   assert.equal(service.create(body).id,batch.id);assert.equal(service.list({origin:'manual'}).total,1);

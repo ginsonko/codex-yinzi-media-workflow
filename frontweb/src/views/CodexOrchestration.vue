@@ -4,22 +4,26 @@
     <main>
       <section class="hero">
         <div>
+          <span class="hero-kicker">任务与计划</span>
           <h1>制作工作台</h1>
+          <p>这一页在管一个编排任务的全部真值：分步计划、每个节点的输入输出、执行回执和已结算费用。左边是任务索引，点开哪条就查哪条。所有写操作（确认计划、开始制作、暂停、重试、跳过、人工接管）都在这里显式点击，界面只改结构化状态，不替你伪造供应商结果。</p>
         </div>
         <div class="hero-actions">
+          <router-link class="ghost-link" to="/history">历史记录</router-link>
           <el-button :loading="loading" @click="loadSessions">刷新任务</el-button>
           <el-button type="primary" :disabled="runtimeWriteBlocked" @click="showCreate = true">手动建立观察任务</el-button>
         </div>
       </section>
 
       <section :class="['runtime-banner', runtimeIdentityError ? 'runtime-danger' : 'runtime-ok']" aria-live="polite">
-        <div class="runtime-mark"></div>
+        <span class="runtime-mark" aria-hidden="true"></span>
+        <span class="runtime-status">{{ runtimeIdentityError ? '未连接' : '已连接' }}</span>
         <div class="runtime-copy">
           <strong>{{ runtimeIdentityError ? '正在等待工作台重新连接' : '工作台已连接' }}</strong>
           <span v-if="runtimeIdentityError">{{ runtimeIdentityError }} 页面仍可保留当前查看状态；修复或固定后端后再执行写操作。</span>
           <span v-else>任务和成果保存在本机，关闭页面后可以继续查看。<template v-if="showTechnical">版本 {{ runtimeIdentity?.app_version }} · 源码 {{ runtimeIdentity?.source_revision }} · 数据 {{ runtimeIdentity?.database?.fingerprint }}</template></span>
         </div>
-        <el-button size="small" text @click="loadRuntimeIdentity(false)">重新检查</el-button>
+        <el-button size="small" plain @click="loadRuntimeIdentity(false)">重新检查</el-button>
         <el-button v-if="runtimeIdentityMismatch" size="small" type="warning" plain @click="loadRuntimeIdentity(true)">确认切换到当前实例</el-button>
       </section>
 
@@ -39,15 +43,22 @@
 
       <section class="layout">
         <aside class="sessions-panel">
-          <div class="panel-title"><div><small>任务索引</small><h2>Codex 编排任务</h2></div><span>{{ sessions.length }}</span></div>
+          <div class="panel-title"><div><small>任务索引</small><h2>Codex 编排任务</h2></div><span>{{ visibleSessions.length }} / {{ sessions.length }}</span></div>
           <el-radio-group v-model="sessionScope" size="small" aria-label="任务列表范围" @change="loadSessions(false)">
             <el-radio-button label="recent">近期任务</el-radio-button>
             <el-radio-button label="archived">已归档</el-radio-button>
           </el-radio-group>
+          <div class="index-filters">
+            <el-input v-model="sessionKeyword" clearable size="small" placeholder="搜索标题或目标" aria-label="搜索任务" />
+            <div class="index-filter-row">
+              <el-select v-model="sessionStatusFilter" size="small" aria-label="按状态筛选任务"><el-option label="全部状态" value="all" /><el-option label="执行中 / 待开始" value="active" /><el-option label="需要你处理" value="attention" /><el-option label="已完成" value="done" /><el-option label="已暂停" value="paused" /></el-select>
+              <el-select v-model="sessionSort" size="small" aria-label="任务排序"><el-option label="按更新时间" value="updated" /><el-option label="按状态" value="status" /><el-option label="按标题" value="title" /></el-select>
+            </div>
+          </div>
           <div v-if="sessionsError" class="inline-error">{{ sessionsError }} <button @click="loadSessions">重试</button></div>
           <div v-if="loading" class="skeleton-stack"><span v-for="i in 4" :key="i"></span></div>
           <button
-            v-for="item in sessions"
+            v-for="item in visibleSessions"
             v-else
             :key="item.id"
             :class="['session-item', { active: selectedId === item.id }]"
@@ -55,11 +66,21 @@
             @click="selectSession(item.id)"
           >
             <span class="session-status" :class="statusTone(item.status)"></span>
-            <span><strong>{{ item.title || '未命名任务' }}</strong><small>{{ item.user_goal || '等待 Codex 写入目标' }}</small></span>
+            <span><strong>{{ item.title || '未命名任务' }}</strong><small>{{ item.user_goal || '等待 Codex 写入目标' }}</small><small class="session-time">{{ formatTime(item.updated_at) }}</small></span>
             <em>{{ sessionStatusLabel(item) }}</em>
           </button>
           <div v-if="!loading && !sessions.length" class="empty-list">
-            <strong>{{ sessionScope === 'archived' ? '暂无归档任务' : '暂无任务' }}</strong>
+            <strong>{{ sessionScope === 'archived' ? '暂无归档任务' : '这里还没有任务' }}</strong>
+            <span>{{ sessionScope === 'archived' ? '归档过的任务会留在这里，成果和费用记录都还在。' : '可以从一句话开始：说清要做什么，Codex 先给计划，确认前不会花钱。' }}</span>
+            <div class="empty-list-actions">
+              <el-button size="small" type="primary" @click="showCreate = true">手动建立观察任务</el-button>
+              <el-button size="small" plain @click="router.push('/free-create')">先做一条手动创作</el-button>
+            </div>
+          </div>
+          <div v-else-if="!loading && sessions.length && !visibleSessions.length" class="empty-list">
+            <strong>没有符合筛选的任务</strong>
+            <span>换一个状态或清掉关键词试试。</span>
+            <div class="empty-list-actions"><el-button size="small" plain @click="sessionKeyword = ''; sessionStatusFilter = 'all'">重置筛选</el-button></div>
           </div>
         </aside>
 
@@ -71,23 +92,23 @@
             <LocalMediaProgress v-if="bundle.session.id" :session-id="bundle.session.id" />
             <header class="session-header">
               <div>
-                <div class="status-line"><span :class="['status-pill', statusTone(bundle.session.status)]">{{ sessionStatusLabel(bundle.session) }}</span><span v-if="bundle.session.source_context?.archived">已归档</span><span v-if="showTechnical">计划版本 {{ bundle.session.plan_revision }}</span><span v-if="showTechnical">状态版本 {{ bundle.session.version }}</span></div>
+                <div class="status-line"><span :class="['status-dot', statusTone(bundle.session.status)]"></span><span class="status-text">{{ sessionStatusLabel(bundle.session) }}</span><span v-if="bundle.session.source_context?.archived" class="status-text">已归档</span><span v-if="showTechnical">计划版本 {{ bundle.session.plan_revision }}</span><span v-if="showTechnical">状态版本 {{ bundle.session.version }}</span><span>最近更新 {{ formatTime(lastUpdated) }}</span></div>
                 <h2>{{ bundle.session.title }}</h2>
                 <p>{{ bundle.session.user_goal || 'Codex 尚未写入任务目标。' }}</p>
               </div>
               <div class="session-actions">
-                <el-button v-if="bundle.session.status === 'waiting_confirmation'" type="primary" :disabled="runtimeWriteBlocked" @click="confirmPlan">确认这个计划</el-button>
-                <el-button v-if="bundle.session.status === 'planned'" type="primary" :disabled="runtimeWriteBlocked" @click="startSession">开始制作</el-button>
+                <el-button v-if="bundle.session.status === 'waiting_confirmation'" type="primary" :disabled="runtimeWriteBlocked" :loading="saving" @click="confirmPlan">确认这个计划</el-button>
+                <el-button v-if="bundle.session.status === 'planned'" type="primary" :disabled="runtimeWriteBlocked" :loading="saving" @click="startSession">开始制作</el-button>
                 <el-button v-if="['running', 'planned', 'waiting_confirmation'].includes(bundle.session.status)" :disabled="runtimeWriteBlocked" @click="pauseSession">暂停编排</el-button>
-                <el-button v-if="bundle.session.status === 'paused'" type="primary" plain :disabled="runtimeWriteBlocked" @click="resumeSession">从检查点继续</el-button>
-                <el-button :disabled="runtimeWriteBlocked" @click="saveCheckpoint">保存检查点</el-button>
+                <el-button v-if="bundle.session.status === 'paused'" type="primary" plain :disabled="runtimeWriteBlocked" :loading="saving" @click="resumeSession">从检查点继续</el-button>
+                <el-button :disabled="runtimeWriteBlocked" :loading="saving" @click="saveCheckpoint">保存检查点</el-button>
                 <el-button @click="downloadExport">导出审计包</el-button>
                 <el-tooltip :content="bundle.session.source_context?.archived ? '恢复到近期任务' : '归档到历史列表，已有作业继续处理'">
                   <el-button :aria-label="bundle.session.source_context?.archived ? '恢复归档任务' : '归档任务'" :icon="bundle.session.source_context?.archived ? RefreshLeft : Box" :loading="archivePending" :disabled="runtimeWriteBlocked" @click="toggleArchive" />
                 </el-tooltip>
               </div>
             </header>
-
+            <p class="action-hint">确认计划、开始制作、重试失败节点都会真实提交上游模型并产生费用，所以都会先弹一次确认框，写清会发生什么和大概多少钱；暂停、保存检查点、导出审计包不花钱，点了直接生效并给一条提示。写操作被暂停时（后端身份未确认），这些按钮会一起禁用。</p>
             <div v-if="bundle.nodes?.length" class="metric-grid">
               <article><small>步骤处理进度</small><strong>{{ countSummary.done }} / {{ countSummary.all }}</strong><el-progress :percentage="countSummary.percent" :show-text="false" :stroke-width="6" /></article>
               <article><small>关联项目</small><strong>{{ bundle.session.linked_drama_id || '未关联' }}</strong><span>{{ bundle.session.linked_run_id ? `任务 ${shortId(bundle.session.linked_run_id)}` : '可由 Codex 后续绑定' }}</span></article>
@@ -135,15 +156,25 @@
             <section v-if="bundle.nodes?.length || bundle.session.source_context?.intent !== 'analyze'" class="plan-card">
               <div class="section-heading">
                 <div><small>当前方案</small><h3>Codex 动态执行计划</h3></div>
-                <div class="plan-heading-actions"><div class="legend"><span><i class="success"></i>完成</span><span><i class="active"></i>执行</span><span><i class="warning"></i>处理</span><span><i class="neutral"></i>等待</span></div><el-button size="small" text @click="showTechnical = !showTechnical">{{ showTechnical ? '隐藏高级信息' : '显示高级信息' }}</el-button><el-button size="small" plain :disabled="runtimeWriteBlocked" @click="openPlanEditor">人工编辑计划</el-button></div>
+                <div class="plan-heading-actions"><div class="legend"><span><i class="success"></i>完成</span><span><i class="active"></i>执行</span><span><i class="warning"></i>处理</span><span><i class="neutral"></i>等待</span></div><el-button size="small" text @click="nodeFilter = nodeFilter === 'all' ? 'open' : 'all'">{{ nodeFilter === 'all' ? '只看未结束的' : '显示全部节点' }}</el-button><el-button size="small" text @click="showTechnical = !showTechnical">{{ showTechnical ? '隐藏高级信息' : '显示高级信息' }}</el-button><el-button size="small" plain :disabled="runtimeWriteBlocked" @click="openPlanEditor">人工编辑计划</el-button></div>
               </div>
               <p v-if="bundle.session.plan?.summary" class="plan-summary">{{ bundle.session.plan.summary }}</p>
+              <div v-if="stageGroups.length" class="stage-overview">
+                <article v-for="stage in stageGroups" :key="stage.key">
+                  <div class="stage-head"><strong>{{ stage.label }}</strong><span>{{ stage.note }}</span></div>
+                  <div class="stage-bar"><i :style="{ width: stage.percent + '%' }" :class="stage.tone"></i></div>
+                  <div class="stage-meta"><span>{{ stage.done }} / {{ stage.total }} 节点完成</span><em>{{ stage.percent }}%</em></div>
+                </article>
+              </div>
+              <p v-if="stageGroups.length" class="stage-note">整体按节点推进，节点内部才有百分比；节点只要没有回执，就不算完成。</p>
               <div class="timeline">
-                <article v-for="(node, index) in bundle.nodes" :key="node.id" :class="['node-card', statusTone(node.status)]">
-                  <div class="node-rail"><span>{{ index + 1 }}</span><i></i></div>
+                <template v-for="group in nodeGroups" :key="group.key">
+                  <div class="stage-divider"><span>{{ group.label }}</span><em>{{ group.done }} / {{ group.total }} 完成</em></div>
+                  <article v-for="node in group.nodes" :key="node.id" :class="['node-card', statusTone(node.status)]">
+                  <div class="node-rail"><span>{{ nodeOrdinal(node) }}</span><i></i></div>
                   <div class="node-body">
                     <header>
-                      <div><small>{{ phaseLabel(node.phase) }}</small><h4>{{ humanModule(node.module_id) }}</h4><code v-if="showTechnical">{{ node.module_id }}</code></div>
+                      <div><small class="node-order">第 {{ nodeOrdinal(node) }} 步 · {{ phaseLabel(node.phase) }}</small><h4>{{ humanModule(node.module_id) }}</h4><code v-if="showTechnical">{{ node.module_id }}</code></div>
                       <span :class="['status-pill', statusTone(node.status)]">{{ statusLabel(node.status, true) }}</span>
                     </header>
                     <div class="node-meta"><span>{{ moduleAvailabilityLabel(node) }}</span><span>执行：{{ executorLabel(node.executor) }}</span><span>尝试 #{{ node.attempt }}</span><span v-if="node.config_revision">配置 {{ node.config_revision }}</span></div>
@@ -178,16 +209,24 @@
                     </footer>
                   </div>
                 </article>
+                </template>
               </div>
               <div v-if="!bundle.nodes.length" class="empty-plan">{{ ['succeeded', 'partial', 'failed', 'cancelled'].includes(bundle.session.status) ? '任务已结束，未单独建立分步计划。' : '尚未建立分步计划。' }}</div>
             </section>
 
             <section class="audit-grid">
               <article class="events-card">
-                <div class="section-heading"><div><small>不可变记录</small><h3>最近活动</h3></div><span>{{ bundle.events.length }} 条</span></div>
-                <ol>
-                  <li v-for="event in recentEvents" :key="event.id"><time>{{ formatTime(event.created_at) }}</time><span><strong>{{ eventLabel(event.event_type) }}</strong><small>{{ eventSummary(event) }}</small></span><em>{{ event.actor }}</em></li>
+                <div class="section-heading"><div><small>不可变记录</small><h3>最近活动</h3></div><span>{{ visibleEvents.length }} / {{ bundle.events.length }} 条</span></div>
+                <div class="event-toolbar">
+                  <el-input v-model="eventKeyword" clearable size="small" placeholder="搜索事件、节点或说明" aria-label="搜索活动记录" />
+                  <el-select v-model="eventFilter" size="small" aria-label="按类型筛选活动"><el-option label="全部类型" value="all" /><el-option label="任务状态" value="session" /><el-option label="计划变更" value="plan" /><el-option label="节点执行" value="node" /><el-option label="Blender 作业" value="blender" /></el-select>
+                  <el-radio-group v-model="eventDirection" size="small" aria-label="活动排序方向"><el-radio-button value="desc">新的在前</el-radio-button><el-radio-button value="asc">旧的在前</el-radio-button></el-radio-group>
+                  <span class="toolbar-note">默认只显示最近 {{ eventLimit }} 条</span>
+                </div>
+                <ol v-if="visibleEvents.length">
+                  <li v-for="event in visibleEvents" :key="event.id"><time>{{ formatTime(event.created_at) }}</time><span><strong>{{ eventLabel(event.event_type) }}</strong><small>{{ eventSummary(event) }}</small></span><em>{{ event.actor }}</em></li>
                 </ol>
+                <div v-else class="event-empty">没有符合当前筛选的活动记录。<el-button text size="small" @click="eventKeyword = ''; eventFilter = 'all'">重置筛选</el-button></div>
               </article>
               <article class="manual-card">
                 <small>人工接管</small><h3>Codex 不在线，也能继续</h3>
@@ -205,7 +244,7 @@
 
           <div v-else-if="detailLoading" class="workspace-loading">正在读取编排真值…</div>
           <div v-else-if="detailError" class="workspace-empty workspace-error"><span>!</span><h2>{{ detailError.title }}</h2><p>{{ detailError.message }}</p><div class="workspace-empty-actions"><el-button type="primary" @click="refreshCurrentTask">刷新这个任务</el-button><el-button v-if="sessions.length" plain @click="openRecentTask">打开最近任务</el-button><el-button text @click="returnToTaskIndex">返回任务索引</el-button></div></div>
-          <div v-else class="workspace-empty"><span>⌁</span><h2>选择一个任务查看 Codex 的实时决策</h2><p>系统不会代替 Codex 与用户聊天，只负责把每个节点的事实和操作边界保存下来。</p></div>
+          <div v-else class="workspace-empty"><span class="empty-mark">○</span><h2>还没有选中的任务</h2><p>左边是任务索引，点一条就打开它的计划、节点、回执和费用。也可以手动建立一条观察任务，或者回到历史里找上一次停下的位置。</p><div class="workspace-empty-actions"><el-button type="primary" @click="showCreate = true">手动建立观察任务</el-button><el-button plain @click="router.push('/history')">去看历史记录</el-button><el-button plain @click="router.push('/free-create')">先做一条手动创作</el-button></div></div>
         </section>
       </section>
     </main>
@@ -291,7 +330,7 @@ import WorkActivity from '@/components/orchestration/WorkActivity.vue'
 import LocalMediaProgress from '@/components/orchestration/LocalMediaProgress.vue'
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { Box, RefreshLeft } from '@element-plus/icons-vue'
 import { useLiveRefresh } from '@/composables/useLiveRefresh'
 import { useWorkbenchPage } from '@/composables/useWorkbenchPage'
@@ -367,6 +406,90 @@ let timer = null
 
 const countSummary = computed(() => summarizeCounts(bundle.value?.counts || {}))
 const recentEvents = computed(() => [...(bundle.value?.events || [])].reverse().slice(0, 18))
+
+/* ── 任务索引的筛选与排序：在已经读回来的任务列表上做，不改查询语义 ── */
+const sessionKeyword = ref('')
+const sessionStatusFilter = ref('all')
+const sessionSort = ref('updated')
+const nodeFilter = ref('all')
+const sessionIndexKey = 'yinzi-codex-index-view-v1'
+try {
+  const savedIndex = JSON.parse(localStorage.getItem(sessionIndexKey) || 'null')
+  if (savedIndex) {
+    if (typeof savedIndex.status === 'string') sessionStatusFilter.value = savedIndex.status
+    if (typeof savedIndex.sort === 'string') sessionSort.value = savedIndex.sort
+  }
+} catch {}
+watch([sessionStatusFilter, sessionSort], () => { try { localStorage.setItem(sessionIndexKey, JSON.stringify({ status: sessionStatusFilter.value, sort: sessionSort.value })) } catch {} })
+const sessionStatusRank = { running: 0, waiting_confirmation: 1, planned: 2, draft: 3, paused: 4, failed: 5, partial: 6, succeeded: 7, cancelled: 8 }
+const visibleSessions = computed(() => {
+  const keyword = sessionKeyword.value.trim().toLowerCase()
+  const rows = sessions.value.filter((item) => {
+    if (keyword && !`${item.title || ''} ${item.user_goal || ''}`.toLowerCase().includes(keyword)) return false
+    if (sessionStatusFilter.value === 'active') return ['running', 'planned', 'draft'].includes(item.status)
+    if (sessionStatusFilter.value === 'attention') return ['waiting_confirmation', 'failed', 'partial'].includes(item.status)
+    if (sessionStatusFilter.value === 'done') return item.status === 'succeeded'
+    if (sessionStatusFilter.value === 'paused') return item.status === 'paused'
+    return true
+  })
+  return rows.slice().sort((a, b) => {
+    if (sessionSort.value === 'status') return (sessionStatusRank[a.status] ?? 9) - (sessionStatusRank[b.status] ?? 9)
+    if (sessionSort.value === 'title') return String(a.title || '').localeCompare(String(b.title || ''), 'zh-CN')
+    return new Date(b.updated_at || b.created_at || 0) - new Date(a.updated_at || a.created_at || 0)
+  })
+})
+
+/* ── 计划按阶段排开：节点本身的顺序不变，只是插进各自阶段的分组里 ── */
+const STAGE_ORDER = [
+  { key: 'intake', label: '准备', note: '素材与目标、研究、规划' },
+  { key: 'create', label: '创作', note: '按计划逐项生成' },
+  { key: 'review', label: '检查', note: '剪辑与内容核对' },
+  { key: 'deliver', label: '交付', note: '命名入库、导出清单' },
+]
+function stageKeyOf(phase) {
+  if (['intake', 'research', 'plan'].includes(phase)) return 'intake'
+  if (phase === 'create') return 'create'
+  if (['edit', 'qa'].includes(phase)) return 'review'
+  if (phase === 'deliver') return 'deliver'
+  return 'create'
+}
+const nodeOrdinals = computed(() => new Map((bundle.value?.nodes || []).map((node, index) => [node.id, index + 1])))
+function nodeOrdinal(node) { return nodeOrdinals.value.get(node.id) || 0 }
+const nodeGroups = computed(() => {
+  const nodes = bundle.value?.nodes || []
+  const keep = (node) => nodeFilter.value === 'all' || !['succeeded', 'skipped'].includes(node.status)
+  return STAGE_ORDER.map((stage) => {
+    const all = nodes.filter((node) => stageKeyOf(node.phase) === stage.key)
+    const rows = all.filter(keep)
+    return { key: stage.key, label: stage.label, note: stage.note, nodes: rows, done: all.filter((node) => ['succeeded', 'skipped'].includes(node.status)).length, total: all.length }
+  }).filter((group) => group.nodes.length)
+})
+const WEIGHT = { succeeded: 1, skipped: 1, running: .6, waiting_confirmation: .35, failed: .15, partial: .5 }
+const stageGroups = computed(() => nodeGroups.value.map((group) => {
+  const weight = group.nodes.reduce((sum, node) => sum + (WEIGHT[node.status] ?? 0), 0)
+  const percent = group.total ? Math.round(weight / group.total * 100) : 0
+  const live = group.nodes.some((node) => node.status === 'running')
+  const blocked = group.nodes.some((node) => ['failed', 'partial'].includes(node.status))
+  const tone = group.done === group.total && group.total ? 'success' : blocked ? 'danger' : live || percent > 0 ? 'active' : 'muted'
+  return { ...group, percent, tone }
+}))
+
+/* ── 最近活动的筛选与排序 ── */
+const eventKeyword = ref('')
+const eventFilter = ref('all')
+const eventDirection = ref('desc')
+const eventLimit = 18
+const visibleEvents = computed(() => {
+  const keyword = eventKeyword.value.trim().toLowerCase()
+  const rows = (bundle.value?.events || []).filter((event) => {
+    if (eventFilter.value !== 'all' && !String(event.event_type || '').startsWith(eventFilter.value)) return false
+    if (keyword && !`${event.event_type} ${eventSummary(event)} ${event.actor || ''}`.toLowerCase().includes(keyword)) return false
+    return true
+  })
+  const sorted = eventDirection.value === 'asc' ? rows : [...rows].reverse()
+  return sorted.slice(0, eventLimit)
+})
+
 const activitySummary = computed(() => {
   const session = bundle.value?.session || {}
   const nodes = Array.isArray(bundle.value?.nodes) ? bundle.value.nodes : []
@@ -544,7 +667,26 @@ async function createSession() {
     await loadSessions(false); await router.push(`/codex-console/${result.session.id}`)
   } finally { saving.value = false }
 }
-async function pauseSession() { if (!assertRuntimeReady()) return; bundle.value = await orchestrationAPI.pause(selectedId.value, { expected_version: bundle.value.session.version, actor: 'user' }); await loadSessions(false) }
+/* 花钱或危险的动作：先摊开代价再执行；confirmDone 为真表示用户在对话框里点了确认 */
+async function askSpend(title, message, confirmButtonText) {
+  try { await ElMessageBox.confirm(message, title, { confirmButtonText, cancelButtonText: '先不执行', type: 'warning' }); return true }
+  catch { return false }
+}
+function costLine() {
+  const budget = formatBudget(bundle.value?.session?.budget)
+  const spent = formatCost(bundle.value?.session?.usage)
+  return `已结算费用 ${spent}；预算口径：${budget}。`
+}
+async function pauseSession() {
+  if (!assertRuntimeReady()) return
+  saving.value = true
+  try {
+    bundle.value = await orchestrationAPI.pause(selectedId.value, { expected_version: bundle.value.session.version, actor: 'user' })
+    ElMessage.success('已暂停编排：只阻止后续认领，已经提交的上游任务会自然收口')
+    await loadSessions(false)
+  } catch (error) { ElMessage.error(error?.message || '暂停没有生效，可以刷新后重试') }
+  finally { saving.value = false }
+}
 async function toggleArchive() {
   if (!assertRuntimeReady() || archivePending.value) return
   const id = selectedId.value
@@ -558,40 +700,63 @@ async function toggleArchive() {
   } catch (error) { ElMessage.error(error.message || '任务归档状态保存失败') }
   finally { archivePending.value = false }
 }
-async function resumeSession() { if (!assertRuntimeReady()) return; bundle.value = await orchestrationAPI.resume(selectedId.value, { expected_version: bundle.value.session.version, actor: 'user' }); await loadSessions(false) }
+async function resumeSession() {
+  if (!assertRuntimeReady()) return
+  if (!await askSpend('从检查点继续', `继续后编排会重新开始认领后续节点，还没有执行到的节点会真实调用上游模型并产生费用。已经完成的节点不重做。${costLine()}`, '继续执行')) return
+  saving.value = true
+  try { bundle.value = await orchestrationAPI.resume(selectedId.value, { expected_version: bundle.value.session.version, actor: 'user' }); ElMessage.success('已从检查点继续'); await loadSessions(false) }
+  catch (error) { ElMessage.error(error?.message || '继续没有生效，请刷新后查看当前状态') }
+  finally { saving.value = false }
+}
 async function confirmPlan() {
   if (!assertRuntimeReady()) return
+  const nodes = bundle.value.nodes || []
+  if (!await askSpend('确认这个计划', `确认后这个计划成为当前版本，可以开始按节点执行。计划里有 ${nodes.length} 个节点，真正花钱的是后面的生成、渲染和调用上游模型的节点。${costLine()}`, '确认计划')) return
   saving.value = true
   try { bundle.value = await orchestrationAPI.confirm(selectedId.value, { expected_version: bundle.value.session.version, actor: 'user' }); ElMessage.success('计划已确认；可以开始制作'); await loadSessions(false) }
+  catch (error) { ElMessage.error(error?.message || '确认没有成功，可以刷新后重试') }
   finally { saving.value = false }
 }
 async function startSession() {
   if (!assertRuntimeReady()) return
+  const pending = (bundle.value.nodes || []).filter((node) => ['pending', 'ready'].includes(node.status)).length
+  if (!await askSpend('开始制作', `开始后编排会按顺序认领节点：待执行的 ${pending} 个节点会真实调用上游模型、渲染或本地执行器，并按真实回执记账。${costLine()}`, '开始制作')) return
   saving.value = true
   try { bundle.value = await orchestrationAPI.start(selectedId.value, { expected_version: bundle.value.session.version, actor: 'user' }); ElMessage.success('制作已开始'); await loadSessions(false) }
+  catch (error) { ElMessage.error(error?.message || '开始没有成功，可以刷新后重试') }
   finally { saving.value = false }
 }
 async function saveCheckpoint() {
   if (!assertRuntimeReady()) return
-  bundle.value = await orchestrationAPI.checkpoint(selectedId.value, { actor: 'user', checkpoint: { summary: `用户在编排台保存；当前完成 ${countSummary.value.done}/${countSummary.value.all} 个节点` } })
-  ElMessage.success('检查点已保存，Codex 换会话后可以从这里恢复')
+  saving.value = true
+  try {
+    bundle.value = await orchestrationAPI.checkpoint(selectedId.value, { actor: 'user', checkpoint: { summary: `用户在编排台保存；当前完成 ${countSummary.value.done}/${countSummary.value.all} 个节点` } })
+    ElMessage.success('检查点已保存，Codex 换会话后可以从这里恢复')
+  } catch (error) { ElMessage.error(error?.message || '检查点没有保存成功，可以再点一次') }
+  finally { saving.value = false }
 }
 async function setNode(node, status) {
   if (!assertRuntimeReady()) return
   const body = { status, expected_version: node.version, actor: 'user' }
   if (status === 'running') body.progress = { state: 'local_started', message: '用户在编排台标记为开始；等待执行器写入真实进度' }
   const result = await orchestrationAPI.updateNode(selectedId.value, node.id, body)
-  bundle.value = result.bundle; await loadSessions(false)
+  bundle.value = result.bundle
+  ElMessage.success(status === 'running' ? '已标记为开始；真正的进度仍以执行器回执为准' : status === 'skipped' ? '这一节已跳过；可以随时「重开」恢复它' : status === 'succeeded' ? '已标记完成；回执和费用仍以真实记录为准' : `节点状态已改为 ${statusLabel(status, true)}`)
+  await loadSessions(false)
 }
 async function takeOverNode(node) {
   if (!assertRuntimeReady()) return
   const result = await orchestrationAPI.nodeAction(selectedId.value, node.id, 'start', { actor: 'user', force: true, progress: { state: 'local_started', message: '用户已明确人工接管该节点' } })
-  bundle.value = result.bundle; await loadSessions(false)
+  bundle.value = result.bundle
+  ElMessage.success('已人工接管这一节；系统只改结构化状态，不会替你伪造供应商结果')
+  await loadSessions(false)
 }
 async function reopenNode(node) {
   if (!assertRuntimeReady()) return
   const result = await orchestrationAPI.nodeAction(selectedId.value, node.id, 'reopen', { actor: 'user' })
-  bundle.value = result.bundle; await loadSessions(false)
+  bundle.value = result.bundle
+  ElMessage.success('节点已重开，回到待执行状态')
+  await loadSessions(false)
 }
 function openFail(node) { failureNode.value = node; Object.assign(failureForm, { message: '', code: '', retryable: 'true' }); showFailure.value = true }
 async function saveFailure() {
@@ -607,6 +772,9 @@ async function saveFailure() {
 }
 async function retryNode(node) {
   if (retryPending.has(node.id) || !assertRuntimeReady()) return
+  const receipt = latestReceipt(bundle.value, node.id)
+  const detail = [receipt?.message, receipt?.original_code ? `原始代码 ${receipt.original_code}` : ''].filter(Boolean).join('；')
+  if (!await askSpend('准备重试这一节', `重试会把「${humanModule(node.module_id)}」恢复为待执行，接下来由 Codex 或对应执行器接手。这类节点如果调用上游模型，会重新计费一次；原来的执行回执和费用记录都会保留。${detail ? `当前回执：${detail}。` : ''}${costLine()}`, '准备重试')) return
   const sessionId = selectedId.value
   retryPending.add(node.id)
   try {
@@ -712,7 +880,7 @@ useWorkbenchPage({ refresh: refreshCurrentTask, error: () => runtimeIdentityErro
 </script>
 
 <style scoped>
-.codex-console { min-height: 100vh; color: var(--text-primary); background: var(--bg-card); font-family: Inter, ui-sans-serif, system-ui, sans-serif; }
+.codex-console { min-height: 100%; color: var(--text-primary); background: transparent; font-family: var(--font-ui); }
 .console-header { position: sticky; top: 0; z-index: 20; min-height: 68px; display: flex; align-items: center; justify-content: space-between; gap: 22px; padding: 10px clamp(16px, 4vw, 54px); border-bottom: 1px solid var(--border-color); background: var(--bg-card); backdrop-filter: blur(16px); }
 .brand { min-width: 0; display: flex; align-items: center; gap: 11px; padding: 0; color: inherit; border: 0; background: none; text-align: left; cursor: pointer; }
 .brand-dot { width: 38px; height: 38px; display: grid; place-items: center; flex: none; border-radius: 10px; color: var(--text-primary); background: linear-gradient(135deg,var(--ui-accent),var(--bg-card)); font-size: 17px; font-weight: 900; }
@@ -724,18 +892,21 @@ useWorkbenchPage({ refresh: refreshCurrentTask, error: () => runtimeIdentityErro
 main { max-width: 1640px; margin: 0 auto; padding: 30px clamp(14px, 3vw, 42px) 70px; }
 .hero { display: flex; justify-content: space-between; gap: 32px; padding: 14px 0 30px; }
 .hero > div:first-child { max-width: 860px; }
-.eyebrow, .panel-title small, .section-heading small, .manual-card > small { margin: 0 0 8px; color: var(--ui-accent); font-size:12px; font-weight: 800; letter-spacing: .16em; }
-.hero h1 { margin: 0; color: var(--text-primary); font-size: 24px; line-height: 1.3; letter-spacing: 0; }
-.hero p:not(.eyebrow) { max-width: 780px; margin: 16px 0 0; color: var(--text-muted); font-size: 14px; line-height: 1.8; }
+.eyebrow, .panel-title small, .section-heading small, .manual-card > small { margin: 0 0 8px; color: var(--text-subtle); font-size:12px; font-weight: 400; letter-spacing: 0; }
+.hero-kicker { display:block; color: var(--text-subtle); font-size: 12px; }
+.hero h1 { margin: 6px 0 0; color: var(--text-bright); font-family: var(--font-display); font-size: 26px; font-weight: 600; line-height: 1.3; letter-spacing: 0; }
+.hero p:not(.eyebrow) { max-width: 820px; margin: 12px 0 0; color: var(--text-muted); font-size: 13px; line-height: 1.75; }
 .hero-actions { display: flex; align-items: flex-start; gap: 9px; flex-wrap: wrap; }
-.onboarding-card { display:flex; justify-content:space-between; gap:18px; margin:0 0 16px; padding:16px 18px; border:1px solid var(--border-color); border-radius:12px; background:linear-gradient(115deg,var(--bg-card),var(--bg-card)); }
+.ghost-link { display:inline-flex; align-items:center; padding: 8px 14px; border: 1px solid var(--border-color); color: var(--text-muted); font-size: 12px; text-decoration: none; }
+.ghost-link:hover { border-color: var(--border-bright); color: var(--text-bright); }
+.onboarding-card { display:flex; justify-content:space-between; gap:18px; margin:0 0 16px; padding:16px 18px; border:1px solid var(--border-color); border-radius:var(--radius-sm); background:var(--bg-inner); }
 .onboarding-copy { min-width:0; }
-.onboarding-copy small { color:var(--ui-accent); font-size:11px; font-weight:800; letter-spacing:.12em; }
+.onboarding-copy small { color:var(--text-subtle); font-size:11px; font-weight:400; letter-spacing:0; }
 .onboarding-copy h2 { margin:5px 0 6px; color:var(--text-primary); font-size:17px; }
 .onboarding-copy p { margin:0; color:var(--text-muted); font-size:12px; line-height:1.6; }
 .onboarding-copy .onboarding-muted { margin-top:4px; color:var(--text-muted); font-size:12px; }
 .onboarding-status { min-width:230px; display:grid; align-content:center; justify-items:end; gap:5px; color:var(--text-muted); font-size:12px; text-align:right; }
-.onboarding-chip { padding:4px 8px; border:1px solid var(--border-color); border-radius:999px; color:var(--ui-accent); background:var(--bg-card); font-size:11px; }
+.onboarding-chip { padding:4px 8px; border:1px solid var(--border-color); border-radius:var(--radius-full); color:var(--text-muted); background:var(--bg-card); font-size:11px; }
 .onboarding-budget { max-width:360px; color:var(--text-muted); font-size:11px; line-height:1.4; }
 .layout { display: grid; grid-template-columns: minmax(250px, 310px) minmax(0, 1fr); gap: 18px; align-items: start; }
 .sessions-panel { border-right: 1px solid var(--border-color); }
@@ -748,21 +919,36 @@ main { max-width: 1640px; margin: 0 auto; padding: 30px clamp(14px, 3vw, 42px) 7
 .panel-title > span { color: var(--text-muted); font-size: 12px; }
 .session-item { width: 100%; min-width: 0; display: grid; grid-template-columns: 8px minmax(0,1fr) auto; gap: 10px; align-items: center; padding: 12px 8px; border: 0; border-bottom: 1px solid var(--border-color); color: inherit; background: transparent; text-align: left; cursor: pointer; }
 .session-item:hover, .session-item.active { background: var(--bg-hover); }
-.session-item.active { box-shadow: inset 2px 0 #5eead4; }
+.session-item.active { box-shadow: inset 2px 0 var(--ui-accent); }
 .session-status { width: 7px; height: 7px; border-radius: 50%; background: var(--bg-inner); }
-.session-status.success { background:var(--ui-accent) }.session-status.active { background:var(--ui-accent); box-shadow:0 0 0 4px rgba(45,212,191,.1) }.session-status.danger { background:var(--bg-inner) }.session-status.warning { background:var(--bg-inner) }
+.session-status.success { background:var(--ui-success) }.session-status.active { background:var(--ui-warning) }.session-status.warning { background:var(--ui-warning) }.session-status.danger { background:var(--ui-danger) }.session-status.muted { background:var(--text-faint) }
 .session-item > span:nth-child(2) { min-width: 0; display: grid; gap: 4px; }
 .session-item strong { color: var(--text-primary); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .session-item small { color: var(--text-muted); font-size:12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .session-item em { color: var(--text-muted); font-size:11px; font-style: normal; white-space: nowrap; }
-.empty-list, .workspace-empty { padding: 36px 18px; color: var(--text-muted); text-align: center; }
+.index-filters { display: grid; gap: 8px; margin: 12px 0 4px; }
+.index-filter-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.index-filter-row :deep(.el-select) { width: 100%; }
+.session-time { color: var(--text-faint) !important; font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: 11px !important; }
+.empty-list, .workspace-empty { display: grid; justify-items: center; gap: 8px; padding: 30px 16px; color: var(--text-muted); text-align: center; }
+.empty-list span, .workspace-empty p { color: var(--text-subtle); font-size: 12px; line-height: 1.7; }
+.empty-list-actions { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; margin-top: 4px; }
 .empty-list strong, .workspace-empty h2 { color:var(--text-primary) }.empty-list p, .workspace-empty p { font-size:12px; line-height:1.7 }
 .workspace { min-width: 0; display: grid; gap: 14px; }
 .session-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; padding: 20px 22px; }
 .session-header h2 { margin: 7px 0 4px; color:var(--text-primary); font-size:22px }.session-header p { max-width:780px; margin:0; color:var(--text-muted); font-size:12px; line-height:1.65 }
-.status-line, .node-meta { display:flex; flex-wrap:wrap; gap:7px; align-items:center; color:var(--text-muted); font-size:11px; }
-.status-pill { display:inline-flex; padding:3px 7px; border:1px solid var(--border-color); border-radius:999px; color:var(--text-muted); background:var(--bg-inner); font-size:11px; }
-.status-pill.success { color:var(--ui-accent); border-color:var(--border-color); background:var(--bg-inner) }.status-pill.active { color:var(--ui-accent); border-color:var(--border-color); background:var(--bg-inner) }.status-pill.warning { color:var(--ui-warning); border-color:var(--border-color); background:var(--bg-inner) }.status-pill.danger { color:var(--ui-danger); border-color:var(--border-color); background:var(--bg-inner) }.status-pill.muted { color:var(--text-muted) }
+.status-line, .node-meta { display:flex; flex-wrap:wrap; gap:10px; align-items:center; color:var(--text-subtle); font-size:11px; }
+.status-dot { width:7px; height:7px; flex:none; border-radius:50%; background:var(--text-faint) }
+.status-dot.success { background:var(--ui-success) }.status-dot.active { background:var(--ui-warning) }.status-dot.warning { background:var(--ui-warning) }.status-dot.danger { background:var(--ui-danger) }.status-dot.muted { background:var(--text-faint) }
+.status-text { color: var(--text-primary); }
+.action-hint { margin:0; padding: 10px 0 0; border-top: 1px solid var(--border-color); color: var(--text-faint); font-size: 11px; line-height: 1.6; }
+.status-pill { display:inline-flex; align-items:center; gap:6px; color:var(--text-subtle); font-size:11px; }
+.status-pill::before { content:''; width:6px; height:6px; flex:none; border-radius:50%; background:var(--text-faint) }
+.status-pill.success { color:var(--ui-success) }.status-pill.success::before { background:var(--ui-success) }
+.status-pill.active { color:var(--ui-warning) }.status-pill.active::before { background:var(--ui-warning) }
+.status-pill.warning { color:var(--ui-warning) }.status-pill.warning::before { background:var(--ui-warning) }
+.status-pill.danger { color:var(--ui-danger) }.status-pill.danger::before { background:var(--ui-danger) }
+.status-pill.muted { color:var(--text-subtle) }
 .session-actions { display:flex; flex-wrap:wrap; justify-content:flex-end; gap:7px }
 .metric-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:10px; }
 .activity-strip { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:10px; padding:13px 15px; border:1px solid var(--border-color); background:var(--bg-inner); }
@@ -771,12 +957,12 @@ main { max-width: 1640px; margin: 0 auto; padding: 30px clamp(14px, 3vw, 42px) 7
 .activity-strip strong { overflow:hidden; color:var(--text-primary); font-size:12px; text-overflow:ellipsis; white-space:nowrap; }
 .activity-strip span:not(.activity-dot) { overflow:hidden; color:var(--text-muted); font-size:11px; line-height:1.45; text-overflow:ellipsis; }
 .activity-state { align-content:center; padding-left:12px; border-left:1px solid var(--border-color); }
-.activity-state .activity-dot { width:8px; height:8px; border-radius:50%; background:var(--ui-accent); box-shadow:0 0 0 4px rgba(74,222,128,.12); }
-.activity-state.tone-active .activity-dot { background:var(--ui-accent); box-shadow:0 0 0 4px rgba(45,212,191,.12); }
-.activity-state.tone-warning .activity-dot { background:var(--bg-inner); box-shadow:0 0 0 4px rgba(251,191,36,.12); }
-.activity-state.tone-danger .activity-dot { background:var(--bg-inner); box-shadow:0 0 0 4px rgba(251,113,133,.12); }
-.activity-state.tone-active strong { color:var(--ui-accent); }.activity-state.tone-warning strong { color:var(--ui-warning); }.activity-state.tone-danger strong { color:var(--ui-danger); }
-.metric-grid article { min-width:0; display:grid; gap:5px; padding:14px 16px }.metric-grid small { color:var(--text-muted); font-size:11px }.metric-grid strong { color:var(--text-primary); font-size:16px }.metric-grid span { overflow:hidden; color:var(--text-muted); font-size:11px; text-overflow:ellipsis; white-space:nowrap }
+.activity-state .activity-dot { width:8px; height:8px; border-radius:50%; background:var(--text-faint); }
+.activity-state.tone-active .activity-dot { background:var(--ui-warning); }
+.activity-state.tone-warning .activity-dot { background:var(--ui-warning); }
+.activity-state.tone-danger .activity-dot { background:var(--ui-danger); }
+.activity-state.tone-active strong { color:var(--ui-warning); }.activity-state.tone-warning strong { color:var(--ui-warning); }.activity-state.tone-danger strong { color:var(--ui-danger); }
+.metric-grid article { min-width:0; display:grid; gap:5px; padding:14px 16px }.metric-grid small { color:var(--text-subtle); font-size:11px }.metric-grid strong { color:var(--text-primary); font-family:var(--font-mono); font-variant-numeric:tabular-nums; font-size:16px; font-weight:500 }.metric-grid span { overflow:hidden; color:var(--text-muted); font-size:11px; text-overflow:ellipsis; white-space:nowrap }
 .experience-grid { display:grid; grid-template-columns: minmax(0,1.15fr) minmax(280px,.85fr); gap:14px; }
 .plan-card { padding:20px 22px; }
 .blender-jobs-card { padding: 18px 20px; }
@@ -798,15 +984,16 @@ main { max-width: 1640px; margin: 0 auto; padding: 30px clamp(14px, 3vw, 42px) 7
 .plan-heading-actions { display:flex; align-items:center; justify-content:flex-end; gap:12px; flex-wrap:wrap }
 .plan-summary { margin:12px 0 18px; padding:10px 12px; border-left:2px solid var(--border-color); color:var(--text-muted); background:var(--bg-card); font-size:12px; line-height:1.65 }
 .timeline { display:grid; }
+.node-card + .node-card { margin-top: 2px }
 .node-card { min-width:0; display:grid; grid-template-columns:32px minmax(0,1fr); gap:8px; }
-.node-rail { display:grid; grid-template-rows:25px 1fr; justify-items:center }.node-rail span { width:24px; height:24px; display:grid; place-items:center; border:1px solid var(--border-color); border-radius:50%; color:var(--text-muted); background:var(--bg-card); font-size:11px }.node-card.success .node-rail span { color:var(--ui-accent); border-color:var(--border-color) }.node-card.active .node-rail span { color:var(--ui-accent); border-color:var(--border-color) }.node-card.danger .node-rail span { color:var(--ui-danger); border-color:var(--border-color) }.node-rail i { width:1px; min-height:16px; background:var(--border-muted) }
+.node-rail { display:grid; grid-template-rows:25px 1fr; justify-items:center }.node-rail span { width:24px; height:24px; display:grid; place-items:center; border:1px solid var(--border-color); border-radius:50%; color:var(--text-subtle); background:var(--bg-inner); font-family:var(--font-mono); font-variant-numeric:tabular-nums; font-size:11px }.node-card.success .node-rail span { color:var(--ui-success); border-color:var(--border-color) }.node-card.active .node-rail span { color:var(--ui-warning); border-color:var(--border-color) }.node-card.warning .node-rail span { color:var(--ui-warning); border-color:var(--border-color) }.node-card.danger .node-rail span { color:var(--ui-danger); border-color:var(--border-color) }.node-rail i { width:1px; min-height:16px; background:var(--border-muted) }
 .node-card:last-child .node-rail i { background:linear-gradient(var(--bg-card),transparent) }
-.node-body { min-width:0; margin-bottom:10px; padding:13px 14px; border:1px solid var(--border-color); border-radius:8px; background:var(--bg-card) }
-.node-body > header { display:flex; justify-content:space-between; gap:15px }.node-body header > div { min-width:0 }.node-body header small { display:block; margin-bottom:3px; color:var(--text-muted); font-size:11px; text-transform:uppercase }.node-body h4 { display:inline; margin:0 7px 0 0; color:var(--text-primary); font-size:13px }.node-body code { color:var(--text-muted); font-size:11px }
+.node-body { min-width:0; margin-bottom:10px; padding:13px 14px; border:1px solid var(--border-color); border-radius:var(--radius-sm); background:var(--bg-inner) }
+.node-body > header { display:flex; justify-content:space-between; gap:15px }.node-body header > div { min-width:0 }.node-body header small { display:block; margin-bottom:3px; color:var(--text-subtle); font-size:11px }.node-body h4 { display:inline; margin:0 7px 0 0; color:var(--text-primary); font-size:13px }.node-body code { color:var(--text-muted); font-size:11px }
 .node-meta { margin-top:7px }.progress-message { margin:8px 0 0; color:var(--text-muted); font-size:12px }
-.io-grid { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:9px }.io-grid > div { min-width:0; display:flex; flex-wrap:wrap; gap:5px; padding:8px; border:1px solid var(--border-color); border-radius:5px }.io-grid strong { width:100%; color:var(--text-muted); font-size:11px }.io-grid span,.io-grid em { padding:2px 5px; color:var(--text-muted); border-radius:3px; background:var(--bg-card); font-size:11px; font-style:normal }
+.io-grid { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:9px }.io-grid > div { min-width:0; display:flex; flex-wrap:wrap; gap:5px; padding:8px; border:1px solid var(--border-color); border-radius:var(--radius-sm) }.io-grid strong { width:100%; color:var(--text-muted); font-size:11px }.io-grid span,.io-grid em { padding:2px 5px; color:var(--text-muted); border-radius:3px; background:var(--bg-card); font-size:11px; font-style:normal; overflow-wrap:anywhere }
 .receipt-box { display:grid; gap:4px; margin-top:9px; padding:8px 10px; border:1px solid var(--border-color); border-radius:5px; background:var(--bg-card) }.receipt-box small { color:var(--text-muted); font-size:11px }.receipt-box strong { color:var(--text-primary); font-size:12px }.receipt-box span { color:var(--text-muted); font-size:11px }
-.receipt-box.receipt-success { border-color:var(--border-color); background:var(--bg-card) }.receipt-box.receipt-success small { color:var(--ui-accent) }.receipt-box.receipt-success strong { color:var(--ui-accent) }.receipt-box.receipt-success span { color:var(--ui-accent) }
+.receipt-box.receipt-success { border-color:var(--border-color); background:var(--bg-card) }.receipt-box.receipt-success small { color:var(--ui-success) }.receipt-box.receipt-success strong { color:var(--text-primary) }.receipt-box.receipt-success span { color:var(--text-muted) }
 .receipt-box.receipt-warning { border-color:var(--border-color); background:var(--bg-card) }.receipt-box.receipt-warning small { color:var(--ui-warning) }.receipt-box.receipt-warning strong { color:var(--ui-warning) }.receipt-box.receipt-warning span { color:var(--ui-warning) }
 .receipt-box.receipt-danger { border-color:var(--border-color); background:var(--bg-card) }.receipt-box.receipt-danger small { color:var(--ui-danger) }.receipt-box.receipt-danger strong { color:var(--ui-danger) }.receipt-box.receipt-danger span { color:var(--ui-danger) }
 .recovery-box { display:grid; gap:6px; margin-top:9px; padding:10px 12px; border:1px solid var(--border-color); border-radius:7px; background:var(--bg-inner) }
@@ -820,13 +1007,41 @@ main { max-width: 1640px; margin: 0 auto; padding: 30px clamp(14px, 3vw, 42px) 7
 .recovery-box.recovery-manual_review { border-color:var(--border-color); background:var(--bg-inner) }
 .recovery-box.recovery-manual_review strong { color:var(--text-primary) }
 .node-body footer { display:flex; flex-wrap:wrap; gap:4px; margin-top:9px; padding-top:8px; border-top:1px solid var(--border-color) }
-.empty-plan { padding:30px; border:1px dashed var(--border-color); color:var(--text-muted); text-align:center; font-size:12px }
-.audit-grid { display:grid; grid-template-columns:minmax(0,1.5fr) minmax(260px,.7fr); gap:12px }.events-card,.manual-card { padding:18px 20px }.events-card ol { max-height:400px; overflow:auto; margin:13px 0 0; padding:0; list-style:none }.events-card li { display:grid; grid-template-columns:115px minmax(0,1fr) auto; gap:12px; padding:9px 0; border-top:1px solid var(--border-color) }.events-card time,.events-card em { color:var(--text-muted); font-size:11px; font-style:normal }.events-card li > span { min-width:0; display:grid; gap:2px }.events-card strong { color:var(--text-primary); font-size:12px }.events-card small { color:var(--text-muted); font-size:11px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
-.manual-card h3 { margin:0; color:var(--text-primary); font-size:17px }.manual-card > p { color:var(--text-muted); font-size:12px; line-height:1.7 }.manual-links { display:grid; gap:6px; margin-top:12px }.manual-links button { display:grid; gap:3px; padding:10px; border:1px solid var(--border-color); border-radius:6px; color:inherit; background:var(--bg-card); text-align:left; cursor:pointer }.manual-links button:hover { border-color:var(--border-color) }.manual-links strong { color:var(--text-primary); font-size:12px }.manual-links span { color:var(--text-muted); font-size:11px }
-.workspace-empty { min-height:520px; display:grid; place-items:center; align-content:center; border:1px dashed var(--border-color); border-radius:12px }.workspace-empty > span { color:var(--ui-accent); font-size:48px }.workspace-empty h2 { margin:6px 0 0; font-size:18px }.workspace-empty p { max-width:560px; margin:0; }.workspace-empty-actions { display:flex; justify-content:center; gap:8px; flex-wrap:wrap; margin-top:12px }.workspace-error { border-color:var(--border-color); background:linear-gradient(145deg,var(--bg-card),var(--bg-card)) }.workspace-error > span { width:44px; height:44px; display:grid; place-items:center; border:1px solid var(--border-color); border-radius:50%; color:var(--ui-warning); font-size:22px; font-weight:800 }.workspace-error h2 { color:var(--text-muted) }.workspace-error p { color:var(--ui-warning) }.workspace-loading { min-height:500px; display:grid; place-items:center; color:var(--text-muted) }
-.technical-json { max-height:60vh; overflow:auto; padding:14px; border-radius:6px; color:var(--text-primary); background:var(--bg-inner); font-size:12px; line-height:1.6; white-space:pre-wrap }.dialog-note { color:var(--text-muted); font-size:12px }.inline-error { padding:10px; color:var(--ui-danger); font-size:12px }.inline-error button { color:var(--ui-accent); border:0; background:none; cursor:pointer }.skeleton-stack { display:grid; gap:8px; padding:10px 0 }.skeleton-stack span { height:52px; border-radius:5px; background:linear-gradient(90deg,var(--bg-inner),var(--bg-inner),var(--bg-inner)); background-size:200%; animation:shimmer 1.2s infinite }@keyframes shimmer{to{background-position:-200%}}
-.plan-editor-list { max-height:55vh; overflow:auto; display:grid; gap:10px; margin-bottom:12px }.plan-editor-node { padding:12px; border:1px solid var(--border-color); border-radius:8px; background:var(--bg-card) }.plan-editor-node > header { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:8px }.plan-editor-fields { display:grid; grid-template-columns:1.2fr 1.2fr .8fr .8fr; gap:8px 12px }.plan-editor-fields :deep(.el-form-item) { margin-bottom:4px }.plan-editor-fields .wide-field { grid-column:span 2 }
+.empty-plan { display: grid; justify-items: center; gap: 10px; padding:28px; border:1px dashed var(--border-color); color:var(--text-muted); text-align:center; font-size:12px }
+/* 阶段总览与阶段分隔线：一根线 + 一条进度条，不用彩色块 */
+.stage-overview { display:grid; grid-template-columns:repeat(4, minmax(0,1fr)); gap:14px; margin: 6px 0 4px; }
+.stage-overview article { display:grid; gap:7px; min-width:0; }
+.stage-head { display:flex; align-items:baseline; justify-content:space-between; gap:8px; min-width:0 }
+.stage-head strong { color: var(--text-primary); font-size: 13px; }
+.stage-head span { color: var(--text-faint); font-size: 11px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
+.stage-bar { height: 3px; background: var(--bg-inner); }
+.stage-bar i { display:block; height:100%; background: var(--text-faint); transition: width var(--ease-out) }
+.stage-bar i.success { background: var(--ui-success) }
+.stage-bar i.active { background: var(--ui-warning) }
+.stage-bar i.danger { background: var(--ui-danger) }
+.stage-meta { display:flex; justify-content:space-between; gap:8px; color: var(--text-subtle); font-size: 11px }
+.stage-meta em { color: var(--text-faint); font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-style: normal }
+.stage-note { margin: 14px 0 4px; color: var(--text-faint); font-size: 11px; }
+.stage-divider { display:flex; align-items:center; gap:10px; margin: 14px 0 8px; padding-left: 32px; }
+.stage-divider:first-child { margin-top: 4px }
+.stage-divider span { color: var(--text-muted); font-size: 11px; }
+.stage-divider em { color: var(--text-faint); font-size: 11px; font-style: normal; font-family: var(--font-mono); font-variant-numeric: tabular-nums }
+.stage-divider::after { content:''; flex:1; height:1px; background: var(--border-color) }
+.node-order { text-transform: none !important; }
+.event-toolbar { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin: 12px 0 4px }
+.event-toolbar :deep(.el-input) { max-width: 200px }
+.event-toolbar :deep(.el-select) { width: 130px }
+.event-empty { padding: 20px 0 6px; color: var(--text-muted); font-size: 12px; text-align: center }
+.toolbar-note { color: var(--text-faint); font-size: 11px; margin-left: auto }
+.empty-mark { color: var(--text-faint) !important; font-size: 34px !important; }
+.audit-grid { display:grid; grid-template-columns:minmax(0,1.5fr) minmax(260px,.7fr); gap:12px }.events-card,.manual-card { padding:18px 20px }.events-card ol { max-height:400px; overflow:auto; margin:13px 0 0; padding:0; list-style:none }.events-card li { display:grid; grid-template-columns:130px minmax(0,1fr) auto; gap:12px; padding:9px 0; border-top:1px solid var(--border-color) }.events-card time { font-family: var(--font-mono); font-variant-numeric: tabular-nums }
+.events-card time,.events-card em { color:var(--text-subtle); font-size:11px; font-style:normal }.events-card li > span { min-width:0; display:grid; gap:2px }.events-card strong { color:var(--text-primary); font-size:12px }.events-card small { color:var(--text-muted); font-size:11px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
+.manual-card h3 { margin:0; color:var(--text-primary); font-size:17px }.manual-card > p { color:var(--text-muted); font-size:12px; line-height:1.7 }.manual-links { display:grid; gap:6px; margin-top:12px }.manual-links button { display:grid; gap:3px; padding:10px; border:1px solid var(--border-color); border-radius:var(--radius-sm); color:inherit; background:var(--bg-inner); text-align:left; cursor:pointer }.manual-links button:hover { border-color:var(--border-bright); background:var(--bg-hover) }.manual-links strong { color:var(--text-primary); font-size:12px }.manual-links span { color:var(--text-muted); font-size:11px }
+.workspace-empty { min-height:420px; display:grid; place-items:center; align-content:center; border:1px dashed var(--border-color); border-radius:var(--radius-sm) }.workspace-empty > span { color:var(--ui-accent); font-size:48px }.workspace-empty h2 { margin:6px 0 0; font-size:18px }.workspace-empty p { max-width:560px; margin:0; }.workspace-empty-actions { display:flex; justify-content:center; gap:8px; flex-wrap:wrap; margin-top:12px }.workspace-error { border-color:var(--ui-danger); background:var(--bg-inner) }.workspace-error > span { width:44px; height:44px; display:grid; place-items:center; border:1px solid var(--border-color); border-radius:50%; color:var(--ui-warning); font-size:22px; font-weight:800 }.workspace-error h2 { color:var(--text-muted) }.workspace-error p { color:var(--ui-warning) }.workspace-loading { min-height:500px; display:grid; place-items:center; color:var(--text-muted) }
+.technical-json { max-height:60vh; overflow:auto; padding:14px; border-radius:var(--radius-sm); color:var(--text-primary); background:var(--bg-inner); font-family:var(--font-mono); font-size:12px; line-height:1.6; white-space:pre-wrap }.dialog-note { color:var(--text-muted); font-size:12px }.inline-error { padding:10px; color:var(--ui-danger); font-size:12px }.inline-error button { color:var(--ui-accent); border:0; background:none; cursor:pointer }.skeleton-stack { display:grid; gap:8px; padding:10px 0 }.skeleton-stack span { height:52px; border-radius:5px; background:linear-gradient(90deg,var(--bg-inner),var(--bg-inner),var(--bg-inner)); background-size:200%; animation:shimmer 1.2s infinite }@keyframes shimmer{to{background-position:-200%}}
+.plan-editor-list { max-height:55vh; overflow:auto; display:grid; gap:10px; margin-bottom:12px }.plan-editor-node { padding:12px; border:1px solid var(--border-color); border-radius:var(--radius-sm); background:var(--bg-inner) }.plan-editor-node > header { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:8px }.plan-editor-fields { display:grid; grid-template-columns:1.2fr 1.2fr .8fr .8fr; gap:8px 12px }.plan-editor-fields :deep(.el-form-item) { margin-bottom:4px }.plan-editor-fields .wide-field { grid-column:span 2 }
 @media(max-width:1100px){.layout{grid-template-columns:240px minmax(0,1fr)}.metric-grid{grid-template-columns:1fr 1fr}.experience-grid{grid-template-columns:1fr}.audit-grid{grid-template-columns:1fr}.console-header nav{display:none}}
-@media(max-width:760px){.console-header{position:static}.brand small{white-space:normal}.hero,.session-header{flex-direction:column}.layout{grid-template-columns:1fr}.sessions-panel{position:static;max-height:320px}.metric-grid{grid-template-columns:1fr}.activity-strip{grid-template-columns:1fr 1fr}.activity-state{grid-column:1 / -1;padding:9px 0 0;border-top:1px solid var(--border-color);border-left:0}.io-grid{grid-template-columns:1fr}.events-card li{grid-template-columns:82px minmax(0,1fr)}.events-card em{display:none}.session-actions{justify-content:flex-start}.plan-editor-fields{grid-template-columns:1fr}.plan-editor-fields .wide-field{grid-column:auto}.plan-heading-actions{align-items:flex-start}}
+@media(max-width:1100px){.stage-overview{grid-template-columns:1fr 1fr}}
+@media(max-width:760px){.stage-overview{grid-template-columns:1fr}.stage-divider{padding-left:0}.index-filter-row{grid-template-columns:1fr}.console-header{position:static}.brand small{white-space:normal}.hero,.session-header{flex-direction:column}.layout{grid-template-columns:1fr}.sessions-panel{position:static;max-height:320px}.metric-grid{grid-template-columns:1fr}.activity-strip{grid-template-columns:1fr 1fr}.activity-state{grid-column:1 / -1;padding:9px 0 0;border-top:1px solid var(--border-color);border-left:0}.io-grid{grid-template-columns:1fr}.events-card li{grid-template-columns:82px minmax(0,1fr)}.events-card em{display:none}.session-actions{justify-content:flex-start}.plan-editor-fields{grid-template-columns:1fr}.plan-editor-fields .wide-field{grid-column:auto}.plan-heading-actions{align-items:flex-start}}
 @media(max-width:760px){.onboarding-card{flex-direction:column}.onboarding-status{min-width:0; justify-items:start; text-align:left}.onboarding-budget{max-width:none}}
 </style>

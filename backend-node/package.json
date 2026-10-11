@@ -1,12 +1,12 @@
 {
   "name": "yinzi-ai-video-workflow-backend",
-  "version": "0.1.4",
+  "version": "0.2.0",
   "description": "Node.js backend for 银子AI视频工作流",
   "main": "src/server.js",
   "scripts": {
     "start": "node src/server.js",
     "dev": "node --watch src/server.js",
-    "test": "node --test test/*.test.js",
+    "test": "node --test --test-concurrency=2 test/*.test.js",
     "migrate": "node src/db/migrate.js",
     "migrate:07": "node scripts/run-migration-07.js"
   },

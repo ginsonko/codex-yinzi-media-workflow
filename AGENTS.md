@@ -20,5 +20,5 @@
 
 遵守根目录 LICENSE 和 NOTICE.md。保留上游来源和第三方许可。用户数据、数据库、Key、日志、私密截图均不得提交。测试与开发使用隔离的 `YINZI_WORKFLOW_RUNTIME_DIR`，保留正在运行的其他工作流实例。
 
-后端在 backend-node 执行 `node --test test/*.test.js`；前端在 frontweb 执行同命令；前端构建 `npm run build`。按风险选择真实流程验收，不能仅凭单测宣称全面通过。
+后端在 backend-node 执行 `npm test`（限制测试文件并行为 2，避免大量 FFmpeg 测试争抢资源导致假超时）；前端在 frontweb 执行 `node --test test/*.test.js`；前端构建 `npm run build`。按风险选择真实流程验收，不能仅凭单测宣称全面通过。
 

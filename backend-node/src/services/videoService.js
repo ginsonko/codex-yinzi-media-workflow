@@ -1,5 +1,6 @@
 const acceptanceSafety = require('./acceptanceSafety');
 const { videoDownloadError } = require('./videoDownloadError');
+const { downloadVideoArtifact, transportFailure } = require('./videoArtifactDownload');
 
 /** 轮询/同步返回的 video_url 须为 http(s)，避免中转 FAILURE 时 result_url 为错误文案 */
 function resolveRemoteVideoUrl(videoUrl, fallbackError) {
@@ -417,27 +418,9 @@ async function downloadVideoToLocal(storagePath, videoUrl, videoGenId, log, proj
     const name = `vg_${videoGenId}_${randomUUID().slice(0, 8)}.${ext}`;
     const filePath = path.join(dir, name);
     temporaryPath = `${filePath}.part-${randomUUID().slice(0, 8)}`;
-    const fetchImpl = requestOptions.fetch_impl || fetch;
-    const res = await fetchImpl(videoUrl, {
-      method: 'GET',
-      headers: requestOptions.headers || {},
-      signal: AbortSignal.timeout(requestOptions.timeout_ms || 180000),
-    });
-    if (!res.ok) {
-      log.warn('Download video failed', { status: res.status, videoGenId });
-      throw await videoDownloadError(res);
-    }
-    const contentType = String(res.headers?.get?.('content-type') || '').toLowerCase();
-    if (contentType.includes('application/json')) throw await videoDownloadError(res);
-    if (contentType.includes('text/html') || contentType.includes('application/json') || contentType.includes('text/plain')) {
-      throw new Error(`下载地址返回了非视频内容（${contentType || 'unknown'}）`);
-    }
-    const buf = Buffer.from(await res.arrayBuffer());
-    const maxBytes = Math.max(1024, Number(requestOptions.max_bytes) || 2 * 1024 * 1024 * 1024);
-    if (buf.length > maxBytes) throw new Error(`视频文件超过允许大小 ${maxBytes} bytes`);
-    fs.writeFileSync(temporaryPath, buf);
+    const receipt = await downloadVideoArtifact(videoUrl, temporaryPath, requestOptions);
     validateDownloadedVideoFile(temporaryPath, {
-      content_type: contentType,
+      content_type: receipt.content_type,
       min_bytes: requestOptions.min_bytes,
       skip_probe: requestOptions.skip_probe,
     });
@@ -751,6 +734,7 @@ function persistCompletedReferences(db, log, row, videoGenId, videoUrl, localPat
     } catch (_) {}
   }
   if (row.task_id) {
+    taskService.updateTaskStatus(db, row.task_id, 'completed', 100, localPath ? '生成成功，已下载到本地' : '生成成功，结果已就绪');
     taskService.updateTaskResult(db, row.task_id, {
       video_generation_id: videoGenId,
       video_url: persistedVideoUrl,
@@ -945,6 +929,14 @@ async function resumeDownloadForVideoGeneration(db, log, videoGenId, injected = 
   }
   activeVideoDownloads.add(numericId);
   let row = db.prepare('SELECT * FROM video_generations WHERE id = ? AND deleted_at IS NULL').get(numericId);
+  const leaseMs = injected.lease_ms || DOWNLOAD_LEASE_MS;
+  const heartbeat = setInterval(() => {
+    if (!db.open) return;
+    db.prepare(`UPDATE video_generations SET download_lease_expires_at=?
+      WHERE id=? AND download_lease_owner=? AND download_status='downloading'`)
+      .run(new Date(Date.now() + leaseMs).toISOString(), numericId, owner);
+  }, Math.max(10, Math.min(30000, Math.floor(leaseMs / 3))));
+  heartbeat.unref?.();
   try {
     const cfg = injected.config || require('../config').loadConfig();
     const storagePath = resolveStoragePath(cfg);
@@ -957,6 +949,14 @@ async function resumeDownloadForVideoGeneration(db, log, videoGenId, injected = 
     let remoteVideoUrl = row.remote_video_url || row.video_url || null;
     let requiresAuth = Boolean(row.download_requires_auth);
     const downloader = injected.download || downloadVideoToLocal;
+    let lastProgress = 0;
+    const onProgress = ({ bytes, total, mode }) => {
+      if (!row.task_id || Date.now() - lastProgress < 1000 && bytes !== total) return;
+      lastProgress = Date.now();
+      const amount = `${(bytes / 1024 ** 2).toFixed(1)}${total ? ` / ${(total / 1024 ** 2).toFixed(1)}` : ''} MB`;
+      taskService.updateTaskStatus(db, row.task_id, 'processing', total ? 92 + Math.floor(7 * bytes / total) : 92,
+        `生成成功，${mode === 'range' ? '分段下载' : '下载'}中：${amount}`);
+    };
     const attempt = async () => downloader(
       storagePath,
       sourceUrl,
@@ -970,6 +970,10 @@ async function resumeDownloadForVideoGeneration(db, log, videoGenId, injected = 
         fetch_impl: injected.fetch_impl,
         skip_probe: injected.skip_probe,
         min_bytes: injected.min_bytes,
+        prefer_ranges: injected.prefer_ranges ?? transportFailure({ message: row.download_error || '' }),
+        range_timeout_ms: injected.range_timeout_ms,
+        range_chunk_bytes: injected.range_chunk_bytes,
+        on_progress: onProgress,
       }
     );
     let localPath = null;
@@ -1006,6 +1010,7 @@ async function resumeDownloadForVideoGeneration(db, log, videoGenId, injected = 
     if (!injected.disable_retry) scheduleDownloadRetry(db, log, numericId, Number(updated?.download_attempts || 1));
     return { state: error?.code === 'VIDEO_ARTIFACT_NOT_READY' ? 'waiting_provider' : 'download_failed', error: error.message };
   } finally {
+    clearInterval(heartbeat);
     activeVideoDownloads.delete(numericId);
   }
 }
@@ -1168,7 +1173,9 @@ async function resumePollForVideoGeneration(db, log, videoGenId) {
   }
 }
 
-function backfillVideoDeliveryState(db, log) {
+function backfillVideoDeliveryState(db, log, ownerAlive = pid => {
+  try { process.kill(pid, 0); return true; } catch (error) { return error.code !== 'ESRCH'; }
+}) {
   const rows = db.prepare(
     `SELECT * FROM video_generations
      WHERE deleted_at IS NULL AND (generation_status IS NULL OR download_status IS NULL)`
@@ -1205,6 +1212,16 @@ function backfillVideoDeliveryState(db, log) {
        WHERE generation_status = 'completed' AND download_status = 'downloading'
          AND (download_lease_expires_at IS NULL OR download_lease_expires_at <= ?)`
     ).run(new Date().toISOString(), new Date().toISOString());
+    // A crashed downloader cannot renew its lease. Recover its original task
+    // immediately, while preserving leases belonging to a live process.
+    const leases = db.prepare(`SELECT id,download_lease_owner FROM video_generations
+      WHERE deleted_at IS NULL AND generation_status='completed' AND download_status='downloading'`).all();
+    for (const lease of leases) {
+      const pid = /^download-(\d+)-/.exec(lease.download_lease_owner || '')?.[1];
+      if (pid && !ownerAlive(Number(pid))) db.prepare(`UPDATE video_generations SET download_status='failed',
+        download_lease_owner=NULL,download_lease_expires_at=NULL,updated_at=? WHERE id=? AND download_lease_owner=?`)
+        .run(new Date().toISOString(), lease.id, lease.download_lease_owner);
+    }
   });
   tx.immediate();
   if (rows.length) log.info('Backfilled video delivery state', { count: rows.length });

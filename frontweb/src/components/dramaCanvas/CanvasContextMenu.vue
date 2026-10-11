@@ -47,38 +47,37 @@ function close() {
 .canvas-context-menu {
   position: fixed;
   z-index: 3000;
-  min-width: 140px;
-  padding: 6px 0;
-  border-radius: 8px;
-  border: 1px solid #3f3f46;
-  background: #18181b;
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+  min-width: 148px;
+  padding: 5px 0;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-muted);
+  background: var(--bg-card);
+  box-shadow: var(--shadow-md);
 }
 .ctx-title {
   padding: 4px 12px 6px;
-  font-size: 10px;
-  color: #71717a;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+  font-size: 10.5px;
+  letter-spacing: .04em;
+  color: var(--text-faint);
 }
 .ctx-item {
   display: block;
   width: 100%;
-  padding: 8px 12px;
+  padding: 7px 12px;
   border: none;
   background: transparent;
-  color: #e4e4e7;
-  font-size: 13px;
+  color: var(--text-primary);
+  font-size: 12.5px;
   text-align: left;
   cursor: pointer;
 }
 .ctx-item:hover {
-  background: rgba(129, 140, 248, 0.15);
-  color: #c7d2fe;
+  background: var(--bg-hover);
+  color: var(--text-bright);
 }
 .ctx-divider {
   height: 1px;
   margin: 4px 0;
-  background: #3f3f46;
+  background: var(--border-color);
 }
 </style>

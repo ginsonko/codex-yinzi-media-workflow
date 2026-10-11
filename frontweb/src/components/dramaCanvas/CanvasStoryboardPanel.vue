@@ -413,22 +413,27 @@ async function runStep(step) {
 <style scoped>
 .sb-panel {
   margin-top: 10px;
-  width: min(560px, 94vw);
-  padding: 10px 14px 12px;
-  border-radius: 12px;
-  border: 1px solid rgba(129, 140, 248, 0.45);
-  background: rgba(15, 15, 18, 0.97);
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+  width: min(560px, 92vw);
+  padding: 10px 13px 12px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-muted);
+  background: var(--bg-card);
+  box-shadow: var(--shadow-sm);
 }
 .panel-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 8px;
-  font-size: 12px;
-  font-weight: 700;
-  color: #c7d2fe;
+  gap: 8px;
+  margin-bottom: 9px;
+  padding-bottom: 7px;
+  border-bottom: 1px solid var(--border-color);
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: .02em;
+  color: var(--text-muted);
 }
+.head-right,
 .head-actions {
   display: flex;
   align-items: center;
@@ -436,17 +441,13 @@ async function runStep(step) {
 }
 .busy-tag {
   font-size: 10px;
-  padding: 2px 8px;
-  border-radius: 999px;
-  background: rgba(96, 165, 250, 0.18);
-  color: #93c5fd;
-  animation: pulse-tag 1.2s ease-in-out infinite;
+  color: var(--ui-warning);
 }
 .compact-form :deep(.el-form-item) {
   margin-bottom: 6px;
 }
 .compact-form :deep(.el-form-item__label) {
-  color: #71717a;
+  color: var(--text-subtle);
   font-size: 11px;
 }
 .compact-form :deep(.el-input__wrapper),
@@ -456,7 +457,7 @@ async function runStep(step) {
 .compact-form :deep(.el-textarea__inner) {
   resize: vertical;
   min-height: 52px;
-  line-height: 1.45;
+  line-height: 1.5;
 }
 .relation-row {
   display: flex;
@@ -491,14 +492,16 @@ async function runStep(step) {
   gap: 8px;
   margin-top: 8px;
   padding-top: 8px;
-  border-top: 1px solid rgba(63, 63, 70, 0.8);
+  border-top: 1px solid var(--border-color);
 }
 .panel-actions :deep(.el-button) {
   margin: 0;
 }
+/* 忙标记只是「在跑」的提示，轻微呼吸即可，不做大色块 */
+.busy-tag { animation: pulse-tag 1.4s ease-in-out infinite; }
 @keyframes pulse-tag {
   0%, 100% { opacity: 1; }
-  50% { opacity: 0.65; }
+  50% { opacity: .6; }
 }
 </style>
 

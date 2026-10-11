@@ -20,16 +20,19 @@ defineProps({
   display: inline-flex;
   align-items: center;
   gap: 10px;
-  padding: 8px 14px;
-  border-radius: 999px;
-  border: 1px solid rgba(167, 139, 250, 0.5);
-  background: rgba(76, 29, 149, 0.35);
-  color: #e9d5ff;
-  font-size: 13px;
+  padding: 7px 14px;
+  border-radius: var(--radius-full);
+  border: 1px solid var(--border-bright);
+  background: var(--bg-inner);
+  color: var(--text-bright);
+  font-size: 12.5px;
   white-space: nowrap;
 }
 .badge {
-  font-weight: 700;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  color: var(--text-muted);
 }
 .title {
   max-width: 200px;
@@ -37,7 +40,9 @@ defineProps({
   text-overflow: ellipsis;
 }
 .count {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
   font-size: 11px;
-  opacity: 0.75;
+  color: var(--text-faint);
 }
 </style>

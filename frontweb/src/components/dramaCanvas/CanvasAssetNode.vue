@@ -56,9 +56,10 @@ const kindLabel = computed(() => {
   return map[props.data.kind] || '素材'
 })
 
+// 占位用中文小字，不用 emoji
 const kindIcon = computed(() => {
-  const map = { character: '👤', scene: '🏞', prop: '🎭' }
-  return map[props.data.kind] || '📦'
+  const map = { character: '角色', scene: '场景', prop: '道具' }
+  return map[props.data.kind] || '素材'
 })
 
 const displayName = computed(() => {
@@ -95,26 +96,27 @@ const statusChip = computed(() => {
 .canvas-asset-node {
   position: relative;
   width: 176px;
-  border-radius: 12px;
+  border-radius: var(--radius-sm);
   overflow: hidden;
-  border: 1px solid var(--border-muted, #3f3f46);
-  background: var(--bg-card, #18181b);
-  box-shadow: var(--shadow, 0 4px 16px rgba(0, 0, 0, 0.35));
+  border: 1px solid var(--border-muted);
+  background: var(--bg-card);
+  box-shadow: var(--shadow-xs);
   cursor: pointer;
-  transition: border-color 0.15s, box-shadow 0.15s;
+  transition: border-color .15s, box-shadow .15s;
 }
-.canvas-asset-node.focused {
-  border-color: #34d399;
-  box-shadow: 0 0 0 1px rgba(52, 211, 153, 0.45), 0 8px 24px rgba(0, 0, 0, 0.35);
+.canvas-asset-node.focused,
+.canvas-asset-node.highlighted {
+  border-color: var(--border-bright);
+  box-shadow: var(--shadow-glow);
 }
 .canvas-asset-node.processing {
-  border-color: #60a5fa;
-  animation: asset-pulse 1.4s ease-in-out infinite;
+  border-color: var(--ui-warning);
+  animation: asset-pulse 1.6s ease-in-out infinite;
 }
 .cover {
   position: relative;
   height: 108px;
-  background: #09090b;
+  background: var(--bg-deep);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -125,11 +127,13 @@ const statusChip = computed(() => {
   object-fit: cover;
 }
 .cover-placeholder {
-  font-size: 28px;
-  opacity: 0.7;
+  font-size: 12px;
+  letter-spacing: .06em;
+  color: var(--text-faint);
 }
 .info {
-  padding: 8px 10px 10px;
+  padding: 7px 10px 9px;
+  border-top: 1px solid var(--border-color);
 }
 .name-row {
   display: flex;
@@ -139,42 +143,36 @@ const statusChip = computed(() => {
 }
 .name {
   flex: 1;
-  font-size: 13px;
+  font-size: 12.5px;
   font-weight: 600;
-  color: var(--text-bright, #fafafa);
+  color: var(--text-bright);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 .status-chip {
   flex-shrink: 0;
-  font-size: 9px;
+  font-size: 9.5px;
   padding: 1px 5px;
   border-radius: 4px;
-  background: rgba(255, 255, 255, 0.08);
-  color: #a1a1aa;
+  background: var(--bg-inner);
+  color: var(--text-subtle);
 }
 .status-chip.st-busy,
-.status-chip.st-processing { color: #60a5fa; background: rgba(96, 165, 250, 0.15); }
-.status-chip.st-ready { color: #34d399; background: rgba(52, 211, 153, 0.12); }
-.status-chip.st-failed { color: #f87171; background: rgba(248, 113, 113, 0.12); }
+.status-chip.st-processing { color: var(--ui-warning); background: var(--ui-warning-soft); }
+.status-chip.st-ready { color: var(--ui-success); background: var(--ui-success-soft); }
+.status-chip.st-failed { color: var(--ui-danger); background: var(--ui-danger-soft); }
 .kind {
-  font-size: 11px;
-  color: var(--text-subtle, #71717a);
+  font-size: 10.5px;
+  color: var(--text-subtle);
   margin-top: 2px;
 }
-.kind-character { border-color: rgba(52, 211, 153, 0.45); }
-.kind-scene { border-color: rgba(96, 165, 250, 0.45); }
-.kind-prop { border-color: rgba(251, 191, 36, 0.45); }
-.highlighted {
-  box-shadow: 0 0 0 2px rgba(52, 211, 153, 0.65), 0 8px 24px rgba(52, 211, 153, 0.2);
-}
+/* 三类素材不再各给一个彩色边，靠名字和类型文字区分 */
 .dimmed {
-  opacity: 0.28;
-  filter: grayscale(0.35);
+  opacity: .3;
 }
 @keyframes asset-pulse {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(96, 165, 250, 0.25); }
-  50% { box-shadow: 0 0 0 5px rgba(96, 165, 250, 0.06); }
+  0%, 100% { box-shadow: 0 0 0 0 var(--ui-warning-soft); }
+  50% { box-shadow: 0 0 0 5px transparent; }
 }
 </style>

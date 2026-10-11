@@ -132,6 +132,7 @@ function createMediaBatchService(db, log = console, injected = {}) {
   const pumping = new Map();
 
   function readBatch(id, query = {}, reused = false) {
+    reconcileRecoveredDownloads(id);
     const row = db.prepare('SELECT * FROM media_batches WHERE id = ?').get(String(id));
     if (!row) return null;
     const meta = pagination(query);
@@ -147,10 +148,12 @@ function createMediaBatchService(db, log = console, injected = {}) {
       const key = item.kind === 'video' ? 'video_gen_id' : 'image_gen_id';
       const asset = db.prepare(`SELECT id FROM assets WHERE ${key}=? AND deleted_at IS NULL ORDER BY id LIMIT 1`).get(item.video_id || item.image_id);
       const file = assetService.localFileMetadata(media.local_path, injected.config);
+      const task = media.task_id ? db.prepare('SELECT progress,message FROM async_tasks WHERE id=?').get(media.task_id) : null;
       return { ...item, local_path: file ? media.local_path : null, file_size: file?.size || null, asset_id: asset?.id || null,
         download_url: file && asset ? `/api/v1/assets/${asset.id}/download` : null,
         generation_status: media.generation_status || media.status, download_status: media.download_status || null,
         download_error: media.download_error || null, provider_updated_at: media.updated_at, download_attempts: media.download_attempts || 0,
+        progress: task?.progress ?? null, progress_message: task?.message || null,
         can_retry_download: item.kind === 'video' && media.generation_status === 'completed' && !file && !['downloading', 'waiting_provider'].includes(media.download_status),
       };
     });
@@ -186,6 +189,20 @@ function createMediaBatchService(db, log = console, injected = {}) {
     db.prepare('UPDATE media_batches SET status = ?, total = ?, queued = ?, running = ?, completed = ?, failed = ?, needs_review = ?, completed_at = ?, updated_at = ? WHERE id = ?')
       .run(status, total, queued, running, completed, failed, needsReview, completedAt, now(), String(id));
     return db.prepare('SELECT * FROM media_batches WHERE id = ?').get(String(id));
+  }
+
+  function reconcileRecoveredDownloads(batchId = null) {
+    // Historical download failures are delivery work, not terminal generation
+    // failures. Reattach only their existing generation; never create a new one.
+    const rows = db.prepare(`SELECT i.* FROM media_batch_items i JOIN video_generations v ON v.id=i.video_id
+      WHERE i.status='needs_review' AND i.error_code='DOWNLOAD_FAILED' AND v.deleted_at IS NULL
+        AND v.generation_status='completed' ${batchId ? 'AND i.batch_id=?' : ''}`).all(...(batchId ? [String(batchId)] : []));
+    for (const item of rows) {
+      db.prepare("UPDATE media_batch_items SET status='processing',error_code=NULL,error_message=NULL,completed_at=NULL WHERE id=? AND attempt=? AND video_id=?")
+        .run(item.id, item.attempt, item.video_id);
+      db.prepare("UPDATE media_batches SET status='running',completed_at=NULL WHERE id=? AND status='needs_review'").run(item.batch_id);
+      settleItem(item); recalc(item.batch_id); schedule(item.batch_id, 0);
+    }
   }
 
   function schedule(id, delay = 40) {
@@ -246,7 +263,7 @@ function createMediaBatchService(db, log = console, injected = {}) {
     return items.length;
   }
 
-  async function settleItem(item) {
+  function settleItem(item) {
     let media = null;
     try {
       if (item.kind === 'image' && item.image_id) media = imageService.getById(db, item.image_id);
@@ -261,8 +278,7 @@ function createMediaBatchService(db, log = console, injected = {}) {
     const submissionStatus = String(media.submission_status || '').toLowerCase();
     const finished = status === 'completed' || (generationStatus === 'completed' && Boolean(media.local_path));
     if (item.kind === 'video' && generationStatus === 'completed' && !finished) {
-      if (media.download_status === 'waiting_provider') db.prepare("UPDATE media_batch_items SET status='processing',error_code=NULL,error_message=NULL,retryable=0,completed_at=NULL,updated_at=? WHERE id=?").run(now(), item.id);
-      if (media.download_status === 'failed') db.prepare("UPDATE media_batch_items SET status='needs_review',error_code='DOWNLOAD_FAILED',error_message=?,retryable=0,updated_at=? WHERE id=?").run(media.download_error || '生成已完成，下载失败；可以重试原文件', now(), item.id);
+      db.prepare("UPDATE media_batch_items SET status='processing',error_code=NULL,error_message=NULL,retryable=0,completed_at=NULL,updated_at=? WHERE id=?").run(now(), item.id);
       return;
     }
     const task = item.task_id ? db.prepare('SELECT status, error FROM async_tasks WHERE id = ?').get(item.task_id) : null;
@@ -512,6 +528,7 @@ function createMediaBatchService(db, log = console, injected = {}) {
   function resumeAll() {
     recoverStandaloneHistory();
     recoverSubmitting();
+    reconcileRecoveredDownloads();
     const rows = db.prepare("SELECT id FROM media_batches WHERE status IN ('queued','running','paused')").all();
     rows.forEach((row) => schedule(row.id, 500));
     return rows.length;

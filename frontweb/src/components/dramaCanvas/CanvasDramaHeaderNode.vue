@@ -28,25 +28,30 @@ const storyboardCount = computed(() =>
 </script>
 
 <style scoped>
+/* 实色面板 + 一根线，不用渐变玻璃卡 */
 .canvas-drama-header {
   min-width: 280px;
-  padding: 14px 18px;
-  border-radius: 12px;
-  border: 1px solid rgba(129, 140, 248, 0.45);
-  background: linear-gradient(135deg, rgba(49, 46, 129, 0.55), rgba(24, 24, 27, 0.92));
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.35);
+  padding: 13px 16px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-muted);
+  background: var(--bg-card);
 }
 .title {
+  font-family: var(--font-display);
   font-size: 16px;
-  font-weight: 700;
-  color: #f4f4f5;
+  font-weight: 600;
+  letter-spacing: -.01em;
+  color: var(--text-bright);
   margin-bottom: 6px;
 }
 .meta {
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
-  font-size: 12px;
-  color: #a1a1aa;
+  font-size: 11.5px;
+  color: var(--text-subtle);
+}
+.meta span {
+  font-variant-numeric: tabular-nums;
 }
 </style>

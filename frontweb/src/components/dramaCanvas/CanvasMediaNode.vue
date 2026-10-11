@@ -21,7 +21,7 @@
       </template>
       <template v-else-if="data.kind === 'audio'">
         <div class="audio-wrap">
-          <span>🎵</span>
+          <span class="aud-mark">音频</span>
           <span>{{ data.audioType === 'narration' ? '旁白' : '对白' }}</span>
         </div>
       </template>
@@ -76,69 +76,67 @@ const kindLabel = computed(() => {
   width: 168px;
   min-height: 100px;
   padding: 8px;
-  border-radius: 10px;
-  border: 1px solid var(--border-muted, #3f3f46);
-  background: rgba(24, 24, 27, 0.95);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-muted);
+  background: var(--bg-card);
   cursor: pointer;
-  transition: border-color 0.15s, box-shadow 0.15s;
+  transition: border-color .15s, box-shadow .15s;
 }
-.canvas-media-node.focused {
-  border-color: #818cf8;
-  box-shadow: 0 0 0 1px rgba(129, 140, 248, 0.35);
+.canvas-media-node.focused,
+.canvas-media-node.highlighted {
+  border-color: var(--border-bright);
+  box-shadow: var(--shadow-glow);
 }
 .tag {
   font-size: 10px;
   font-weight: 600;
-  color: #818cf8;
+  letter-spacing: .03em;
+  color: var(--text-subtle);
   margin-bottom: 6px;
 }
 .text-body {
   margin: 0;
   font-size: 11px;
-  line-height: 1.45;
-  color: #d4d4d8;
+  line-height: 1.5;
+  color: var(--text-primary);
   display: -webkit-box;
   -webkit-line-clamp: 5;
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
-.media-img {
-  width: 100%;
-  height: 92px;
-  object-fit: cover;
-  border-radius: 6px;
-  background: #09090b;
-}
+.media-img,
 .media-vid {
   width: 100%;
   height: 92px;
   object-fit: cover;
-  border-radius: 6px;
-  background: #000;
+  border-radius: 4px;
+  background: var(--bg-deep);
 }
 .audio-wrap {
   display: flex;
   align-items: center;
   gap: 8px;
   padding: 24px 8px;
-  font-size: 12px;
-  color: #fbbf24;
+  font-size: 11.5px;
+  color: var(--text-primary);
+}
+.aud-mark {
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--bg-inner);
+  color: var(--text-subtle);
 }
 .empty {
   font-size: 11px;
-  color: #71717a;
+  color: var(--text-faint);
   padding: 20px 0;
   text-align: center;
 }
 .universal-body {
   -webkit-line-clamp: 8;
 }
-.kind-universal { border-color: rgba(167, 139, 250, 0.5); }
-.kind-universal .tag { color: #c4b5fd; }
-.kind-image { border-color: rgba(129, 140, 248, 0.4); }
-.kind-video { border-color: rgba(244, 114, 182, 0.4); }
-.kind-audio { border-color: rgba(251, 191, 36, 0.4); }
-.canvas-media-node.processing { border-color: #60a5fa; }
-.highlighted { box-shadow: 0 0 0 2px rgba(129, 140, 248, 0.55); }
-.dimmed { opacity: 0.28; }
+/* 生成中是状态，用琥珀；其余类型不再各配一个彩色边 */
+.canvas-media-node.processing { border-color: var(--ui-warning); }
+.dimmed { opacity: .3; }
 </style>

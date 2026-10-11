@@ -4,34 +4,62 @@
       <div class="help-header-inner">
         <el-button :icon="ArrowLeft" circle aria-label="返回首页" @click="router.push('/')" />
         <div><strong>银子AI视频工作流 · 说明书</strong><span>从第一次配置到最终交付</span></div>
-        <el-input v-model="helpSearch" class="help-search" clearable placeholder="搜索配置、首帧、3D、字幕...">
+        <el-input v-model="helpSearch" class="help-search" clearable placeholder="搜索章节、步骤或关键词，例如 首帧、3D、费用">
           <template #prefix><el-icon><Search /></el-icon></template>
         </el-input>
         <el-button type="primary" @click="router.push('/guided-demo')"><el-icon><VideoPlay /></el-icon>零成本模拟</el-button>
       </div>
       <div v-if="helpSearch.trim()" class="search-results">
-        <button v-for="topic in matchedTopics" :key="topic.id" type="button" @click="jumpTo(topic.id)"><strong>{{ topic.title }}</strong><span>{{ topic.keywords }}</span></button>
-        <span v-if="!matchedTopics.length">没有找到相关章节，试试更短的关键词。</span>
+        <p class="search-summary">
+          找到 <b class="silver-mono">{{ matchedTopics.length }}</b> 个章节、<b class="silver-mono">{{ matchedSections.length }}</b> 处具体内容
+        </p>
+        <div v-if="matchedSections.length" class="search-group">
+          <span class="search-group-label">具体内容</span>
+          <button v-for="hit in matchedSections" :key="hit.id" type="button" @click="jumpTo(hit.topicId, hit.anchor)">
+            <strong>{{ hit.title }}</strong>
+            <span>{{ hit.topicTitle }} · {{ hit.snippet }}</span>
+          </button>
+        </div>
+        <div v-if="matchedTopics.length" class="search-group">
+          <span class="search-group-label">整个章节</span>
+          <button v-for="topic in matchedTopics" :key="topic.id" type="button" @click="jumpTo(topic.id)">
+            <strong>{{ topic.title }}</strong><span>{{ topic.keywords }}</span>
+          </button>
+        </div>
+        <span v-if="!matchedTopics.length && !matchedSections.length">没有找到相关内容。试试更短的关键词，例如只写「审核」或「费用」。</span>
       </div>
     </header>
 
     <div class="help-layout">
       <aside class="help-toc">
-        <strong>目录</strong>
+        <div class="toc-head">
+          <strong>目录</strong>
+          <span class="silver-mono">{{ topics.length }} 节</span>
+        </div>
         <nav>
-          <button v-for="topic in topics" :key="topic.id" type="button" @click="jumpTo(topic.id)">{{ topic.title }}</button>
+          <button
+            v-for="topic in topics"
+            :key="topic.id"
+            type="button"
+            :class="{ active: activeTopic === topic.id }"
+            @click="jumpTo(topic.id)"
+          >
+            <span>{{ topic.title }}</span>
+            <small>{{ topic.keywords }}</small>
+          </button>
         </nav>
         <div class="toc-support">
           <span>服务与模型</span>
           <a v-if="distributionProfile.smart_routing_entry" href="https://www.yinziapi.top" target="_blank" rel="noopener noreferrer">www.yinziapi.top<el-icon><TopRight /></el-icon></a>
           <span v-else>通用 NewAPI / sub2 与老李兼容站点</span>
+          <el-button size="small" @click="router.push('/ai-config')">打开模型与 Key</el-button>
         </div>
       </aside>
 
       <main class="help-content">
-        <section id="overview" class="help-section">
-          <p class="section-label">01 · 工作流原理</p>
-          <h1>不是一次提示词生成，而是一条可审批的制作链</h1>
+        <section id="overview-h2" class="help-section">
+          <p class="section-label"><span class="label-dot" aria-hidden="true"></span>工作流原理</p>
+          <h1 :id="anchor('overview','h1')">不是一次提示词生成，而是一条可审批的制作链</h1>
           <p class="lead">每一步都保存可追溯版本。人工模式由你确认；AI 审批会自动打回、修改并复审；全自动模式跳过主观确认。只有同一对象达到上限、预算或资源不足、外部结果不明确时才停下来找你。</p>
           <div class="flow-list">
             <article v-for="(stage, index) in workflow" :key="stage.name">
@@ -43,9 +71,9 @@
           <div class="principle-note"><el-icon><CircleCheckFilled /></el-icon><p><strong>默认顺序拍摄</strong>分镜脚本先给出全片草案，真实素材按镜头依次生成。前一镜通过后，下一镜才能引用它的末帧、场景状态和已批准资产，避免同时建包造成版本竞态。</p></div>
         </section>
 
-        <section id="modes" class="help-section">
-          <p class="section-label">02 · 审批模式</p>
-          <h2>选择人参与到什么程度</h2>
+        <section id="modes-h2" class="help-section">
+          <p class="section-label"><span class="label-dot" aria-hidden="true"></span>审批模式</p>
+          <h2 :id="anchor('modes','h2')">选择人参与到什么程度</h2>
           <div class="mode-table" role="table" aria-label="审批模式对比">
             <div class="mode-row mode-head" role="row"><span>模式</span><span>谁审批</span><span>适合场景</span><span>你要做什么</span></div>
             <div class="mode-row" role="row"><strong>人工审批</strong><span>用户</span><span>默认；需要质量与可控性</span><span>逐步确认，打回时写评价</span></div>
@@ -64,9 +92,9 @@
           </div>
         </section>
 
-        <section id="configuration" class="help-section">
-          <p class="section-label">03 · 模型与 Key</p>
-          <div class="section-title-row"><div><h2>真实制作需要四项核心配置</h2><p>首页的“已配置”只检查本地保存状态，不会自动联网，也不会提交付费生成。</p></div><el-button type="primary" @click="goConfigure">打开一键配置</el-button></div>
+        <section id="configuration-h2" class="help-section">
+          <p class="section-label"><span class="label-dot" aria-hidden="true"></span>模型与 Key</p>
+          <div class="section-title-row"><div><h2 :id="anchor('configuration','h2')">真实制作需要四项核心配置</h2><p>首页的“已配置”只检查本地保存状态，不会自动联网，也不会提交付费生成。</p></div><el-button type="primary" @click="goConfigure">打开一键配置</el-button></div>
           <div class="config-grid">
             <article v-for="item in configs" :key="item.type">
               <span>{{ item.order }}</span><div><h3>{{ item.name }}</h3><p>{{ item.purpose }}</p><small>建议模型：{{ item.model }}</small></div>
@@ -91,30 +119,30 @@
           <div class="optional-config"><strong>可选配置</strong><span>TTS 用于旁白；内置 Xiaoyi 音色无需 Python、零 API 费用但需要联网。3D 导演台完全本地；即梦角色认证和 ModelArk 只在对应模型需要时配置。它们都不阻止开始制作。</span></div>
         </section>
 
-        <section id="consistency" class="help-section">
-          <p class="section-label">04 · 一致性与镜头衔接</p>
-          <h2>角色、场景和动作连续分别靠什么</h2>
+        <section id="consistency-h2" class="help-section">
+          <p class="section-label"><span class="label-dot" aria-hidden="true"></span>一致性与镜头衔接</p>
+          <h2 :id="anchor('consistency','h2')">角色、场景和动作连续分别靠什么</h2>
           <div class="rule-list">
-            <article><el-icon><User /></el-icon><div><h3>角色一致性</h3><p>确认角色多视图、脸部、体型、服装与色彩锚点；后续镜头只引用已批准版本，不把新生成图静默替换旧资产。</p></div></article>
-            <article><el-icon><PictureFilled /></el-icon><div><h3>场景一致性</h3><p>场景设定图固定空间结构、时间、天气、主光方向和背景锚点。花草、建筑、门窗等容易漂移的物体必须写入资产约束。</p></div></article>
-            <article><el-icon><Camera /></el-icon><div><h3>镜头连续性</h3><p>同一个长镜头尽量在一次视频任务中完成；独立任务应在正常切镜点拼接，不设计金光覆盖、遮挡镜头等刻意转场。</p></div></article>
-            <article><el-icon><Link /></el-icon><div><h3>严格动作衔接</h3><p>只有确需跨任务延续同一动作时，才截取上一段最后一帧作为下一段严格首帧。正常切镜不必强行携带尾帧。</p></div></article>
+            <article><el-icon><User /></el-icon><div><h3 :id="anchor('consistency','sub-character')">角色一致性</h3><p>确认角色多视图、脸部、体型、服装与色彩锚点；后续镜头只引用已批准版本，不把新生成图静默替换旧资产。</p></div></article>
+            <article><el-icon><PictureFilled /></el-icon><div><h3 :id="anchor('consistency','sub-scene')">场景一致性</h3><p>场景设定图固定空间结构、时间、天气、主光方向和背景锚点。花草、建筑、门窗等容易漂移的物体必须写入资产约束。</p></div></article>
+            <article><el-icon><Camera /></el-icon><div><h3 :id="anchor('consistency','sub-shot')">镜头连续性</h3><p>同一个长镜头尽量在一次视频任务中完成；独立任务应在正常切镜点拼接，不设计金光覆盖、遮挡镜头等刻意转场。</p></div></article>
+            <article><el-icon><Link /></el-icon><div><h3 :id="anchor('consistency','sub-link')">严格动作衔接</h3><p>只有确需跨任务延续同一动作时，才截取上一段最后一帧作为下一段严格首帧。正常切镜不必强行携带尾帧。</p></div></article>
           </div>
           <div class="model-note"><strong>模型路由</strong><p>短于 5 秒的独立镜头优先使用支持自由时长和首帧图的模型；5–15 秒、需要运动参考的长镜头再使用支持参考视频的模型。工作流自动选择，用户仍可随时手动改模型和分组。</p></div>
         </section>
 
-        <section id="assets" class="help-section">
-          <p class="section-label">05 · 素材复用与项目管理</p>
-          <h2>成片、审批资产和草稿都保留来源</h2>
+        <section id="assets-h2" class="help-section">
+          <p class="section-label"><span class="label-dot" aria-hidden="true"></span>素材复用与项目管理</p>
+          <h2 :id="anchor('assets','h2')">成片、审批资产和草稿都保留来源</h2>
           <div class="two-column">
-            <div><h3>素材库</h3><ul><li>“已批准生产资产”按项目、阶段和修订展示，只读保留来源。</li><li>从其它项目复用时，系统会复制为当前项目的新素材并记录跨项目来源。</li><li>“手工上传”用于你自己的图、视频和音频，可以独立删除。</li></ul><el-button @click="router.push('/media-library')">打开素材库</el-button></div>
-            <div><h3>归档与恢复</h3><ul><li>归档只把项目移到“已归档”，不会改变草稿、生成中或完成状态。</li><li>成片与所有素材文件继续保留，可以预览、导出和恢复。</li><li>删除才是不可恢复操作，因此需要二次确认。</li></ul><el-button @click="router.push('/#projects')">返回项目工作台</el-button></div>
+            <div><h3 :id="anchor('assets','sub-library')">素材库</h3><ul><li>“已批准生产资产”按项目、阶段和修订展示，只读保留来源。</li><li>从其它项目复用时，系统会复制为当前项目的新素材并记录跨项目来源。</li><li>“手工上传”用于你自己的图、视频和音频，可以独立删除。</li></ul><el-button @click="router.push('/media-library')">打开素材库</el-button></div>
+            <div><h3 :id="anchor('assets','sub-archive')">归档与恢复</h3><ul><li>归档只把项目移到“已归档”，不会改变草稿、生成中或完成状态。</li><li>成片与所有素材文件继续保留，可以预览、导出和恢复。</li><li>删除才是不可恢复操作，因此需要二次确认。</li></ul><el-button @click="router.push('/#projects')">返回项目工作台</el-button></div>
           </div>
         </section>
 
-        <section id="director" class="help-section">
-          <p class="section-label">06 · 3D 导演台</p>
-          <div class="section-title-row"><div><h2>先用简单模型确定空间和镜头</h2><p>3D 预演是可选参考，不是生成门控。镜头简单或图片参考已经足够时，直接跳过。</p></div><el-button type="primary" @click="router.push('/director?tutorial=1')">打开交互教程</el-button></div>
+        <section id="director-h2" class="help-section">
+          <p class="section-label"><span class="label-dot" aria-hidden="true"></span>3D 导演台</p>
+          <div class="section-title-row"><div><h2 :id="anchor('director','h2')">先用简单模型确定空间和镜头</h2><p>3D 预演是可选参考，不是生成门控。镜头简单或图片参考已经足够时，直接跳过。</p></div><el-button type="primary" @click="router.push('/director?tutorial=1')">打开交互教程</el-button></div>
           <ol class="director-steps">
             <li><span>1</span><div><strong>添加对象</strong><p>从素材库或基础对象加入角色、道具、地面、灯光和摄像机。</p></div></li>
             <li><span>2</span><div><strong>摆放构图</strong><p>移动、旋转、缩放对象，切到镜头预览检查画面边缘和视线方向。</p></div></li>
@@ -125,17 +153,17 @@
           <div class="when-grid"><div><strong>建议使用</strong><span>复杂走位、多人空间关系、长镜头、镜头运动、道具交互。</span></div><div><strong>建议跳过</strong><span>表情特写、静态场景展示、2–4 秒短镜头、模型不支持参考视频。</span></div></div>
         </section>
 
-        <section id="troubleshooting" class="help-section">
-          <p class="section-label">07 · 常见问题</p>
-          <h2>遇到阻塞时先看这里</h2>
+        <section id="troubleshooting-h2" class="help-section">
+          <p class="section-label"><span class="label-dot" aria-hidden="true"></span>常见问题</p>
+          <h2 :id="anchor('troubleshooting','h2')">遇到阻塞时先看这里</h2>
           <el-collapse accordion>
             <el-collapse-item v-for="item in faq" :key="item.title" :title="item.title" :name="item.title"><p>{{ item.answer }}</p></el-collapse-item>
           </el-collapse>
         </section>
 
-        <section id="about" class="help-section about-section">
-          <p class="section-label">08 · 关于</p>
-          <h2>银子AI视频工作流</h2>
+        <section id="about-h2" class="help-section about-section">
+          <p class="section-label"><span class="label-dot" aria-hidden="true"></span>关于</p>
+          <h2 :id="anchor('about','h2')">银子AI视频工作流</h2>
           <dl><div><dt>作者</dt><dd>银子</dd></div><div><dt>GitHub</dt><dd><a href="https://github.com/ginsonko" target="_blank" rel="noopener noreferrer">ginsonko<el-icon><TopRight /></el-icon></a></dd></div><div><dt>联系 QQ</dt><dd>474764004</dd></div><div v-if="distributionProfile.smart_routing_entry"><dt>API 中转站</dt><dd><a href="https://www.yinziapi.top" target="_blank" rel="noopener noreferrer">www.yinziapi.top<el-icon><TopRight /></el-icon></a></dd></div></dl>
           <p>本项目基于开源项目持续开发。原始许可证、提交历史与上游作者信息保留在仓库中；此处展示的是当前产品品牌和维护联系信息。</p>
         </section>
@@ -145,7 +173,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ArrowLeft, Camera, CircleCheckFilled, Link, PictureFilled, Search, TopRight, User, VideoPlay } from '@element-plus/icons-vue'
 import { aiAPI } from '@/api/ai'
@@ -153,21 +181,76 @@ import { aiAPI } from '@/api/ai'
 const router = useRouter()
 const distributionProfile = ref({ id: 'universal', smart_routing_entry: false })
 const helpSearch = ref('')
+const activeTopic = ref('overview')
 const topics = [
-  { id: 'overview', title: '工作流原理', keywords: '故事 剧本 审批 版本 顺序生成' },
-  { id: 'modes', title: '审批模式', keywords: '人工 AI 自动托管 手动' },
-  { id: 'configuration', title: '模型与 Key', keywords: '配置 Base URL API Key 文本 生图 视频 TTS' },
-  { id: 'consistency', title: '一致性与衔接', keywords: '角色 场景 首帧 尾帧 切镜 参考视频' },
-  { id: 'assets', title: '素材复用与归档', keywords: '素材库 跨项目 来源 归档 恢复 导出' },
-  { id: 'director', title: '3D 导演台', keywords: '3D 对象 镜头 关键帧 录制 跳过 JSON' },
-  { id: 'troubleshooting', title: '常见问题', keywords: '排队 审核 失败 时长 合成 字幕 旁白' },
-  { id: 'about', title: '作者与联系', keywords: '银子 ginsonko QQ yinziapi' },
+  { id: 'overview', title: '工作流原理', keywords: '故事 剧本 审批 版本 顺序生成 主流程 步骤' },
+  { id: 'modes', title: '审批模式', keywords: '人工 AI 自动托管 手动 无人值守 打回 上限' },
+  { id: 'configuration', title: '模型与 Key', keywords: '配置 Base URL API Key 文本 生图 视频 TTS 银子 API 优先级 默认' },
+  { id: 'consistency', title: '一致性与衔接', keywords: '角色 场景 首帧 尾帧 切镜 参考视频 锚点 漂移' },
+  { id: 'assets', title: '素材复用与归档', keywords: '素材库 跨项目 来源 归档 恢复 导出 删除' },
+  { id: 'director', title: '3D 导演台', keywords: '3D 对象 镜头 关键帧 录制 跳过 JSON 构图 运镜' },
+  { id: 'troubleshooting', title: '常见问题', keywords: '排队 审核 失败 时长 合成 字幕 旁白 报错 扣费' },
+  { id: 'about', title: '作者与联系', keywords: '银子 ginsonko QQ yinziapi 开源 许可' },
 ]
+
+/**
+ * 章节内的可搜索内容。只做索引用：命中后跳到具体小标题，然后把命中的那段话标出来。
+ * 每一条都必须对应页面上真实存在的锚点 id。
+ */
+const sections = [
+  { id: 'sub-pipeline', topicId: 'overview', title: '主流程与阶段', anchor: 'h1', text: '故事输入、剧本、资源设定、资源图、分镜脚本、分镜图、导演台方案、3D 分镜视频、参考包、镜头视频、剪辑交付。前一镜通过后，下一镜才引用它的末帧、场景状态和已批准资产。' },
+  { id: 'sub-worker', topicId: 'modes', title: 'AI 审批与无人值守', anchor: 'h2', text: 'AI 审批会自动打回、修改并复审；同一对象连续达到设定上限、预算或资源不足、结果不明确时才停下找人。全自动模式跳过主观确认，技术校验仍然保留。' },
+  { id: 'sub-autonomy', topicId: 'modes', title: '异常处理四步', anchor: 'h2', text: '发现问题、AI 诊断、有界修复、再次审核。高价模型始终需要项目明确授权。' },
+  { id: 'sub-fields', topicId: 'configuration', title: '四项核心配置', anchor: 'h2', text: '文本模型写剧本，图片服务生成角色场景道具图，分镜图片生成支持参考图，视频模型按镜头生成片段。每个服务类型只认一条同时启用且设为默认的配置。' },
+  { id: 'sub-yinzi', topicId: 'configuration', title: '银子 API 配置路径', anchor: 'h2', text: '在 yinziapi.top 创建对应分组的 Key，文本走 api.yinziapi.top，图片与视频走媒体站，不要用智能路由 Key。保存后返回首页确认显示 4/4。' },
+  { id: 'sub-key-storage', topicId: 'configuration', title: 'Key 存在哪里', anchor: 'h2', text: 'API Key 只保存在本机后端，前端只收到「是否已填写」。页面上不回显明文，导出配置包也不包含 Key。' },
+  { id: 'sub-character', topicId: 'consistency', title: '角色一致性', anchor: 'sub-character', text: '确认角色多视图、脸部、体型、服装与色彩锚点；后续镜头只引用已批准版本，不把新生成图静默替换旧资产。' },
+  { id: 'sub-scene', topicId: 'consistency', title: '场景一致性', anchor: 'sub-scene', text: '场景设定图固定空间结构、时间、天气、主光方向和背景锚点。花草、建筑、门窗等容易漂移的物体必须写入资产约束。' },
+  { id: 'sub-shot', topicId: 'consistency', title: '镜头连续性', anchor: 'sub-shot', text: '同一个长镜头尽量在一次视频任务中完成；独立任务应在正常切镜点拼接。' },
+  { id: 'sub-tail', topicId: 'consistency', title: '严格动作衔接', anchor: 'sub-link', text: '只有确需跨任务延续同一动作时，才截取上一段最后一帧作为下一段严格首帧。' },
+  { id: 'sub-library', topicId: 'assets', title: '素材库', anchor: 'sub-library', text: '已批准生产资产按项目、阶段和修订展示，只读保留来源；跨项目复用会复制成当前项目的新素材。' },
+  { id: 'sub-archive', topicId: 'assets', title: '归档与恢复', anchor: 'sub-archive', text: '归档只是把项目移到已归档，成片与素材继续保留。删除不可恢复，需要二次确认。' },
+  { id: 'sub-director-flow', topicId: 'director', title: '导演台五步', anchor: 'h2', text: '添加对象、摆放构图、设置关键帧、预览与评价、录制或跳过。跳过后参考包不得继续携带旧的 3D 视频。' },
+  { id: 'sub-queue', topicId: 'troubleshooting', title: '视频一直排队', anchor: 'h2', text: '视频生成通常需要排队。只要任务仍是排队或处理中，就继续轮询并保留任务 ID；仅下载失败时优先恢复原文件，不要重复提交付费任务。' },
+  { id: 'sub-moderate', topicId: 'troubleshooting', title: '审核失败与内容审核', anchor: 'h2', text: '先检查提示词和参考图是否容易被判定违规，再写清需要替换的表达。只有普通模型多次审核失败时才考虑更贵的特殊渠道。' },
+  { id: 'sub-refresh', topicId: 'troubleshooting', title: '关掉页面还能继续吗', anchor: 'h2', text: '真实项目、审批版本和异步任务保存在本地数据库与项目目录中；零成本模拟只保存在当前页面内，刷新后从第一步重新开始。' },
+]
+
 const matchedTopics = computed(() => {
   const query = helpSearch.value.trim().toLowerCase()
   if (!query) return []
   return topics.filter((topic) => `${topic.title} ${topic.keywords}`.toLowerCase().includes(query))
 })
+
+const matchedSections = computed(() => {
+  const query = helpSearch.value.trim().toLowerCase()
+  if (!query) return []
+  return sections
+    .filter((item) => `${item.title} ${item.text} ${topicTitle(item.topicId)}`.toLowerCase().includes(query))
+    .map((item) => ({
+      ...item,
+      topicTitle: topicTitle(item.topicId),
+      snippet: snippetFor(item.text, query),
+    }))
+    .slice(0, 12)
+})
+
+function topicTitle(id) {
+  return topics.find((topic) => topic.id === id)?.title || ''
+}
+
+/** 只截命中处附近的一小段文字，避免把整段话塞进搜索结果 */
+function snippetFor(text, query) {
+  const index = text.toLowerCase().indexOf(query)
+  if (index < 0) return text.slice(0, 52)
+  const start = Math.max(0, index - 18)
+  return `${start > 0 ? '…' : ''}${text.slice(start, Math.min(text.length, index + 40))}…`
+}
+
+/** 生成章节内锚点 id，供目录跳转和搜索命中定位共用 */
+function anchor(topicId, key) {
+  return `${topicId}-${key}`
+}
 
 const workflow = [
   { name: '故事与剧本', description: '输入故事构想或导入小说，生成可阅读剧本；可以编辑、AI 帮写、确认或打回。', output: '剧本 + 资源清单' },
@@ -193,10 +276,46 @@ const faq = [
   { title: '我关闭页面后还能继续吗？', answer: '真实项目、审批版本和异步任务保存在本地数据库与项目目录中，首页可继续进入。零成本模拟只保存在当前页面内，刷新后从第一步重新开始。' },
 ]
 
-function jumpTo(id) {
+function jumpTo(topicId, anchorKey = '') {
   helpSearch.value = ''
-  document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  activeTopic.value = topicId
+  // 章节内的锚点 id 都带主题前缀（consistency-sub-link），锚点表里存的是后缀
+  const anchorId = anchorKey ? `${topicId}-${anchorKey}` : ''
+  const element = (anchorId && document.getElementById(anchorId))
+    || document.getElementById(`${topicId}-h2`)
+    || document.getElementById(topicId)
+  if (!element) return
+  element.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  // 清空搜索会重排结果面板，等这次 patch 落地再点亮，否则高亮会被同一次渲染抹掉
+  if (anchorId) nextTick(() => highlight(anchorId))
 }
+
+/** 命中后短暂点亮那一块，告诉人「就是这里」 */
+function highlight(id) {
+  const element = document.getElementById(id)
+  if (!element) return
+  element.classList.remove('is-hit')
+  void element.offsetWidth
+  element.classList.add('is-hit')
+  setTimeout(() => element.classList.remove('is-hit'), 2200)
+}
+
+/* 目录高亮跟随滚动：只在可见时观察，不做持续轮询 */
+let observer = null
+onMounted(() => {
+  const sections = topics
+    .map((topic) => document.getElementById(topic.id))
+    .filter(Boolean)
+  if (!sections.length || typeof IntersectionObserver === 'undefined') return
+  observer = new IntersectionObserver((entries) => {
+    const visible = entries
+      .filter((entry) => entry.isIntersecting)
+      .sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top)
+    if (visible[0]) activeTopic.value = visible[0].target.id
+  }, { rootMargin: '-96px 0px -70% 0px', threshold: 0 })
+  sections.forEach((section) => observer.observe(section))
+})
+onBeforeUnmount(() => { observer?.disconnect(); observer = null })
 
 function goConfigure() {
   router.push({ path: '/', query: { config: distributionProfile.value.smart_routing_entry ? 'yinzi' : 'laoli' } })
@@ -215,25 +334,38 @@ onMounted(async () => {
 .help-header-inner > div strong { font-size: 15px; }
 .help-header-inner > div span { color: var(--text-muted); font-size:12px; }
 .help-search { width: min(360px, 32vw); }
-.search-results { position: absolute; top: 58px; left: 50%; width: min(620px, calc(100vw - 28px)); max-height: 280px; overflow-y: auto; padding: 8px; border: 1px solid var(--border-color); border-radius: 7px; background: var(--bg-card); box-shadow: 0 14px 34px rgba(20,40,32,.14); transform: translateX(-28%); }
-.search-results button { width: 100%; display: grid; gap: 2px; padding: 10px; border: 0; border-radius: 5px; color: var(--text-primary); background: transparent; text-align: left; cursor: pointer; }
+.search-results { position: absolute; top: 58px; left: 50%; width: min(660px, calc(100vw - 28px)); max-height: 420px; overflow-y: auto; padding: 10px 12px 12px; border: 1px solid var(--border-color); border-radius: 7px; background: var(--bg-card); box-shadow: 0 14px 34px rgba(0,0,0,.4); transform: translateX(-50%); }
+.search-summary { margin: 0 0 8px; color: var(--text-subtle); font-size: 11.5px; }
+.search-summary b { color: var(--text-bright); }
+.search-group { display: grid; gap: 2px; padding-top: 8px; border-top: 1px solid var(--border-muted); }
+.search-group + .search-group { margin-top: 8px; }
+.search-group-label { padding: 4px 10px 6px; color: var(--text-faint); font-size: 11px; }
+.search-results button { width: 100%; display: grid; gap: 3px; padding: 9px 10px; border: 0; border-radius: 5px; color: var(--text-primary); background: transparent; text-align: left; cursor: pointer; }
 .search-results button:hover { background: var(--bg-hover); }
-.search-results span { color: var(--text-muted); font-size:12px; }
-.help-layout { max-width: 1380px; margin: 0 auto; display: grid; grid-template-columns: 220px minmax(0,1fr); gap: 38px; padding: 28px 18px 80px; }
+.search-results span { color: var(--text-subtle); font-size: 11.5px; line-height: 1.6; }
+.help-layout { max-width: 1380px; margin: 0 auto; display: grid; grid-template-columns: 232px minmax(0,1fr); gap: 38px; padding: 28px 18px 80px; }
 .help-toc { position: sticky; top: 92px; align-self: start; }
-.help-toc > strong { display: block; margin-bottom: 10px; color: var(--text-primary); font-size: 12px; }
+.toc-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
+.toc-head strong { font-size: 12.5px; }
+.toc-head span { color: var(--text-faint); font-size: 11px; }
 .help-toc nav { display: grid; border-left: 1px solid var(--border-color); }
-.help-toc nav button { padding: 8px 12px; border: 0; color: var(--text-muted); background: transparent; text-align: left; cursor: pointer; font-size: 12px; }
-.help-toc nav button:hover { color: var(--ui-accent); background: var(--bg-hover); }
-.toc-support { display: grid; gap: 5px; margin-top: 18px; padding: 12px; border: 1px solid var(--border-color); border-radius: 7px; background: var(--bg-card); }
-.toc-support span { color: var(--text-muted); font-size:12px; }
-.toc-support a { display: flex; align-items: center; gap: 4px; color: var(--ui-info); font-size:12px; text-decoration: none; }
+.help-toc nav button { display: grid; gap: 2px; padding: 8px 12px; border: 0; border-left: 2px solid transparent; margin-left: -1px; color: var(--text-muted); background: transparent; text-align: left; cursor: pointer; font: inherit; }
+.help-toc nav button span { font-size: 12px; }
+.help-toc nav button small { color: var(--text-subtle); font-size: 10.5px; line-height: 1.5; }
+.help-toc nav button:hover { color: var(--text-bright); background: var(--bg-hover); }
+.help-toc nav button.active { color: var(--text-bright); border-left-color: var(--ui-accent); background: var(--ui-accent-soft); }
+.toc-support { display: grid; gap: 7px; margin-top: 18px; padding: 12px; border: 1px solid var(--border-color); border-radius: 7px; background: var(--bg-card); }
+.toc-support span { color: var(--text-muted); font-size:11.5px; }
+.toc-support a { display: flex; align-items: center; gap: 4px; color: var(--ui-accent); font-size:11.5px; text-decoration: none; }
 .help-content { min-width: 0; max-width: 980px; }
 .help-section { scroll-margin-top: 90px; padding: 4px 0 48px; margin-bottom: 44px; border-bottom: 1px solid var(--border-color); }
 .help-section:last-child { margin-bottom: 0; border-bottom: 0; }
-.section-label { margin: 0 0 8px; color: var(--ui-accent); font-size:12px; font-weight: 700; }
-.help-section h1 { max-width: 780px; margin: 0; font-size: 28px; letter-spacing: 0; }
-.help-section > h2, .section-title-row h2 { margin: 0 0 8px; font-size: 21px; letter-spacing: 0; }
+.section-label { display: flex; align-items: center; gap: 7px; margin: 0 0 10px; color: var(--text-muted); font-size: 11.5px; font-weight: 500; letter-spacing: .02em; }
+.label-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--ui-accent); }
+.help-section h1 { max-width: 780px; margin: 0; font-family: var(--font-display); font-size: 28px; font-weight: 600; }
+.help-section > h2, .section-title-row h2 { margin: 0 0 8px; font-family: var(--font-display); font-size: 21px; font-weight: 600; }
+.is-hit { animation: help-hit 2.2s cubic-bezier(.22, .61, .36, 1); }
+@keyframes help-hit { from { background: var(--ui-accent-soft); } to { background: transparent; } }
 .lead, .section-title-row p { max-width: 820px; margin: 10px 0 24px; color: var(--text-muted); font-size: 14px; line-height: 1.75; }
 .flow-list { display: grid; border: 1px solid var(--border-color); border-radius: 8px; overflow: hidden; background: var(--bg-card); }
 .flow-list article { display: grid; grid-template-columns: 34px minmax(0,1fr) 160px; align-items: center; gap: 12px; padding: 15px; border-bottom: 1px solid var(--border-color); }
