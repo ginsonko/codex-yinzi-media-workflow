@@ -1150,13 +1150,20 @@ function resolveYinziCapabilityContext(config, model, hint = null) {
   };
 }
 
+// Some site catalogs publish the upstream provider's own path (e.g. /api/open/v1/video/generate);
+// relay routes never live under /api/, so such paths must never be called on it.
+function onlyRelayVideoPaths(snapshot) {
+  const relay = (p) => (/^\/api\//i.test(p || '') ? '' : p);
+  return { ...snapshot, create_path: relay(snapshot.create_path), query_path: relay(snapshot.query_path), content_path: relay(snapshot.content_path) };
+}
+
 function resolveYinziProtocolSnapshot(config, model, hint = null) {
-  const hinted = normalizeYinziProtocolSnapshot(hint || {});
+  const hinted = onlyRelayVideoPaths(normalizeYinziProtocolSnapshot(hint || {}));
   const catalogItem = findYinziCatalogModel(config, model);
-  const catalog = normalizeYinziProtocolSnapshot({
+  const catalog = onlyRelayVideoPaths(normalizeYinziProtocolSnapshot({
     ...(catalogItem?.capabilities || {}),
     ...(catalogItem || {}),
-  });
+  }));
   const builtin = normalizeYinziProtocolSnapshot(getYinziVideoCapability(model) || {});
   const configured = normalizeYinziProtocolSnapshot({
     contract: config?.provider_contract,

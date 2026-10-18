@@ -182,6 +182,30 @@ describe('YinziAPI asynchronous lifecycle', () => {
     assert.equal(buildYinziContentUrl(frozen, 'task 123'), 'https://api.yinziapi.top/v1/video/generations/task%20123/content');
   });
 
+  it('ignores upstream-provider paths under /api/ that a site catalog leaks', () => {
+    const config = {
+      id: 18,
+      provider: 'yinzi',
+      api_protocol: 'yinzi',
+      base_url: 'https://api.yinziapi.top/v1',
+      endpoint: '/videos',
+      query_endpoint: '/videos/{taskId}',
+      settings: JSON.stringify({
+        model_catalog_snapshot: {
+          models: [{
+            model: 'XN2-Seedance 2.5',
+            provider_contract: 'openai-video',
+            provider_create_path: '/api/open/v1/video/generate',
+            provider_query_path: '/api/open/v1/video/status?jobId={task_id}',
+          }],
+        },
+      }),
+    };
+    const snapshot = buildProviderConfigSnapshot(config, 'XN2-Seedance 2.5');
+    assert.equal(snapshot.endpoint, '/videos');
+    assert.equal(snapshot.query_endpoint, '/videos/{taskId}');
+  });
+
   it('freezes a dynamic contract and marks the bounded builtin fallback when a known model contract is missing', () => {
     const dynamicCapability = {
       duration_mode: 'range', duration_min: 6, duration_max: 12,
