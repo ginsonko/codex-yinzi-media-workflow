@@ -76,6 +76,21 @@ test('dedicated Agent uses the selected config, executes real tool loop and surv
   } finally { release(); await h.close(); }
 });
 
+test('a canvas without its own Agent choice follows the default text config and can switch back to it', async () => {
+  const h = await startCanvasHarness({ video: false, completion: () => ({ content: '收到' }) }); const api = request(h);
+  try {
+    const c = await api('/', {});
+    const first = await api(`/${c.id}/messages`, { request_id: uid(), message: '你好' });
+    assert.equal((await wait(() => api(`/${c.id}/runs/${first.run_id}`), r => !['queued', 'running'].includes(r.status))).status, 'completed');
+    assert.equal(h.completions.at(-1).request.model, h.configs.text.default_model);
+    await api(`/${c.id}`, { agent: { config_id: h.configs.text.id, model: 'picked-model' } }, 'PATCH');
+    await api(`/${c.id}`, { agent: { config_id: '', model: '' } }, 'PATCH');
+    const again = await api(`/${c.id}/messages`, { request_id: uid(), message: '再来' });
+    await wait(() => api(`/${c.id}/runs/${again.run_id}`), r => !['queued', 'running'].includes(r.status));
+    assert.equal(h.completions.at(-1).request.model, h.configs.text.default_model);
+  } finally { await h.close(); }
+});
+
 test('JSON-action compatibility and empty/provider failures are visible without fabricated completion', async () => {
   const h = await startCanvasHarness({ video: false, completion: (body, count) => {
     if (body.model === 'empty') return { content: '' };

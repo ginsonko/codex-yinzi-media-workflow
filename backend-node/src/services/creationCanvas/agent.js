@@ -45,6 +45,16 @@ async function completion(config, request, signal, timeoutMs) {
   return message;
 }
 
+// A canvas without its own choice follows the workflow's default text config, so one-click setups work right away.
+function resolveAgentConfig(db, agent = {}) {
+  if (agent.config_id) {
+    const config = aiConfig.getConfig(db, Number(agent.config_id));
+    return config && config.service_type === 'text' ? { config, model: agent.model || config.default_model || config.model[0], followsDefault: false } : null;
+  }
+  const config = aiConfig.listConfigs(db, 'text').find(c => c.is_active && c.base_url);
+  return config ? { config, model: agent.model || config.default_model || config.model[0], followsDefault: true } : null;
+}
+
 function createCanvasAgent(service, injected = {}) {
   const { store, db, clean } = service;
   const active = new Map(); let closed = false;
@@ -63,7 +73,7 @@ function createCanvasAgent(service, injected = {}) {
     const content = clean(String(body.message || '').trim());
     if (!content) throw fail('MESSAGE_REQUIRED', '请输入给画布助手的消息');
     const config = clone(store.get(id).agent);
-    if (!config.config_id) throw fail('AGENT_CONFIG_REQUIRED', '先为画布选择专用文本模型；也可直接手动创作');
+    if (!resolveAgentConfig(db, config)) throw fail('AGENT_CONFIG_REQUIRED', '还没有可用的文本模型：先在模型配置里一键导入或添加一个文本配置；也可直接手动创作');
     const result = store.once(id, body.request_id, { message: content, selected_node_ids: body.selected_node_ids || [] }, () => {
       for (const run of store.records('run', id)) if (['queued', 'running'].includes(run.status)) stop(id, run.id);
       const run = store.record('run', { id: uid(), canvas_id: id, status: 'queued', config, turn: 0, selected_node_ids: body.selected_node_ids || [],
@@ -112,9 +122,9 @@ function createCanvasAgent(service, injected = {}) {
     const controller = new AbortController(); active.set(runId, controller);
     const signal = controller.signal;
     try {
-      const config = aiConfig.getConfig(db, Number(run.config.config_id));
-      if (!config || config.service_type !== 'text') throw fail('AGENT_CONFIG_MISSING', '所选文本配置已不存在，请重新选择');
-      const model = run.config.model || config.default_model || config.model[0];
+      const resolved = resolveAgentConfig(db, run.config);
+      if (!resolved) throw fail('AGENT_CONFIG_MISSING', run.config.config_id ? '所选文本配置已不存在，请重新选择' : '还没有可用的文本模型配置，请先一键导入或添加');
+      const { config, model } = resolved;
       if (!model) throw fail('AGENT_MODEL_MISSING', '填写专用模型名称');
       const limit = Math.max(1, Math.min(100, Number(run.config.max_turns) || 24));
       const timeout = Math.max(1000, Math.min(600000, Number(run.config.timeout_ms) || 120000));
@@ -173,4 +183,4 @@ function createCanvasAgent(service, injected = {}) {
   async function close() { closed = true; for (const controller of active.values()) controller.abort(); while (active.size) await new Promise(resolve => setTimeout(resolve, 20)); }
   return { send, stop, close, tools: canvasTools, get: (id, runId) => publicRun(store.read('run', runId, id)), activeCount: () => active.size };
 }
-module.exports = { createCanvasAgent, canvasTools, completion };
+module.exports = { createCanvasAgent, canvasTools, completion, resolveAgentConfig };
