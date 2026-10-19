@@ -1,0 +1,195 @@
+name: Omni Creator macOS build
+
+# Builds the Omni Creator (万能创作终端 银子版) macOS app (Apple silicon + Intel, ad-hoc signed, not notarized) from the private
+# source repository and optionally attaches the .dmg / .zip files to a draft release here.
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Source git ref (branch, tag or commit)
+        required: true
+        default: main
+        type: string
+      tag:
+        description: Release tag to upload to (empty = workflow artifacts only)
+        required: false
+        default: ''
+        type: string
+      prerelease:
+        description: Mark the release as a prerelease when this workflow creates it
+        required: false
+        default: true
+        type: boolean
+
+permissions:
+  contents: write
+
+concurrency:
+  group: omni-mac-${{ inputs.tag || github.run_id }}
+  cancel-in-progress: false
+
+env:
+  BRAND: yinzi
+  EDITION: Yinzi
+  SRC_REPO: ginsonko/omni-creator
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  build:
+    name: build (${{ matrix.arch }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: arm64
+            runner: macos-15
+          - arch: x64
+            runner: macos-15-intel
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 120
+    steps:
+      - name: Runner
+        run: echo "runner: $(uname -m), macOS $(sw_vers -productVersion)"
+
+      - name: Check out app source
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.SRC_REPO }}
+          ref: ${{ inputs.ref }}
+          ssh-key: ${{ secrets.OMNI_SRC_DEPLOY_KEY }}
+          path: src
+          persist-credentials: false
+
+      - name: Check out submodules
+        working-directory: src
+        run: |
+          git submodule sync --recursive > /dev/null
+          git submodule update --init --recursive > /dev/null 2>&1 || { echo "submodule checkout failed"; exit 1; }
+          echo "source $(git rev-parse --short HEAD), $(git submodule status --recursive | wc -l | tr -d ' ') submodule(s)"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: src/package-lock.json
+
+      - name: Install dependencies
+        working-directory: src
+        run: npm ci --no-audit --no-fund
+
+      - name: Build shell and media frontend
+        working-directory: src
+        run: |
+          npm run build
+          npm run build:media
+
+      - name: Build macOS app
+        working-directory: src
+        env:
+          OMNI_RELEASE_DIR: ${{ runner.temp }}/release
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+        run: node scripts/dist.mjs "$BRAND" --skip-build
+
+      - name: Inspect the bundle
+        id: inspect
+        env:
+          OUT: ${{ runner.temp }}/release
+          ARCH: ${{ matrix.arch }}
+        run: |
+          app=$(find "$OUT/$BRAND" -maxdepth 2 -name '*.app' -type d | head -n 1)
+          [ -n "$app" ] || { echo "no .app found"; exit 1; }
+          echo "app=$app" >> "$GITHUB_OUTPUT"
+          want=$([ "$ARCH" = arm64 ] && echo arm64 || echo x86_64)
+          bad=0
+          echo "--- executables and native modules (expect $want) ---"
+          while IFS= read -r f; do
+            rel="${f#"$app/"}"
+            archs=$(lipo -archs "$f" 2>/dev/null || echo none)
+            echo "$archs  $rel"
+            file -b "$f" | sed 's/^/        /'
+            case " $archs " in *" $want "*) ;; *) bad=1; echo "::error::wrong architecture: $rel ($archs)";; esac
+          done < <(
+            find "$app/Contents/MacOS" -type f
+            find "$app/Contents/Resources/ffmpeg" -type f \( -name ffmpeg -o -name ffprobe \)
+            find "$app/Contents/Resources/app/node_modules" -type f \( -name '*.node' -o -name '*.dylib' \)
+          )
+          echo "--- Info.plist ---"
+          plist="$app/Contents/Info.plist"
+          echo "LSMinimumSystemVersion: $(plutil -extract LSMinimumSystemVersion raw "$plist" 2>/dev/null || echo unset)"
+          echo "URL schemes: $(plutil -extract CFBundleURLTypes json -o - "$plist" 2>/dev/null || echo none)"
+          echo "document types: $(plutil -extract CFBundleDocumentTypes json -o - "$plist" 2>/dev/null || echo none)"
+          echo "--- signature ---"
+          codesign -dv "$app" 2>&1 | grep -E 'Identifier|Signature|Format' || true
+          if codesign --verify --deep --strict "$app"; then echo "codesign verify: ok"; else echo "::warning::codesign verify failed"; fi
+          echo "--- size ---"
+          du -sh "$app" | sed "s|$app|app bundle|"
+          ls -l "$OUT/$BRAND"/*.dmg "$OUT/$BRAND"/*.zip | awk '{print $5, $NF}' | sed "s|$OUT/$BRAND/||"
+          exit $bad
+
+      - name: Smoke test the packaged app
+        working-directory: src
+        env:
+          APP: ${{ steps.inspect.outputs.app }}
+        run: node scripts/smoke-packaged.mjs "$APP" --brand "$BRAND" --shots "$RUNNER_TEMP/shots" --timeout 480
+
+      - name: Collect files
+        if: always()
+        env:
+          OUT: ${{ runner.temp }}/release
+          ARCH: ${{ matrix.arch }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/upload" "$RUNNER_TEMP/screens"
+          cp "$OUT/$BRAND"/*.dmg "$OUT/$BRAND"/*.zip "$RUNNER_TEMP/upload/" 2>/dev/null || true
+          for s in 0-welcome 1-home 6-settings; do cp "$RUNNER_TEMP/shots/$s.png" "$RUNNER_TEMP/screens/$ARCH-$s.png" 2>/dev/null || true; done
+          ls -l "$RUNNER_TEMP/upload" "$RUNNER_TEMP/screens"
+
+      - name: Upload app
+        uses: actions/upload-artifact@v4
+        with:
+          name: OmniCreator-${{ env.EDITION }}-mac-${{ matrix.arch }}
+          path: ${{ runner.temp }}/upload/*
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 14
+
+      - name: Upload smoke screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-screens-mac-${{ matrix.arch }}
+          path: ${{ runner.temp }}/screens/*
+          if-no-files-found: warn
+          retention-days: 14
+
+  release:
+    name: attach to release
+    needs: build
+    if: ${{ inputs.tag != '' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: OmniCreator-*-mac-*
+          path: dist
+          merge-multiple: true
+
+      - name: Upload to release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ inputs.tag }}
+          PRERELEASE: ${{ inputs.prerelease }}
+        run: |
+          cd dist
+          sha256sum *.dmg *.zip > SHA256SUMS-mac.txt
+          cat SHA256SUMS-mac.txt
+          if ! gh release view "$TAG" > /dev/null 2>&1; then
+            flags=(--draft --latest=false --title "$TAG" --notes "macOS builds (unsigned). See SHA256SUMS-mac.txt.")
+            [ "$PRERELEASE" = true ] && flags+=(--prerelease)
+            gh release create "$TAG" "${flags[@]}"
+          fi
+          gh release upload "$TAG" *.dmg *.zip SHA256SUMS-mac.txt --clobber
+          gh release view "$TAG" --json url,isDraft,isPrerelease
