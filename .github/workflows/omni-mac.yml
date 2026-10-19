@@ -52,7 +52,8 @@ jobs:
     timeout-minutes: 120
     steps:
       - name: Runner
-        run: echo "runner: $(uname -m), macOS $(sw_vers -productVersion)"
+        run: |
+          echo "runner: $(uname -m), macOS $(sw_vers -productVersion)"
 
       - name: Check out app source
         uses: actions/checkout@v4
