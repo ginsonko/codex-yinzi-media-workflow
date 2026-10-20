@@ -11,6 +11,7 @@ const { isLatestImageAttempt } = require('./imageAttemptOwnership');
 const { loadConfig } = require('../config');
 const { postJSONWithTimeout } = require('./aiClient');
 const seedance2AssetGuards = require('../utils/seedance2AssetGuards');
+const { usesImageSizePresets, snapImageSize } = require('./imageSizePresets');
 
 /** 图生 POST 使用 Node http(s)，默认 10 分钟，避免 undici fetch 大包体/慢链路下模糊失败 */
 const IMAGE_HTTP_TIMEOUT_MS = 600000;
@@ -1573,7 +1574,8 @@ async function callImageApi(db, log, opts) {
   let effectiveSize = size;
   if (isSeedream && size) effectiveSize = fixSeedreamSize(size);
   else if (isAgnes && size) effectiveSize = fixAgnesImageSize(size);
-  else if (isYinziGptImage && size && !/^gpt-image-2(?:\.5)?$/i.test(model)) effectiveSize = fixOpenAIImageSize(size);
+  else if (usesImageSizePresets(model) && size) effectiveSize = snapImageSize(size, opts.aspect_ratio) || undefined;
+  else if (isYinziGptImage && size) effectiveSize = fixOpenAIImageSize(size);
 
   const body = {
     model,

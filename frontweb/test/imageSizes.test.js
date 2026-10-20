@@ -24,6 +24,14 @@ test('image2 and image2.5 expose exactly the supplied 21 ratio/tier dimensions',
   }
 })
 
+test('smart-image and the site variants of image2.5 use the same presets', () => {
+  for (const model of ['smart-image', 'gpt-image-2.5-flare', 'gpt-image-2.5-sunburst']) {
+    assert.equal(usesImageSizePresets(model), true, model)
+    assert.equal(imageSizeFor(model, '9:16', '2K', '1080x1920'), '1440x2560')
+  }
+  for (const model of ['gpt-image-1', 'gpt-image-1.5', 'nano-banana-pro']) assert.equal(usesImageSizePresets(model), false, model)
+})
+
 test('changing item model, aspect ratio or tier recomputes size without stale inherited dimensions', () => {
   const defaults = { model: 'gpt-image-2', settings: { aspect_ratio: '16:9', image_tier: '2K', size: '' } }
   const item = newManualItem({ prompt: 'test' })

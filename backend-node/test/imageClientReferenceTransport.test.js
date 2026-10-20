@@ -185,6 +185,17 @@ describe('image reference transport copies', () => {
         image_gen_id: 9002, imageServiceType: 'image', storage_local_path: storageRoot,
       });
       assert.equal(receivedBody.size, '3840x2160');
+      // Sizes outside the preset table get no route on the sites; they go out as the nearest preset.
+      await callImageApi(db, log, {
+        prompt: 'square from an aspect ratio', model: 'gpt-image-2', size: '1920x1920',
+        image_gen_id: 9003, imageServiceType: 'image', storage_local_path: storageRoot,
+      });
+      assert.equal(receivedBody.size, '2048x2048');
+      await callImageApi(db, log, {
+        prompt: 'portrait', model: 'gpt-image-2.5', size: '1024x1536',
+        image_gen_id: 9004, imageServiceType: 'image', storage_local_path: storageRoot,
+      });
+      assert.equal(receivedBody.size, '1536x2048');
     } finally {
       if (server) await new Promise((resolve) => server.close(resolve));
       db.close();

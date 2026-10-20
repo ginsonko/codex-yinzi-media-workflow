@@ -10,8 +10,10 @@ export const imageSizePresets = {
 
 export const imageRatios = Object.keys(imageSizePresets)
 export const imageTiers = ['1K', '2K', '4K']
+// The sites route only these sizes for GPT Image 2 / 2.5, their variants and smart-image (backend imageSizePresets.js).
 export function usesImageSizePresets(model) {
-  return /^gpt-image-2(?:\.5)?$/i.test(String(model || '').trim())
+  const m = String(model || '').trim().toLowerCase().split('/').pop()
+  return m === 'smart-image' || /^gpt-image-2(?:\.5)?(?:-[\w.-]+)?$/.test(m)
 }
 export function imageSizeFor(model, ratio, tier, customSize = '') {
   if (!usesImageSizePresets(model)) return String(customSize || '').trim()
