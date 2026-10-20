@@ -26,6 +26,7 @@ const {
   jwtPartLengths,
 } = require('./klingJwt');
 const { identityForConfig, attachSnapshotFields } = require('./productionConfigIdentity');
+const videoDurationSupport = require('./videoDurationSupport');
 
 /**
  * ?? provider ??????????api_protocol ??????????
@@ -3801,6 +3802,11 @@ async function callYinziVideoApi(db, config, log, opts) {
         || data.request_id || data.requestId || data.data?.request_id
         || data.data?.requestId || data.id || null;
       if (detail) message += ' - ' + String(typeof detail === 'string' ? detail : JSON.stringify(detail)).slice(0, 300);
+      const durationHint = videoDurationSupport.durationErrorHint(data);
+      if (durationHint) {
+        message += `（${durationHint}）`;
+        videoDurationSupport.rememberObservedSupport(config, body.model, data);
+      }
     } catch (_) {
       if (raw) message += ' - ' + raw.slice(0, 300);
     }

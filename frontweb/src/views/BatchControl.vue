@@ -34,7 +34,7 @@
           </div>
           <div class="form-row"><div v-if="editorMode !== &quot;manual&quot;"><label class="field-label">生成数量</label><el-input-number v-model="form.count" :min="1" :max="10000" controls-position="right" /><div class="field-note">最多 10,000 项，队列按页显示</div></div><div><label class="field-label">并发数量</label><el-input-number v-model="form.concurrency" :min="1" :precision="0" controls-position="right" @change="saveConcurrency" /><div class="field-note">同时提交多少个请求。填正整数；按模型限流和机器能力决定上限，怕被限流就从 1 开始。</div></div></div>
           <div class="form-row"><div><label class="field-label">默认模型（本项未指定时使用）</label><el-select v-model="form.model" clearable filterable allow-create default-first-option placeholder="使用系统默认，或输入模型名" class="full"><el-option v-for="item in modelOptions" :key="item.value" :label="item.label" :value="item.value" /></el-select><div class="field-note" v-if="!modelOptions.length">正在读取可用模型；读取不到也可以直接输入模型名。</div></div><div><label class="field-label">批次名称</label><el-input v-model="form.title" placeholder="例如：夏季产品图第一批" /></div></div>
-          <div class="advanced-box"><div class="advanced-title">默认参数 <small>每项可单独覆盖</small></div><div class="form-row"><div><label class="field-label">画幅</label><el-select v-model="form.settings.aspect_ratio" class="full"><el-option v-for="ratio in imageRatios" :key="ratio" :label="ratio" :value="ratio" /></el-select></div><div v-if="form.kind === 'video'"><label class="field-label">时长（秒）</label><el-input-number v-model="form.settings.duration" :min="1" controls-position="right" /><div class="field-note">预估费用按这个时长计算</div></div><div v-else-if="defaultImagePreset"><label class="field-label">清晰度档位</label><el-select v-model="form.settings.image_tier" class="full"><el-option v-for="tier in imageTiers" :key="tier" :label="tier" :value="tier" /></el-select><div class="field-note">实际尺寸 {{ defaultImageSize }}</div></div><div v-else-if="form.kind === 'image'"><label class="field-label">自定义尺寸（可选）</label><el-input v-model="form.settings.size" placeholder="例如 1024x1024；留空使用模型默认" /></div></div></div>
+          <div class="advanced-box"><div class="advanced-title">默认参数 <small>每项可单独覆盖</small></div><div class="form-row"><div><label class="field-label">画幅</label><el-select v-model="form.settings.aspect_ratio" class="full"><el-option v-for="ratio in imageRatios" :key="ratio" :label="ratio" :value="ratio" /></el-select></div><div v-if="form.kind === 'video'"><label class="field-label">时长（秒）</label><el-input-number v-model="form.settings.duration" :min="1" controls-position="right" /><div class="field-note">预估费用按这个时长计算；这是单次生成的时长，多数模型只支持 5 / 10 / 15 秒</div><div v-if="durationHint" :class="['field-note', 'duration-hint', { warning: durationHint.warning }]" role="status">{{ durationHint.text }}</div></div><div v-else-if="defaultImagePreset"><label class="field-label">清晰度档位</label><el-select v-model="form.settings.image_tier" class="full"><el-option v-for="tier in imageTiers" :key="tier" :label="tier" :value="tier" /></el-select><div class="field-note">实际尺寸 {{ defaultImageSize }}</div></div><div v-else-if="form.kind === 'image'"><label class="field-label">自定义尺寸（可选）</label><el-input v-model="form.settings.size" placeholder="例如 1024x1024；留空使用模型默认" /></div></div></div>
           <div class="advanced-box"><el-switch v-model="form.adaptive" active-text="逐渐探索合适并发" @change="saveExploration" /><p class="field-note">从 1 开始，整轮成功后递增；同类任务变慢或限流时停止增加。</p><div v-if="form.adaptive" class="form-row"><div><label class="field-label">长尾耗时倍率</label><el-input-number v-model="form.slowdown_ratio" :min="1.1" :step="0.5" /></div><div><label class="field-label">最短观察时间（秒）</label><el-input-number v-model="form.min_observation_seconds" :min="0" :step="10" /></div></div></div>
 
           <div class="advanced-box budget-box">
@@ -83,7 +83,7 @@
               <span class="toolbar-note">当前页 {{ visibleItems.length }} / {{ (activeBatch.items || []).length }} 项 · 本页第 {{ itemPage }} 页</span>
             </div>
 
-            <div v-if="visibleItems.length" class="item-list"><article v-for="item in visibleItems" :key="item.id" :class="['queue-item', item.status]"><div class="item-index">{{ item.ordinal + 1 }}</div><div class="item-main"><strong>{{ item.request && item.request.prompt ? item.request.prompt : '项目 ' + (item.ordinal + 1) }}</strong><small v-if="item.request">{{ referenceSummary(item.request) }}</small><small v-if="item.download_status === 'waiting_provider'">服务端成片尚未就绪，正在恢复取回</small><small v-else-if="item.error_message" :class="['item-error', { review: batchItemNeedsReview(item) }]">{{ item.error_message }}</small><small v-else>{{ itemStatusLabel(item.status) }}<span v-if="item.attempt"> · 第 {{ item.attempt }} 次</span></small><small class="item-id">项目 {{ shortId(item.id) }}<template v-if="attemptHistory(item).length"> · 历史尝试 {{ attemptHistory(item).length }} 次</template></small></div><div class="item-preview"><video v-if="item.kind === 'video' && item.media_url" :src="artifactMediaUrlItem(item)" controls preload="metadata" /><img v-else-if="item.kind === 'image' && item.media_url && !broken.has(item.id)" :src="artifactMediaUrlItem(item)" alt="" @error="markBroken(item.id)" /><span v-else :class="{ broken: broken.has(item.id) }"><el-icon><component :is="item.kind === 'video' ? 'VideoCamera' : 'Picture'" /></el-icon></span></div><div class="item-actions"><el-button v-if="attemptHistory(item).length" link @click="openAttempts(item)">历史尝试</el-button><el-button v-if="batchItemCanRetry(item)" link type="primary" :loading="retrying.has(item.id)" :disabled="retrying.has(item.id)" @click="retry(item)">重新尝试</el-button><span v-else-if="batchItemNeedsReview(item)" class="reconcile-label">先核对</span><a v-if="item.media_url" :href="artifactMediaUrlItem(item)" target="_blank" rel="noreferrer">打开</a></div></article></div>
+            <div v-if="visibleItems.length" class="item-list"><article v-for="item in visibleItems" :key="item.id" :class="['queue-item', item.status]"><div class="item-index">{{ item.ordinal + 1 }}</div><div class="item-main"><strong>{{ item.request && item.request.prompt ? item.request.prompt : '项目 ' + (item.ordinal + 1) }}</strong><small v-if="item.request">{{ referenceSummary(item.request) }}</small><small v-if="item.kind === 'image' && item.request && imageSizeSubmissionNote(item.request.model, item.request.size, item.request.aspect_ratio)">{{ imageSizeSubmissionNote(item.request.model, item.request.size, item.request.aspect_ratio) }}</small><small v-if="item.download_status === 'waiting_provider'">服务端成片尚未就绪，正在恢复取回</small><small v-else-if="item.error_message" :class="['item-error', { review: batchItemNeedsReview(item) }]">{{ item.error_message }}</small><small v-else>{{ itemStatusLabel(item.status) }}<span v-if="item.attempt"> · 第 {{ item.attempt }} 次</span></small><small class="item-id">项目 {{ shortId(item.id) }}<template v-if="attemptHistory(item).length"> · 历史尝试 {{ attemptHistory(item).length }} 次</template></small></div><div class="item-preview"><video v-if="item.kind === 'video' && item.media_url" :src="artifactMediaUrlItem(item)" controls preload="metadata" /><img v-else-if="item.kind === 'image' && item.media_url && !broken.has(item.id)" :src="artifactMediaUrlItem(item)" alt="" @error="markBroken(item.id)" /><span v-else :class="{ broken: broken.has(item.id) }"><el-icon><component :is="item.kind === 'video' ? 'VideoCamera' : 'Picture'" /></el-icon></span></div><div class="item-actions"><el-button v-if="attemptHistory(item).length" link @click="openAttempts(item)">历史尝试</el-button><el-button v-if="batchItemCanRetry(item)" link type="primary" :loading="retrying.has(item.id)" :disabled="retrying.has(item.id)" @click="retry(item)">重新尝试</el-button><span v-else-if="batchItemNeedsReview(item)" class="reconcile-label">先核对</span><a v-if="item.media_url" :href="artifactMediaUrlItem(item)" target="_blank" rel="noreferrer">打开</a></div></article></div>
             <div v-else class="item-empty">本页没有符合「{{ filterLabel(itemFilter) }}」的项目。换成「全部状态」可以看到这一页的全部内容。</div>
             <p class="item-capability-note">服务端目前只支持整批暂停 / 继续和单项重试：单项的暂停、移除、改参数都没有对应的接口，所以这里不提供。要停掉后续提交就按上面的「暂停后续提交」，已经提交到上游的项目会自然收口。</p>
             <el-pagination v-if="activeBatch.items_total > itemPageSize" v-model:current-page="itemPage" :page-size="itemPageSize" :total="activeBatch.items_total" layout="prev, pager, next" class="item-pagination" @current-change="loadItemPage" />
@@ -161,7 +161,8 @@ import { batchItemCanRetry, batchItemNeedsReview, batchSubmission } from '@/util
 import { aiAPI } from '@/api/ai'
 import { advancedSettingsAPI } from '@/api/advancedSettings'
 import { batchModelOptions, batchModelSelection } from '@/utils/batchModels'
-import { imageRatios, imageTiers, imageSizeFor, usesImageSizePresets } from '@/utils/imageSizes'
+import { imageRatios, imageTiers, imageSizeFor, imageSizeSubmissionNote, usesImageSizePresets } from '@/utils/imageSizes'
+import { findDurationInfo, videoDurationHint } from '@/utils/videoDurations'
 import ManualBatchEditor from '@/components/ManualBatchEditor.vue'
 
 const savedConcurrency = Number(localStorage.getItem('yinzi-batch-concurrency') || 8)
@@ -194,6 +195,24 @@ const modelService = computed(() => form.kind === 'video' ? 'video' : 'image')
 const defaultImageModel = computed(() => batchModelSelection(form.model, modelOptions.value, 'image').model)
 const defaultImagePreset = computed(() => usesImageSizePresets(defaultImageModel.value))
 const defaultImageSize = computed(() => imageSizeFor(defaultImageModel.value, form.settings.aspect_ratio, form.settings.image_tier, form.settings.size))
+
+/* ── 时长提示：只读模型能力，不阻止提交；读不到就不显示 ── */
+const durationCapabilities = ref({})
+const defaultVideoSelection = computed(() => form.kind === 'video' ? batchModelSelection(form.model, modelOptions.value, 'video') : {})
+const durationHint = computed(() => {
+  const selection = defaultVideoSelection.value
+  if (form.kind !== 'video' || !selection.video_config_id) return null
+  return videoDurationHint(findDurationInfo(durationCapabilities.value[selection.video_config_id], selection.model), form.settings.duration, selection.model)
+})
+async function loadDurationCapabilities(id) {
+  if (!id || durationCapabilities.value[id]) return
+  durationCapabilities.value = { ...durationCapabilities.value, [id]: [] }
+  try {
+    const result = await aiAPI.getModelCapabilities(id, { suppressGlobalError: true })
+    durationCapabilities.value = { ...durationCapabilities.value, [id]: Array.isArray(result?.models) ? result.models : [] }
+  } catch (_) {}
+}
+watch(() => defaultVideoSelection.value.video_config_id, id => loadDurationCapabilities(id), { immediate: true })
 
 /* ── 队列项的筛选与排序：只作用于当前这一页（服务端按页返回） ── */
 const itemStatusRank = { running: 0, processing: 1, submitting: 2, queued: 3, needs_review: 4, failed: 5, paused: 6, completed: 7 }
@@ -433,6 +452,8 @@ useWorkbenchPage({ refresh: refresh, error: () => error.value, loading: () => lo
 .estimate-value.unknown{color:var(--text-subtle)}
 .cap-warning{margin:0 0 12px;padding:9px 11px;border:1px solid var(--ui-warning);color:var(--ui-warning);font-size:12px;line-height:1.55}
 .cap-warning-inline{color:var(--ui-warning)}
+.duration-hint{margin-top:4px}
+.duration-hint.warning{color:var(--ui-warning)}
 .setup-panel>.el-button{width:100%;height:44px}
 .submit-note{margin:8px 0 0;text-align:center}
 .inline-error{color:var(--ui-danger);font-size:12px}

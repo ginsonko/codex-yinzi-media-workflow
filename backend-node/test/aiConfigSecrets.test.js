@@ -516,6 +516,7 @@ describe('AI config secret boundaries', () => {
     routes.modelCapabilities({ params: { id: String(created.id) } }, listResponse);
     assert.equal(JSON.stringify(listResponse.body).includes('route-secret'), false);
     assert.equal(listResponse.body.data.models[0].override.duration_min, 5);
+    assert.deepEqual(listResponse.body.data.models[0].duration_info, { kind: 'model', duration_min: 5, duration_max: 15, source: listResponse.body.data.models[0].source });
   });
 
   it('creates the image.yinzi three-key profile through the public setup route without leaking credentials', async () => {

@@ -10,8 +10,10 @@ export const aiAPI = {
   get(id) {
     return request.get(`/ai-configs/${id}`)
   },
-  getModelCapabilities(id) {
-    return request.get(`/ai-configs/${id}/model-capabilities`)
+  getModelCapabilities(id, options = {}) {
+    return request.get(`/ai-configs/${id}/model-capabilities`, {
+      suppressGlobalError: options.suppressGlobalError === true,
+    })
   },
   updateModelCapabilities(id, body) {
     return request.put(`/ai-configs/${id}/model-capabilities`, body)

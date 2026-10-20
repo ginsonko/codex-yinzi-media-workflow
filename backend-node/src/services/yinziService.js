@@ -4,6 +4,7 @@ const { resolveYinziVideoPrices } = require('./yinziVideoDefaults');
 const { selectShotVideoRoute } = require('./productionVideoRouter');
 const crypto = require('node:crypto');
 const { resolveDistributionProfile, getDistributionProfile } = require('./distributionProfiles');
+const { normalizeDurationSupport } = require('./videoDurationSupport');
 
 const YINZI_CATALOG_URL = 'https://yinziapi.top/api/pricing';
 const YINZI_DEFAULT_BASE_URL = 'https://api.yinziapi.top/v1';
@@ -296,6 +297,10 @@ function normalizeCapabilityProfile(contract, entry = {}) {
   setKnown(profile, 'duration_max', firstFiniteNumber(duration.max, duration.max_seconds, contract.duration_max));
   setKnown(profile, 'duration_step', firstFiniteNumber(duration.step, duration.step_seconds, contract.duration_step));
   setKnown(profile, 'fixed_duration_seconds', firstFiniteNumber(duration.fixed, duration.fixed_seconds, contract.fixed_duration_seconds));
+  // The smart-video virtual model publishes how many routes serve each duration.
+  const durationSupport = normalizeDurationSupport(duration.duration_support ?? duration.support ?? contract.duration_support ?? entry.duration_support);
+  if (durationSupport.length) profile.duration_support = durationSupport;
+  setKnown(profile, 'recommended_duration', firstFiniteNumber(duration.recommended_duration, duration.recommended, contract.recommended_duration, entry.recommended_duration));
   setKnown(profile, 'max_images', firstFiniteNumber(images.max, referenceLimits.images, references.max_images, contract.max_images));
   setKnown(profile, 'max_videos', firstFiniteNumber(videos.max, referenceLimits.videos, references.max_videos, contract.max_videos));
   setKnown(profile, 'max_audios', firstFiniteNumber(audios.max, referenceLimits.audios, references.max_audios, contract.max_audios));

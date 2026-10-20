@@ -122,28 +122,49 @@ function bulkUpdateKey(db, log, cfg) {
 }
 
 function modelCapabilities(db) {
-  return (req, res) => {
-    const id = parseInt(req.params.id, 10);
-    if (isNaN(id)) return response.badRequest(res, '无效的配置ID');
-    const config = aiConfigService.getConfig(db, id);
-    if (!config) return response.notFound(res, '配置不存在');
-    response.success(res, {
-      config_id: id,
-      service_type: config.service_type,
-      models: aiConfigService.modelCapabilityStates(config).map((state) => {
-        if (config.service_type !== 'video') return state;
-        const videoClient = require('../services/videoClient');
-        const protocol = videoClient.resolveVideoProtocol(config, state.model);
-        if (protocol !== 'yinzi') return { ...state, protocol };
-        // Display the same credential-scoped catalog/override contract that a
-        // new generation snapshots, instead of showing only the builtin table.
-        const resolved = videoClient.resolveYinziCapabilityContext(config, state.model);
-        return { ...state, protocol, capability: resolved.capability,
-          source: resolved.capability_source, contract_status: resolved.contract_status,
-          automatic_eligible: resolved.capability?.automatic_eligible === true };
-      }),
-    });
+  return (req, res, next) => {
+    try {
+      const pending = sendModelCapabilities(db, req, res);
+      if (pending && typeof pending.catch === 'function') pending.catch((error) => (next ? next(error) : response.internalError(res, '读取模型能力失败')));
+    } catch (error) {
+      if (next) next(error); else throw error;
+    }
   };
+}
+
+// Answers synchronously unless a smart-video model needs the (cached) site
+// lookup, so configs without smart-video keep the original immediate reply.
+function sendModelCapabilities(db, req, res) {
+  const id = parseInt(req.params.id, 10);
+  if (isNaN(id)) return response.badRequest(res, '无效的配置ID');
+  const config = aiConfigService.getConfig(db, id);
+  if (!config) return response.notFound(res, '配置不存在');
+  const models = aiConfigService.modelCapabilityStates(config).map((state) => {
+    if (config.service_type !== 'video') return state;
+    const videoClient = require('../services/videoClient');
+    const protocol = videoClient.resolveVideoProtocol(config, state.model);
+    if (protocol !== 'yinzi') return { ...state, protocol };
+    // Display the same credential-scoped catalog/override contract that a
+    // new generation snapshots, instead of showing only the builtin table.
+    const resolved = videoClient.resolveYinziCapabilityContext(config, state.model);
+    return { ...state, protocol, capability: resolved.capability,
+      source: resolved.capability_source, contract_status: resolved.contract_status,
+      automatic_eligible: resolved.capability?.automatic_eligible === true };
+  });
+  const send = () => response.success(res, { config_id: id, service_type: config.service_type, models });
+  if (config.service_type !== 'video') return send();
+  const durations = require('../services/videoDurationSupport');
+  const pending = [];
+  for (const state of models) {
+    if (durations.isSmartVideoModel(state.model)) {
+      pending.push(durations.modelDurationInfo(config, state.model)
+        .then((info) => { state.duration_info = info; }, () => { state.duration_info = null; }));
+    } else {
+      try { state.duration_info = durations.concreteDurationInfo(config, state.model); } catch (_) { state.duration_info = null; }
+    }
+  }
+  if (!pending.length) return send();
+  return Promise.all(pending).then(send);
 }
 
 function updateModelCapabilities(db, log) {
