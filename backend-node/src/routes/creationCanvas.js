@@ -3,6 +3,7 @@ const express = require('express');
 const { createCanvasService } = require('../services/creationCanvas/service');
 const { createCanvasAgent } = require('../services/creationCanvas/agent');
 const { inspectMedia } = require('../services/creationCanvas/analysis');
+const { extractFrame } = require('../services/creationCanvas/frameExtract');
 const { localRequest } = require('./researchPlatformSessions');
 
 module.exports = function routes(db, cfg, log, mediaBatch, injected = {}) {
@@ -32,6 +33,7 @@ module.exports = function routes(db, cfg, log, mediaBatch, injected = {}) {
   router.get('/:id/runs/:runId', handle(req => agent.get(req.params.id, req.params.runId)));
   router.post('/:id/runs/:runId/stop', handle(req => agent.stop(req.params.id, req.params.runId, req.body.pause_jobs !== false)));
   router.post('/:id/nodes/:nodeId/inspect', handle(req => inspectMedia(service, req.params.id, req.params.nodeId)));
+  router.post('/:id/nodes/:nodeId/extract-frame', handle(req => extractFrame(service, req.params.id, req.params.nodeId, req.body || {})));
   router.get('/:id/nodes/:nodeId/media', (req, res) => {
     try { res.sendFile(service.mediaFile(req.params.id, req.params.nodeId).path); }
     catch (error) { res.status(error.status || 400).json({ success: false, error: { message: error.message } }); }

@@ -19,6 +19,7 @@ const canvasTools = [
   tool('list_research', '列出已有视频研究任务。', object()),
   tool('import_research', '把已有研究报告和来源加入文本节点。最多100条，返回 next_offset；元数据不等于实际观片。', object({ job_id: string, revision: { type: 'integer' } }, ['job_id'])),
   tool('inspect_media', '读取节点本地素材：图像尺寸并查看图片；视频做现有镜头分析并查看接触表；音频做节拍分析。不是整片逐帧视觉审查。', object({ node_id: string }, ['node_id'])),
+  tool('extract_frame', '把已完成视频节点的首帧或尾帧用本地FFmpeg提取成图片节点（不重新生成、不扣费）。用于镜头衔接：提取后把新图片节点connect到下一镜头（first_frame/reference）。同一节点同一位置重复提取会更新同一个图片节点。', object({ node_id: string, position: { enum: ['first', 'last'], description: '默认 last' } }, ['node_id'])),
   tool('export_video', '按 node_ids 顺序将已有视频合成真实MP4，统一画幅。使用完整合成，不以首段替代成片。', object({ node_ids: strings, title: string, aspect_ratio: string }, ['node_ids'])),
 ];
 const SYSTEM = `你是银子媒体工作流的专用画布创作助手。用户和宿主Agent都在同一画布工作。用中文清楚交流，创作内容保留用户指定语言。
@@ -29,6 +30,7 @@ const SYSTEM = `你是银子媒体工作流的专用画布创作助手。用户�
 异步生成由后台持续查询并下载，文字回复结束不影响任务。read_canvas或wait_job能查询原任务；steps.delivery.generation_status=completed表示上游成功，download_status和message说明下载进度。后台会把完成结果与本地入口作为media_delivery事件写入对话。不要声称无法查询或需要用户反复催问。下载失败时说明原文件自动恢复，不把它说成生成失败，不自行重生成。后台完成通知只证明文件可用；要评价质量仍须inspect_media。
 有参考素材的创作先在同一次edit_canvas中建立目标节点、设置模型参数并connect参考连线；收到编辑成功回执后再生成目标节点。不要先generate_nodes后connect，已提交任务不会追随后续画布修改。读生成回执的steps.inputs确认参考来源；已有图片仅作参考时只生成下游视频，避免意外重新生图。wait_job使用seconds参数，后台仍在生成时如实说明，文字助手中断不代表生成任务失败。
 视频时长：节点duration是单次生成的时长，通常只能是5/10/15秒，以list_models的video_durations为准；用户说的成片总时长（如60秒、90秒）不是单个节点的时长。较长成片拆成多个镜头节点，每个镜头取模型支持的时长，生成后用export_video按顺序合成。generate_nodes返回VIDEO_DURATION_UNSUPPORTED，或生成失败信息带有可用时长/建议时长时，按建议用edit_canvas改duration后重新生成一次，并向用户说明原因；仍失败就停下说明。
+多镜头漫剧/短剧按镜头顺序线性推进：剧本和要求放文本节点；在真实切镜点拆分镜，每镜一个视频节点，提示词写清这一镜的前因后果、主体动作、运镜和结束状态，聚焦本镜、不过度约束模型。先备好角色/场景参考图并connect。镜头逐个生成：前一镜生成后wait_job并inspect_media审核，合格后用extract_frame取其尾帧connect为下一镜的first_frame（模型不支持严格首帧时自动降级为普通参考图），或把合格视频节点connect为reference让下一镜参考其动作与空间；不要并行铺开全部镜头，不要提前锁死构图未定的后续镜头。审核不合格就针对问题改提示词重生成该镜，同一镜头最多重做3次，仍不合格停下向用户说明原因。用户没点名视频模型时，漫剧优先选画质更高的模型而不是最便宜的。全部镜头合格后export_video按顺序合成；需要精剪（转场、字幕、配乐）时告诉用户可由宿主Agent在装有After Effects时用AE、否则用剪映草稿继续。
 可持续推进用户任务，用户随时能停止或发送纠正；停止后未提交的生成暂停。不要擅自切换供应商。最终给出完成节点、任务和可查看成果；待处理问题具体写清。`;
 
 async function completion(config, request, signal, timeoutMs) {
@@ -139,6 +141,7 @@ function createCanvasAgent(service, injected = {}) {
     if (name === 'list_research') return { items: require('../productResearchJobs').createResearchJobs().list() };
     if (name === 'import_research') return service.importResearch(id, body);
     if (name === 'inspect_media') return inspectMedia(service, id, input.node_id);
+    if (name === 'extract_frame') return require('./frameExtract').extractFrame(service, id, input.node_id, body);
     if (name === 'export_video') return service.exportVideo(id, body);
     if (name === 'wait_job') {
       const deadline = Date.now() + Math.min(120, Math.max(1, Number(input.seconds) || 30)) * 1000;

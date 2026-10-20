@@ -3,9 +3,9 @@ export const canvasTools = [{
   name: 'creation_canvas',
   description: '无限画布与独立创作Agent。宿主可创建/读取/修改画布、选择已保存的文本配置、发消息/纠正/停止、检查真实任务和成片；手动界面为 /create-canvas/:id。generation及消息请求要request_id：网络恢复复用原值，用户显式再生成用新值。配置Key使用已有模型配置入口，不写进画布。',
   inputSchema: { type: 'object', required: ['action'], properties: {
-    action: { enum: ['list','create','get','configure','tools','models','operations','generate','messages','send','run','stop','job','pause_job','resume_job','cancel_job','import_assets','import_research','inspect','export_video','export'] },
+    action: { enum: ['list','create','get','configure','tools','models','operations','generate','messages','send','run','stop','job','pause_job','resume_job','cancel_job','import_assets','import_research','inspect','extract_frame','export_video','export'] },
     canvas_id: { type: 'string' }, run_id: { type: 'string' }, job_id: { type: 'string' }, node_id: { type: 'string' },
-    input: { type: 'object', description: 'create:{title}；configure:{title?,agent:{config_id,model,mode:tools/json_actions,instructions?,max_turns?,timeout_ms?}}；send:{request_id,message,selected_node_ids?}；messages:{after?,limit?}；operations:{request_id,operations:[{type:add_node/update_node/move_node/delete_node/connect/disconnect/select_attempt,...}]}，update/delete/select_attempt须expected_version。generate:{request_id,node_ids}；import_assets:{request_id,asset_ids}；import_research:{request_id,job_id,revision?}；export_video:{request_id,node_ids(按顺序),title?,aspect_ratio?}。tools读取专用Agent领域工具详细合同。' }
+    input: { type: 'object', description: 'create:{title}；configure:{title?,agent:{config_id,model,mode:tools/json_actions,instructions?,max_turns?,timeout_ms?}}；send:{request_id,message,selected_node_ids?}；messages:{after?,limit?}；operations:{request_id,operations:[{type:add_node/update_node/move_node/delete_node/connect/disconnect/select_attempt,...}]}，update/delete/select_attempt须expected_version。generate:{request_id,node_ids}；import_assets:{request_id,asset_ids}；import_research:{request_id,job_id,revision?}；export_video:{request_id,node_ids(按顺序),title?,aspect_ratio?}；extract_frame:{request_id,node_id,position?:first/last(默认last)}把已完成视频节点的首/尾帧提取成图片节点，connect给下一镜头作首帧或参考，实现镜头衔接。tools读取专用Agent领域工具详细合同。' }
   } }
 }]
 export function canvasRequest(args = {}) {
@@ -33,6 +33,10 @@ export function canvasRequest(args = {}) {
   if (args.action === 'inspect') {
     if (!args.node_id) throw Error('需要 node_id')
     return ['POST', `${canvas}/nodes/${e(args.node_id)}/inspect`, input]
+  }
+  if (args.action === 'extract_frame') {
+    if (!args.node_id) throw Error('需要 node_id')
+    return ['POST', `${canvas}/nodes/${e(args.node_id)}/extract-frame`, input]
   }
   if (!routes[args.action]) throw Error('不支持的画布操作')
   return routes[args.action]
