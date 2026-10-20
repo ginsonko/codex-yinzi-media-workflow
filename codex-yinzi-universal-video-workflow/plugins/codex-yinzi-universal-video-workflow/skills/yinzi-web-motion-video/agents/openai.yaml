@@ -1,0 +1,6 @@
+interface:
+  display_name: "银子 · 代码渲染视频"
+  short_description: "用前端代码逐帧渲染科普、讲解、数据可视化、片头字幕和抽象电影感视频，无需视频生成模型"
+  default_prompt: "请使用 $yinzi-web-motion-video，先写脚本和时间轴，再做逐帧渲染的网页动画，预览关键帧后输出成片。"
+policy:
+  allow_implicit_invocation: true

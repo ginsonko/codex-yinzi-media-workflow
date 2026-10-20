@@ -1,0 +1,6 @@
+interface:
+  display_name: "银子 · 穿帮修复（实验）"
+  short_description: "修复基本可用视频里的小穿帮：乱码招牌海报、错位物件、短暂闪烁，先判断修复还是重生成"
+  default_prompt: "请使用 $yinzi-frame-repair，先判断这段视频的问题适合修复还是重新生成，给出预计用时，再按快速档修复并对比修复前后。"
+policy:
+  allow_implicit_invocation: true

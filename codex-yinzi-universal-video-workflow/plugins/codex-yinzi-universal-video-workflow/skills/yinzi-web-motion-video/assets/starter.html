@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>Deterministic motion starter</title>
+<style>
+  html, body { margin: 0; width: 1920px; height: 1080px; overflow: hidden; background: #05080a; }
+  canvas { position: absolute; inset: 0; }
+  /* No CSS animations or transitions: every visual state is set by renderFrame(t). */
+  #title { position: absolute; left: 0; width: 1920px; top: 420px; text-align: center; color: #eafff6;
+    font: 700 120px "Microsoft YaHei", "Noto Sans SC", sans-serif; letter-spacing: 24px; opacity: 0; }
+  #sub { position: absolute; left: 160px; width: 1600px; bottom: 60px; text-align: center; color: #f5fbf9;
+    font: 500 40px "Microsoft YaHei", "Noto Sans SC", sans-serif; text-shadow: 0 2px 6px #000; opacity: 0; }
+</style>
+</head>
+<body>
+<canvas id="c" width="1920" height="1080"></canvas>
+<div id="title">波与谷</div>
+<div id="sub"></div>
+<script>
+'use strict';
+const W = 1920, H = 1080, ctx = document.getElementById('c').getContext('2d');
+const title = document.getElementById('title'), sub = document.getElementById('sub');
+const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
+const ease = (x) => { x = clamp(x); return x * x * (3 - 2 * x); };
+const prog = (t, start, dur) => ease((t - start) / dur);
+// Seeded PRNG: grain and particles must be identical for the same frame on every render.
+function rng(seed) { return () => { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let x = Math.imul(seed ^ seed >>> 15, 1 | seed); x = x + Math.imul(x ^ x >>> 7, 61 | x) ^ x; return ((x ^ x >>> 14) >>> 0) / 4294967296; }; }
+
+// One timeline drives picture, captions and (outside the page) the soundtrack.
+const TIMELINE = [
+  { start: 0.4, end: 3.2, text: '每一种振动，都有波峰，也有波谷' },
+  { start: 3.6, end: 5.8, text: 'Every vibration has a crest and a trough' },
+];
+
+window.renderFrame = function (t) {
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.globalCompositeOperation = 'source-over';
+  ctx.fillStyle = '#05080a'; ctx.fillRect(0, 0, W, H);
+
+  ctx.globalCompositeOperation = 'lighter';
+  const amp = 160 * prog(t, 0.2, 1.6);
+  for (let k = 0; k < 3; k++) {
+    ctx.beginPath();
+    for (let x = 0; x <= W; x += 4) {
+      const y = H / 2 + amp * Math.sin(x / 180 - t * 2.2 + k * 2.1) * Math.exp(-((x - W / 2) ** 2) / 9e5);
+      x === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+    }
+    ctx.strokeStyle = ['rgba(61,255,160,.9)', 'rgba(85,216,255,.7)', 'rgba(255,191,77,.6)'][k];
+    ctx.lineWidth = 3; ctx.shadowBlur = 24; ctx.shadowColor = ctx.strokeStyle;
+    ctx.stroke();
+  }
+  ctx.shadowBlur = 0;
+
+  ctx.globalCompositeOperation = 'source-over';
+  const r = rng(Math.floor(t * 30) * 31 + 7);
+  ctx.fillStyle = 'rgba(255,255,255,.035)';
+  for (let i = 0; i < 1400; i++) ctx.fillRect(r() * W, r() * H, 2, 2);
+
+  title.style.opacity = (prog(t, 1.0, 1.2) * (1 - prog(t, 4.6, 0.8))).toFixed(3);
+  title.style.transform = `scale(${(1.06 - 0.06 * prog(t, 1.0, 2.5)).toFixed(4)})`;
+  const line = TIMELINE.find((l) => t >= l.start && t < l.end + 0.3);
+  if (line) {
+    if (sub.textContent !== line.text) sub.textContent = line.text;
+    sub.style.opacity = Math.min(prog(t, line.start, 0.2), 1 - prog(t, line.end, 0.3)).toFixed(3);
+  } else sub.style.opacity = 0;
+};
+
+window.ready = document.fonts.ready.then(() => { window.renderFrame(0); return true; });
+
+// Opening the file directly in a browser plays a preview; the renderer never uses this path.
+if (location.search.includes('play')) {
+  const t0 = performance.now();
+  const loop = () => { window.renderFrame((performance.now() - t0) / 1000); requestAnimationFrame(loop); };
+  loop();
+}
+</script>
+</body>
+</html>
