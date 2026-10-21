@@ -13,8 +13,8 @@ export const promptsAPI = {
 }
 
 export const generationSettingsAPI = {
-  get() {
-    return request.get('/settings/generation')
+  get(config = {}) {
+    return request.get('/settings/generation', config)
   },
   update(data) {
     return request.put('/settings/generation', data)

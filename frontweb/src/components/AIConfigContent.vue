@@ -2885,9 +2885,10 @@ async function loadYinziCatalog() {
       image: Array.isArray(catalog?.image) ? catalog.image : [],
       video: Array.isArray(catalog?.video) ? catalog.video : [],
     }
+    if (catalog?.warning) yinziCatalogWarning.value = catalog.warning
     applyYinziCatalogDefaults()
   } catch (error) {
-    yinziCatalogError.value = '目录加载失败，可直接输入模型名'
+    yinziCatalogError.value = `目录加载失败${error?.message ? `（${error.message}）` : ''}，可直接输入模型名`
   } finally {
     oneKeyYinziCatalogLoading.value = false
   }

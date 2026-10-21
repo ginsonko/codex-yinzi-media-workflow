@@ -51,8 +51,9 @@ export const aiAPI = {
   bulkUpdateKey(apiKey) {
     return request.put('/ai-configs/bulk-update-key', { api_key: apiKey })
   },
-  getYinziCatalog() {
-    return request.get('/ai-configs/yinzi/catalog')
+  // Every caller treats the public catalog as optional and shows its own message; no global error toast.
+  getYinziCatalog(config = {}) {
+    return request.get('/ai-configs/yinzi/catalog', { suppressGlobalError: true, ...config })
   },
   getDistributionProfile(profile) {
     return request.get('/ai-configs/distribution-profile', {

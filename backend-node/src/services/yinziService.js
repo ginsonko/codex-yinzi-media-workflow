@@ -3,6 +3,9 @@ const { getYinziVideoCapability } = require('./yinziVideoCapabilities');
 const { resolveYinziVideoPrices } = require('./yinziVideoDefaults');
 const { selectShotVideoRoute } = require('./productionVideoRouter');
 const crypto = require('node:crypto');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
 const { resolveDistributionProfile, getDistributionProfile } = require('./distributionProfiles');
 const { normalizeDurationSupport } = require('./videoDurationSupport');
 
@@ -192,9 +195,32 @@ function normalizeYinziCatalog(payload) {
   };
 }
 
+/** Node's bare "fetch failed" says nothing; the cause code tells DNS, refused, timeout and certificate apart. */
+function explainCatalogError(error) {
+  if (error?.name === 'AbortError') return '连接 yinziapi.top 超时，请检查网络';
+  const code = String(error?.cause?.code || error?.code || '');
+  const host = 'yinziapi.top';
+  if (/ENOTFOUND|EAI_AGAIN/.test(code)) return `找不到 ${host}（域名解析失败），请检查网络`;
+  if (/ETIMEDOUT|CONNECT_TIMEOUT|HEADERS_TIMEOUT/.test(code)) return `连接 ${host} 超时，请检查网络或代理`;
+  if (/ECONNREFUSED|ECONNRESET|UND_ERR_SOCKET|EPIPE/.test(code)) return `连接 ${host} 被中断，请检查网络或代理`;
+  if (/CERT|SELF_SIGNED|UNABLE_TO_VERIFY/.test(code)) return `${host} 的证书校验失败，可能被代理或安全软件拦截`;
+  if (/^fetch failed$/i.test(String(error?.message || ''))) return `连不上 ${host}${code ? `（${code}）` : ''}，请检查网络`;
+  return error?.message || '模型目录加载失败';
+}
+
+function defaultCatalogFile() {
+  const root = process.env.YINZI_WORKFLOW_RUNTIME_DIR || path.join(os.homedir(), '.yinzi-media');
+  return path.join(root, 'cache', 'yinzi-catalog.json');
+}
+
+/**
+ * Public price catalog. A failed request falls back to the last catalog that loaded (memory, then disk), marked
+ * stale, so pages that only show prices keep working offline.
+ */
 async function fetchYinziCatalog(fetchImpl = fetch, options = {}) {
   const now = Date.now();
   const useCache = options.use_cache !== false && fetchImpl === fetch;
+  const cacheFile = options.cache_file || (useCache ? defaultCatalogFile() : '');
   if (useCache && catalogCache && now - catalogCache.cachedAt < CATALOG_TTL_MS) {
     return catalogCache.value;
   }
@@ -209,10 +235,30 @@ async function fetchYinziCatalog(fetchImpl = fetch, options = {}) {
     if (!res.ok) throw new Error(`模型目录请求失败: HTTP ${res.status}`);
     const normalized = normalizeYinziCatalog(await res.json());
     if (useCache) catalogCache = { cachedAt: now, value: normalized };
+    if (cacheFile) {
+      try {
+        fs.mkdirSync(path.dirname(cacheFile), { recursive: true });
+        fs.writeFileSync(cacheFile, JSON.stringify({ saved_at: new Date(now).toISOString(), value: normalized }));
+      } catch (_) {
+        /* the cache is only a fallback */
+      }
+    }
     return normalized;
   } catch (error) {
-    if (error?.name === 'AbortError') throw new Error('模型目录请求超时');
-    throw error;
+    const reason = explainCatalogError(error);
+    let last = useCache && catalogCache ? { saved_at: new Date(catalogCache.cachedAt).toISOString(), value: catalogCache.value } : null;
+    if (!last && cacheFile) {
+      try {
+        last = JSON.parse(fs.readFileSync(cacheFile, 'utf8'));
+      } catch (_) {
+        last = null;
+      }
+    }
+    if (last?.value) {
+      const when = String(last.saved_at || '').replace('T', ' ').slice(0, 16);
+      return { ...last.value, stale: true, stale_since: last.saved_at || null, warning: `${reason}；先显示 ${when} 获取的目录` };
+    }
+    throw new Error(reason);
   } finally {
     clearTimeout(timeout);
   }

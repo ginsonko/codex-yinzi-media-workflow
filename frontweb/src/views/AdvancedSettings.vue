@@ -449,7 +449,7 @@ async function loadAll() {
   loading.value = true
   try {
     const [summaryResult, promptResult, priceResult, budgetResult, automationResult, backupResult, catalogResult, generationResult] = await Promise.all([
-      advancedSettingsAPI.summary(), advancedSettingsAPI.listPrompts(), advancedSettingsAPI.listPrices(), advancedSettingsAPI.getBudgetDefaults(), advancedSettingsAPI.getAutomationPreferences(), advancedSettingsAPI.listBackups({ page: 1, page_size: 30 }), aiAPI.getYinziCatalog().catch(() => null), generationSettingsAPI.get().catch(() => null),
+      advancedSettingsAPI.summary(), advancedSettingsAPI.listPrompts(), advancedSettingsAPI.listPrices(), advancedSettingsAPI.getBudgetDefaults(), advancedSettingsAPI.getAutomationPreferences(), advancedSettingsAPI.listBackups({ page: 1, page_size: 30 }), aiAPI.getYinziCatalog().catch(() => null), generationSettingsAPI.get({ suppressGlobalError: true }).catch(() => null),
     ])
     Object.assign(summary, summaryResult || {})
     prompts.value = promptResult?.prompts || []

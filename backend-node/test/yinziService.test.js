@@ -595,3 +595,28 @@ describe('upsertYinziConfigs', () => {
     assert.equal(db.prepare("SELECT api_key FROM ai_service_configs WHERE service_type='video' AND deleted_at IS NULL").get().api_key, 'new-video-key');
   });
 });
+describe('fetchYinziCatalog offline fallback', () => {
+  const fs = require('node:fs');
+  const os = require('node:os');
+  const path = require('node:path');
+  const { fetchYinziCatalog } = require('../src/services/yinziService');
+  const offline = (code) => async () => { throw Object.assign(new TypeError('fetch failed'), { cause: { code } }); };
+
+  it('serves the last catalog that loaded, marked stale, with a readable reason', async () => {
+    const cacheFile = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'yinzi-catalog-')), 'cache', 'catalog.json');
+    const ok = async () => ({ ok: true, status: 200, json: async () => ({ data: [] }) });
+    const fresh = await fetchYinziCatalog(ok, { cache_file: cacheFile });
+    assert.equal(fresh.stale, undefined);
+    const stale = await fetchYinziCatalog(offline('ENOTFOUND'), { cache_file: cacheFile });
+    assert.equal(stale.stale, true);
+    assert.deepEqual(stale.video, []);
+    assert.match(stale.warning, /域名解析失败.*先显示 \d{4}-\d\d-\d\d \d\d:\d\d 获取的目录/);
+  });
+
+  it('without any earlier catalog it fails with the reason instead of "fetch failed"', async () => {
+    const cacheFile = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'yinzi-catalog-')), 'none.json');
+    await assert.rejects(fetchYinziCatalog(offline('ECONNRESET'), { cache_file: cacheFile }), /连接 yinziapi\.top 被中断/);
+    await assert.rejects(fetchYinziCatalog(offline('UNABLE_TO_VERIFY_LEAF_SIGNATURE'), { cache_file: cacheFile }), /证书校验失败/);
+    await assert.rejects(fetchYinziCatalog(offline(''), { cache_file: cacheFile }), /连不上 yinziapi\.top，请检查网络/);
+  });
+});
