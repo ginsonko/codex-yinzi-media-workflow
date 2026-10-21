@@ -958,6 +958,81 @@ describe('YinziAPI asynchronous lifecycle', () => {
     }
   });
 
+  it('resubmits once with frames as references when smart-video rejects the first_frame role', async () => {
+    const originalFetch = global.fetch;
+    const bodies = [];
+    const states = [];
+    const skipped = Array.from({ length: 14 }, (_, i) => `候选模型 ${i}：duration 4 is not supported`).join('；');
+    global.fetch = async (_url, init) => {
+      bodies.push(JSON.parse(init.body));
+      if (bodies.length === 1) {
+        return new Response(JSON.stringify({ error: {
+          code: 'model_price_error', type: 'new_api_error',
+          message: `智能视频没有符合偏好的模型（${skipped}；Seedance 2.0 mini：reference role "first_frame" is forbidden by this route）`,
+        } }), { status: 400, headers: { 'Content-Type': 'application/json' } });
+      }
+      return new Response(JSON.stringify({ id: 'task-smart-frames', status: 'queued' }), {
+        status: 200, headers: { 'Content-Type': 'application/json' },
+      });
+    };
+    try {
+      const result = await callYinziVideoApi(null, {
+        base_url: 'https://api.yinziapi.top/v1', api_key: 'not-a-real-key', endpoint: '/videos',
+      }, log, {
+        model: 'smart-video', prompt: '镜头缓慢推进', duration: 5,
+        first_frame_url: 'https://media.test/first.png',
+        video_gen_id: 41,
+        on_submission_state: (state) => states.push(state.status),
+      });
+      assert.equal(bodies.length, 2);
+      assert.deepEqual(bodies[0].references.map((item) => item.role), ['first_frame']);
+      assert.deepEqual(bodies[1].references.map((item) => [item.role, item.url]), [['reference', 'https://media.test/first.png']]);
+      assert.match(bodies[1].prompt, /开场画面以 第 1 张参考图 为参考。/);
+      assert.equal(result.task_id, 'task-smart-frames');
+      assert.equal(result.submission_status, 'accepted');
+      assert.equal(result.frame_role_fallback.role, 'first_frame');
+      assert.equal(result.frame_role_fallback.first_attempt.status, 'rejected');
+      assert.ok(result.contract_validation.warnings.includes('frame_roles_sent_as_references'));
+      assert.deepEqual(states, ['ambiguous', 'rejected', 'ambiguous', 'accepted']);
+    } finally {
+      global.fetch = originalFetch;
+    }
+  });
+
+  it('does not resubmit for unrelated rejections or a second frame-role rejection', async () => {
+    const originalFetch = global.fetch;
+    let calls = 0;
+    global.fetch = async () => {
+      calls += 1;
+      return new Response(JSON.stringify({ error: { message: 'reference role "first_frame" is forbidden by this route' } }), {
+        status: 400, headers: { 'Content-Type': 'application/json' },
+      });
+    };
+    try {
+      const result = await callYinziVideoApi(null, {
+        base_url: 'https://api.yinziapi.top/v1', api_key: 'not-a-real-key', endpoint: '/videos',
+      }, log, { model: 'smart-video', prompt: 'p', duration: 5, first_frame_url: 'https://media.test/first.png', video_gen_id: 42 });
+      assert.equal(calls, 2);
+      assert.equal(result.submission_status, 'rejected');
+
+      calls = 0;
+      global.fetch = async () => {
+        calls += 1;
+        return new Response(JSON.stringify({ error: { message: 'prompt rejected by moderation' } }), {
+          status: 400, headers: { 'Content-Type': 'application/json' },
+        });
+      };
+      const other = await callYinziVideoApi(null, {
+        base_url: 'https://api.yinziapi.top/v1', api_key: 'not-a-real-key', endpoint: '/videos',
+      }, log, { model: 'smart-video', prompt: 'p', duration: 5, first_frame_url: 'https://media.test/first.png', video_gen_id: 43 });
+      assert.equal(calls, 1);
+      assert.equal(other.submission_status, 'rejected');
+      assert.equal(other.frame_role_fallback, undefined);
+    } finally {
+      global.fetch = originalFetch;
+    }
+  });
+
   it('forwards typed references through the production Yinzi dispatcher', async () => {
     const db = new Database(':memory:');
     const originalLog = console.log;

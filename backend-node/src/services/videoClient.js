@@ -3462,7 +3462,51 @@ async function resolveYinziReferenceSource(config, raw, type, capability, opts, 
   );
 }
 
+// The gateway names the forbidden role in its pre-create rejection, e.g.
+// smart-video: `reference role "first_frame" is forbidden by this route`.
+const FRAME_ROLE_REJECTION = /reference\s+role\s*\\?["']?(first_frame|last_frame)\\?["']?\s*(?:is\s+)?(?:forbidden|not\s+supported|unsupported|not\s+allowed)/i;
+
+function frameRoleRejection(result) {
+  if (result?.submission_status !== 'rejected') return null;
+  if (result.frame_role_rejected) return result.frame_role_rejected;
+  const match = String(result.error || '').match(FRAME_ROLE_REJECTION);
+  return match ? match[1].toLowerCase() : null;
+}
+
+function withoutFrameRoles(capability) {
+  const roles = capability?.roles && typeof capability.roles === 'object' ? capability.roles : {};
+  const image = Array.isArray(roles.image) ? roles.image.filter((role) => !['first_frame', 'last_frame'].includes(role)) : [];
+  return {
+    ...(capability || {}),
+    roles: { ...roles, image: image.includes('reference') ? image : [...image, 'reference'] },
+    first_last_frame_supported: false,
+  };
+}
+
+/**
+ * A route that only accepts generic image references rejects first/last-frame
+ * roles before creating anything (no task, no charge). Retry exactly once with
+ * the frames sent as ordinary references plus a prompt hint, which is what the
+ * plan does up front when the local contract already says the role is
+ * unsupported. Smart-video has no local contract, so it can only learn here.
+ */
 async function callYinziVideoApi(db, config, log, opts) {
+  const result = await callYinziVideoApiOnce(db, config, log, opts);
+  const hasFrame = String(opts.first_frame_url || opts.image_url || opts.last_frame_url || '').trim();
+  const role = !opts.frame_role_fallback && hasFrame ? frameRoleRejection(result) : null;
+  if (!role) return result;
+  log?.info?.('[YinziAPI] Route rejected frame role; resubmitting frames as references', {
+    video_gen_id: opts.video_gen_id, model: opts.model, role,
+  });
+  const retried = await callYinziVideoApiOnce(db, config, log, { ...opts, frame_role_fallback: role });
+  const first = { status: result.submission_status, http_status: result.submission_http_status, error: result.error };
+  return {
+    ...retried,
+    frame_role_fallback: { role, first_attempt: first },
+  };
+}
+
+async function callYinziVideoApiOnce(db, config, log, opts) {
   const endpoint = String(config.endpoint || '/videos');
   const url = buildProviderEndpointUrl(config.base_url, endpoint, '/videos');
 
@@ -3471,7 +3515,9 @@ async function callYinziVideoApi(db, config, log, opts) {
     opts.model,
     opts.capability_context || opts.provider_config_snapshot || null
   );
-  const capability = capabilityContext.capability;
+  const capability = opts.frame_role_fallback
+    ? withoutFrameRoles(capabilityContext.capability)
+    : capabilityContext.capability;
   const contractValidationMode = normalizeContractValidationMode(opts.contract_validation_mode);
   const contractWarnings = [];
   const referenceVideoAdaptations = [];
@@ -3527,7 +3573,8 @@ async function callYinziVideoApi(db, config, log, opts) {
   };
   const warn = (code) => appendContractWarning(contractWarnings, code);
   for (const warning of capabilityContext.contract_warnings || []) warn(warning);
-  if (!capability || capabilityContext.contract_status === 'missing') warn('unknown_contract');
+  if (!capabilityContext.capability || capabilityContext.contract_status === 'missing') warn('unknown_contract');
+  if (opts.frame_role_fallback) warn('frame_roles_sent_as_references');
   const prompt = String(opts.prompt || '');
   const maxPromptChars = Number(
     capability?.provider_prompt_hard_max_chars ?? capability?.max_prompt_chars
@@ -3830,9 +3877,13 @@ async function callYinziVideoApi(db, config, log, opts) {
       && errorCode === 'upstream_submission_unavailable'
       && /本次未创建视频/.test(message);
     const rejected = (res.status >= 400 && res.status < 500) || deterministicNoEligibleRoute || explicitlyNotCreated;
+    // The message is truncated; smart-video lists every skipped model, so read
+    // the frame-role reason from the full body.
+    const frameRole = rejected ? String(raw || '').match(FRAME_ROLE_REJECTION)?.[1]?.toLowerCase() : null;
     return publishSubmission(rejected ? 'rejected' : 'ambiguous', {
       error: message,
       ambiguous_submission: !rejected,
+      ...(frameRole ? { frame_role_rejected: frameRole } : {}),
     }, {
       phase: rejected ? 'provider_rejected' : 'provider_server_error',
       http_status: res.status,
