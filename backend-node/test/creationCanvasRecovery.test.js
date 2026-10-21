@@ -16,6 +16,16 @@ function batches() {
     get: id => rows.get(id), pause() {}, resume() {}, done(id, suffix) { Object.assign(rows.get(id).items[0], { status: 'completed', local_path: suffix + '.png', media_url: 'https://fixture.invalid/' + suffix + '.png' }); } };
 }
 
+test('canvas videos default to 720p unless the node or the model name sets a resolution', () => {
+  const { defaultVideoResolution } = require('../src/services/creationCanvas/graph');
+  assert.equal(defaultVideoResolution({}), '720p');
+  assert.equal(defaultVideoResolution({ model: 'smart-video' }), '720p');
+  assert.equal(defaultVideoResolution({ resolution: '1080p' }), '1080p');
+  assert.equal(defaultVideoResolution({ model: 'Kling VIDEO 3.0 Omni-1080p' }), undefined);
+  assert.equal(defaultVideoResolution({ model: 'mg-seedance2.0 -720p fast' }), undefined);
+  assert.equal(defaultVideoResolution({ model: 'veo-4k' }), undefined);
+});
+
 test('download states and deduplicated completion survive restart and reach assistant context', async () => {
   const h = await startCanvasHarness({ video: false }); await h.canvas.close();
   const b = batches(); let s = createCanvasService(h.db, h.cfg, h.log, b, { terminalPollMs: 0 }), agent;
@@ -102,7 +112,9 @@ test('persistent recovery keeps submitted batch identity, interrupts text run an
     assert.equal(agent.get(c.id, 'interrupted-text').status, 'interrupted');
     assert.equal(s.generate(c.id, input).job_id, job.job_id); s.pump(); assert.equal(b.created, 1);
     s.controlJob(c.id, job.job_id, 'resume'); s.pump(); assert.equal(b.created, 2);
-    assert.equal(s.store.read('job', job.job_id).steps.find(step => step.node_id === 'video').request.first_frame_url, 'ref.png');
+    const videoRequest = s.store.read('job', job.job_id).steps.find(step => step.node_id === 'video').request;
+    assert.equal(videoRequest.first_frame_url, 'ref.png');
+    assert.equal(videoRequest.resolution, '720p');
     s.pump(); assert.equal(b.created, 2);
     assert.equal(h.completions.length, 0);
     const other = s.create(); assert.throws(() => s.store.read('job', job.job_id, other.id), { code: 'CANVAS_RECORD_NOT_FOUND' });

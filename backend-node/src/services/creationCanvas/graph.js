@@ -86,8 +86,19 @@ function snapshotGeneration(canvas, nodeIds) {
   ids.forEach(visit);
   return steps;
 }
+// Model names such as "Kling ... -1080p" or "seedance 720p-fast" already fix the output size.
+const MODEL_RESOLUTION = /\d{3,4}\s*p|[248]k\b/i;
+/** Videos default to 720p (cheaper and faster); higher only when the node or the model asks for it. */
+function defaultVideoResolution(settings = {}) {
+  if (settings.resolution || MODEL_RESOLUTION.test(String(settings.model || ''))) return settings.resolution;
+  return '720p';
+}
 function requestForStep(step, steps) {
   const request = { ...step.data.settings, prompt: step.data.prompt || step.data.text || '' };
+  if (step.kind === 'video') {
+    const resolution = defaultVideoResolution(request);
+    if (resolution) request.resolution = resolution;
+  }
   const images = [], videos = [], audios = [], texts = [];
   for (const input of step.inputs) {
     const media = input.dependency ? steps.find(s => s.node_id === input.source)?.media : input.node.data.media;
@@ -108,4 +119,4 @@ function requestForStep(step, steps) {
   }
   return request;
 }
-module.exports = { applyOperations, snapshotGeneration, requestForStep, nodeById, KINDS, ROLES };
+module.exports = { applyOperations, snapshotGeneration, requestForStep, defaultVideoResolution, nodeById, KINDS, ROLES };
