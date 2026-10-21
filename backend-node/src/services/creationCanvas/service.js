@@ -6,6 +6,7 @@ const { applyOperations, snapshotGeneration, requestForStep, nodeById } = requir
 const aiConfig = require('../aiConfigService');
 const assets = require('../assetService');
 const merges = require('../videoMergeService');
+const { importLocalMedia, legacyLocalFile } = require('./localMedia');
 const TERMINAL = new Set(['completed', 'failed', 'cancelled', 'needs_review']);
 
 function createCanvasService(db, cfg, log, mediaBatch, injected = {}) {
@@ -29,7 +30,10 @@ function createCanvasService(db, cfg, log, mediaBatch, injected = {}) {
   }
   function operate(id, body) {
     const input = clean({ operations: body.operations });
-    return store.once(id, body.request_id, input, () => store.mutate(id, canvas => applyOperations(canvas, input.operations)));
+    return store.once(id, body.request_id, input, () => {
+      const operations = importLocalMedia(input.operations, path.resolve(cfg.storage?.local_path || './data/storage'));
+      return store.mutate(id, canvas => applyOperations(canvas, operations));
+    });
   }
   function configure(id, body) {
     return store.mutate(id, canvas => {
@@ -244,7 +248,7 @@ function createCanvasService(db, cfg, log, mediaBatch, injected = {}) {
   }
   function mediaFile(id, nodeId, jobId) {
     const media = jobId ? store.read('job', jobId, id).media : nodeById(store.get(id), nodeId).data.media;
-    const file = assets.localFileMetadata(media?.local_path, cfg);
+    const file = assets.localFileMetadata(media?.local_path, cfg) || legacyLocalFile(media?.local_path);
     if (!file) throw fail('MEDIA_FILE_MISSING', '本地媒体尚未下载成功，原始地址和任务仍保留', 404);
     return file;
   }
