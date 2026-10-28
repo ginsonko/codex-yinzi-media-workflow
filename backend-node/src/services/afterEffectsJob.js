@@ -2,32 +2,19 @@ const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
 const crypto = require('node:crypto');
-const { spawn, execFileSync } = require('node:child_process');
+const { spawn } = require('node:child_process');
 const { findExecutable } = require('./afterEffectsBridge');
+const { locateWindows } = require('./afterEffectsLocate');
 const fail = (code, message) => Object.assign(new Error(message), { code });
 const digest = data => crypto.createHash('sha256').update(data).digest('hex');
 const json = file => JSON.parse(fs.readFileSync(file, 'utf8').replace(/^\uFEFF/, ''));
 const write = (file, value) => fs.writeFileSync(file, JSON.stringify(value, null, 2), { flag: 'wx' });
 const existsFile = file => { try { return fs.statSync(file).isFile(); } catch { return false; } };
 
-function discover(env = process.env, platform = process.platform) {
+function discover(env = process.env, platform = process.platform, deps = {}) {
   const configured = findExecutable(env, platform);
   if (configured || env.YINZI_AFTERFX_PATH || env.AFTERFX_PATH) return configured;
-  if (platform === 'win32') {
-    for (const root of ['HKLM', 'HKCU']) {
-      try {
-        const result = execFileSync('reg.exe', ['query', `${root}\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\App Paths\\AfterFX.exe`, '/ve'], { encoding: 'utf8', windowsHide: true, timeout: 5000 });
-        const value = result.split(/\r?\n/).map(line => line.match(/REG_SZ\s+(.+)$/)?.[1]?.trim().replace(/^"|"$/g, '')).find(Boolean);
-        if (value && existsFile(value)) return value;
-      } catch {}
-    }
-    try {
-      const result = execFileSync('powershell.exe', ['-NoProfile', '-Command', "@(Get-Process -Name AfterFX -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Path -Unique) | ConvertTo-Json -Compress"], { encoding: 'utf8', windowsHide: true, timeout: 5000 });
-      const paths = JSON.parse(result || '[]');
-      const found = (Array.isArray(paths) ? paths : [paths]).filter(x => typeof x === 'string' && existsFile(x));
-      if (found.length === 1) return found[0];
-    } catch {}
-  }
+  if (platform === 'win32') return locateWindows(env, deps);
   if (platform === 'darwin') {
     try {
       return fs.readdirSync('/Applications').filter(n => /^Adobe After Effects /.test(n)).sort().reverse()

@@ -71,8 +71,11 @@ project. Supplying `open_project` switches the active project and must follow th
 same preservation procedure as editing; do not describe it as a read-only action.
 
 `YINZI_AFTERFX_PATH` or `AFTERFX_PATH` selects an executable explicitly.
-Discovery also checks normal installation paths, Windows App Paths registry
-and the unique running AfterFX executable, including custom installation drives.
+Discovery also checks normal installation paths, Windows App Paths registry,
+the unique running AfterFX executable, the Adobe uninstall registry entries
+(InstallLocation) and one folder level below each fixed drive
+(`E:\Adobe After Effects 2026`, `E:\AE\Adobe After Effects 2026`). The last
+find is cached in `<runtime>/after-effects.json`.
 
 ## Structured job contract
 
