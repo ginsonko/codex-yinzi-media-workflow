@@ -19,6 +19,11 @@ the local experience store. Technical completion does not establish artistic qua
    `transition_duration`. Transition duration overlaps the clips and reduces the
    combined timeline length. The tool reports requested and actual frame-grid
    boundaries, pads absent audio, and retains delayed audio relative to video.
+   Optional per-clip `speed` (0.5–2, default 1) retimes that clip: its timeline
+   length is `(source_out - source_in) / speed` and its audio follows with kept
+   pitch. Slowing duplicates frames; for a clearly slowed clip run
+   `local.video.interpolate` (2x) on the source first, then compose it with
+   `speed`. Keep dialogue clips at 1 (or at most about 1.1).
 4. Use the existing `local.video.edit-timeline` for source-music/narration layers,
    and delivery steps according to its current schema. Review sound,
    transitions, frame order and real duration, then register the final artifact.

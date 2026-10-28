@@ -59,6 +59,12 @@ rendered effects. Use actual enums/resources and report unknown names clearly;
 never silently remove a requested effect. Set clip `kind` explicitly for audio
 and images. Use distinct tracks for intentional overlaps.
 
+Clip `speed` (default 1) is the editor's native segment speed: `duration` is the
+length on the timeline and the source span read is `duration × speed` from
+`source_start`. A 2.4 s source shown at 1.2x is `"duration": 2, "speed": 1.2`.
+The draft stores it as a normal editable speed; slowed clips still need
+interpolation beforehand when they would stutter.
+
 The current adapter writes linear keyframes. Do not promise arbitrary AE-style
 Bezier easing; use an actual supported editor animation or the AE route where
 those motion curves are essential.

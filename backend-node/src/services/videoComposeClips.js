@@ -25,7 +25,10 @@ const RESOURCE_LIMITS = {
   MIN_DIMENSION: 16,
   MAX_DIMENSION: 4096,
   MIN_FPS: 1,
-  MAX_FPS: 120
+  MAX_FPS: 120,
+  // Same range as local.video.speed; a single atempo covers it.
+  MIN_SPEED: 0.5,
+  MAX_SPEED: 2
 };
 
 /**
@@ -84,7 +87,8 @@ function validateAndPlanTimeline(clips, sourceDurations, fps = 24) {
     const maxSrcDuration = sourceDurations[sourceIdx];
     const sourceIn = number(c.source_in, `片段 [${i}] source_in`, 0, maxSrcDuration);
     const sourceOut = number(c.source_out, `片段 [${i}] source_out`, sourceIn, maxSrcDuration);
-    const clipDuration = sourceOut - sourceIn;
+    const speed = c.speed == null ? 1 : number(c.speed, `片段 [${i}] speed`, RESOURCE_LIMITS.MIN_SPEED, RESOURCE_LIMITS.MAX_SPEED);
+    const clipDuration = (sourceOut - sourceIn) / speed;
 
     if (clipDuration <= 0) {
       throw fail(`片段 [${i}] 时长必须为正数 (当前: ${clipDuration}s)`);
@@ -126,6 +130,7 @@ function validateAndPlanTimeline(clips, sourceDurations, fps = 24) {
       source: sourceIdx,
       source_in: sourceIn,
       source_out: sourceOut,
+      speed,
       duration: clipDuration,
       transition,
       transition_duration: transitionDuration
@@ -384,7 +389,9 @@ async function composeClips({ inputPath, outputPath, parameters: p = {}, compone
     // Video pipeline: trim -> setpts -> scale (contain) -> pad (center) -> setsar -> fps -> settb -> format
     const vFilter = [
       `[${srcInputIdx}:v:0]trim=start=${probedSources[srcInputIdx].video_start+clip.source_in}:end=${probedSources[srcInputIdx].video_start+clip.source_out}`,
-      `setpts=PTS-(${probedSources[srcInputIdx].video_start+clip.source_in})/TB`,
+      clip.speed === 1
+        ? `setpts=PTS-(${probedSources[srcInputIdx].video_start+clip.source_in})/TB`
+        : `setpts=(PTS-(${probedSources[srcInputIdx].video_start+clip.source_in})/TB)/${clip.speed}`,
       `scale=${width}:${height}:force_original_aspect_ratio=decrease`,
       `pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2:black`,
       'setsar=1',
@@ -409,6 +416,7 @@ async function composeClips({ inputPath, outputPath, parameters: p = {}, compone
           `[${srcInputIdx}:a:0]asetpts=PTS-(${src.video_start})/TB`,
           `atrim=start=${clip.source_in}:end=${clip.source_out}`,
           `asetpts=PTS-(${clip.source_in})/TB`,
+          ...(clip.speed === 1 ? [] : [`atempo=${clip.speed}`]),
           'aresample=48000:async=1:first_pts=0',
           'apad',
           `atrim=duration=${clip.duration}`,
@@ -593,6 +601,7 @@ module.exports = {
             source: { type: 'integer', minimum: 0, title: '素材源数字索引' },
             source_in: { type: 'number', minimum: 0, title: '片段源入点秒数' },
             source_out: { type: 'number', minimum: 0, title: '片段源出点秒数' },
+            speed: { type: 'number', minimum: 0.5, maximum: 2, default: 1, title: '片段速度倍率', description: '大于 1 加快、小于 1 放慢；成片里这一段的时长 = (source_out - source_in) / speed，声音同步变速并保持音高。放慢时画面靠重复帧，明显放慢的片段先用 local.video.interpolate 补帧。' },
             transition: { type: 'string', enum: transitionIds, default: 'cut', title: '转场方式', description: transitions.map(t=>`${t.id}：${t.title}`).join('；') },
             transition_duration: { type: 'number', minimum: 0.01, maximum: 30, default: 0.5, title: '转场重叠时长（秒）' }
           },

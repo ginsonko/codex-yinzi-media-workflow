@@ -68,6 +68,24 @@ test('short cuts quantize cumulative boundaries without multiplying roundoff',{s
  const tiny=await executeNative({inputPath:input,outputPath:path.join(root,'tiny-fade.mp4'),parameters:{audio_mode:'none',clips:[{source:0,source_in:0,source_out:1},{source:0,source_in:0,source_out:1,transition:'fade',transition_duration:.01}]},components:{'media.ffmpeg':component()}});
  assert.equal(tiny.timeline[1].transition,'cut');assert.equal(tiny.total_frames,48);
 });
+test('per-clip speed scales the timeline and is range checked',()=>{
+ const plan=validateAndPlanTimeline([{source:0,source_in:0,source_out:2,speed:2},{source:0,source_in:1,source_out:1.5,speed:.5,transition:'fade',transition_duration:.25},{source:0,source_in:0,source_out:1}],[3]);
+ assert.deepEqual(plan.plannedClips.map(c=>[c.speed,c.duration]),[[2,1],[.5,1],[1,1]]);
+ assert.equal(plan.totalDuration,2.75);
+ for(const speed of [0,.4,2.5,'fast'])assert.throws(()=>validateAndPlanTimeline([{source:0,source_in:0,source_out:1,speed}],[3]),{code:'COMPOSE_CLIPS_INVALID_INPUT'});
+ // A fade must fit inside the sped-up clip, not the source interval.
+ assert.throws(()=>validateAndPlanTimeline([{source:0,source_in:0,source_out:1},{source:0,source_in:0,source_out:1,speed:2,transition:'fade',transition_duration:.6}],[3]));
+});
+test('sped-up and slowed clips keep picture order, frame count and sound',{skip:!hasLocalFfmpeg()},async t=>{
+ const root=temp(t),input=path.join(root,'red-then-blue.mp4');
+ await run(getFfmpegPath(),['-y','-v','error','-f','lavfi','-i','color=c=red:s=160x96:r=24:d=1.5','-f','lavfi','-i','color=c=blue:s=160x96:r=24:d=1.5','-f','lavfi','-i','sine=frequency=700:sample_rate=48000:duration=3','-filter_complex','[0:v][1:v]concat=n=2:v=1:a=0[v]','-map','[v]','-map','2:a','-c:v','libx264','-c:a','aac',input]);
+ const output=path.join(root,'speed.mp4');
+ const receipt=await executeNative({inputPath:input,outputPath:output,parameters:{clips:[{source:0,source_in:0,source_out:3,speed:2},{source:0,source_in:1,source_out:1.25,speed:.5}]},components:{'media.ffmpeg':component()}});
+ assert.equal(receipt.total_frames,48);assert.ok(Math.abs(receipt.after.duration-2)<.05);
+ assert.ok(rgb(output,.5)[0]>220);assert.ok(rgb(output,1)[2]>220);assert.ok(rgb(output,1.7)[0]>220);
+ assert.ok(pcm(output,.5)>.05);assert.ok(pcm(output,1.7)>.05);
+ const graph=JSON.stringify(receipt.timeline);assert.match(graph,/"speed":2/);assert.match(graph,/"speed":0.5/);
+});
 test('offset Matroska without stream duration uses playable packet span',{skip:!hasLocalFfmpeg()},async t=>{
  const root=temp(t),input=path.join(root,'offset.mkv');
  await run(getFfmpegPath(),['-y','-v','error','-f','lavfi','-i','color=c=red:s=160x96:r=24:d=1','-c:v','ffv1','-output_ts_offset','4',input]);
