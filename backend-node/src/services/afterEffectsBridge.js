@@ -115,7 +115,7 @@ async function runAfterEffects(scriptPath, { executable = findExecutable(), time
   if (!executable || !existing(executable)) throw fail('AFTERFX_MISSING','AfterFX.exe is missing; set YINZI_AFTERFX_PATH after installation');
   try { fs.writeFileSync(path.join(dir,'yinzi-ai-ae-demo.dispatch.json'),JSON.stringify({script,executable,submitted_at:new Date().toISOString()}),{flag:'wx'}); }
   catch (e) { if (e.code === 'EEXIST') throw fail('AFTERFX_ALREADY_DISPATCHED','Inspect the original editor and receipt before retrying'); throw e; }
-  const child=spawn(executable,['-r',script],{cwd:dir,windowsHide:false,shell:false,stdio:'ignore'});
+  const child=spawn(executable,['-r',require('./asciiPath').asciiFile(script)],{cwd:dir,windowsHide:false,shell:false,stdio:'ignore'});
   let launchError; child.once('error',e=>{launchError=e;}); child.unref();
   const start=Date.now();
   while (Date.now()-start < timeout) {

@@ -77,6 +77,12 @@ the unique running AfterFX executable, the Adobe uninstall registry entries
 (`E:\Adobe After Effects 2026`, `E:\AE\Adobe After Effects 2026`). The last
 find is cached in `<runtime>/after-effects.json`.
 
+Chinese and other non-ASCII paths are supported for assets, `open_project` and
+the job directory: the generated script stores them as `\u` escapes and AE gets
+an ASCII path to it (8.3 name or a copy in an ASCII temp folder). Keep the job
+directory inside the user's project folder; do not move work to another drive
+to avoid Chinese folder names.
+
 ## Structured job contract
 
 The implementation is `backend-node/src/services/afterEffectsJob.js`, with the

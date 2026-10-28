@@ -5,6 +5,7 @@ const crypto = require('node:crypto');
 const { spawn } = require('node:child_process');
 const { findExecutable } = require('./afterEffectsBridge');
 const { locateWindows } = require('./afterEffectsLocate');
+const { escapeNonAscii, asciiFile } = require('./asciiPath');
 const fail = (code, message) => Object.assign(new Error(message), { code });
 const digest = data => crypto.createHash('sha256').update(data).digest('hex');
 const json = file => JSON.parse(fs.readFileSync(file, 'utf8').replace(/^\uFEFF/, ''));
@@ -78,7 +79,8 @@ function prepare(job, outputDir) {
   const spec = { ...job, output_dir: dir.replace(/\\/g, '/'), request_sha256: hash };
   const runtime = fs.readFileSync(path.join(__dirname, 'afterEffectsRuntime.jsx'), 'utf8');
   write(manifest, { request_sha256: hash, job });
-  fs.writeFileSync(path.join(dir, 'ae-job.jsx'), 'var YINZI_AE_JOB = ' + JSON.stringify(spec).replace(/\u2028/g, '\\u2028').replace(/\u2029/g, '\\u2029') + ';\n' + runtime, { flag: 'wx' });
+  // ExtendScript reads a BOM-less script in the system code page, so Chinese paths are written as \u escapes.
+  fs.writeFileSync(path.join(dir, 'ae-job.jsx'), 'var YINZI_AE_JOB = ' + escapeNonAscii(JSON.stringify(spec)) + ';\n' + runtime, { flag: 'wx' });
   return { dir, request_sha256: hash, reused: false };
 }
 
@@ -116,7 +118,7 @@ async function execute(job, outputDir, options = {}) {
     catch (e) { if (e.code === 'EEXIST') throw fail('AE_EDITOR_BUSY', 'Reconcile the job named in ' + lock); throw e; }
     try {
       write(dispatch, { executable, dir, request_sha256: prepared.request_sha256, submitted_at: new Date().toISOString() });
-      const child = spawn(executable, ['-r', path.join(dir, 'ae-job.jsx')], { cwd: dir, windowsHide: false, shell: false, stdio: 'ignore' });
+      const child = spawn(executable, ['-r', asciiFile(path.join(dir, 'ae-job.jsx'))], { cwd: dir, windowsHide: false, shell: false, stdio: 'ignore' });
       await new Promise((resolve, reject) => { child.once('spawn', resolve); child.once('error', reject); });
       child.unref();
     } catch(e) { release(); throw e; }
