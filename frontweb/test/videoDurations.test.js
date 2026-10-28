@@ -42,8 +42,8 @@ test('missing data hides the hint', () => {
 test('image size snapping matches the backend table and is shown only when it changes the request', () => {
   assert.equal(snapImageSize('1920x1920'), '2048x2048')
   assert.equal(snapImageSize('1024x1536'), '1536x2048')
-  assert.equal(snapImageSize('2940x1260'), '2560x1088')
-  assert.equal(snapImageSize('2K', '9:16'), '1440x2560')
+  assert.equal(snapImageSize('2940x1260'), '3840x1648')
+  assert.equal(snapImageSize('2K', '9:16'), '1152x2048')
   assert.equal(snapImageSize('auto'), '')
   assert.equal(imageSizeSubmissionNote('gpt-image-2', '1920x1920', '1:1'), '请求 1920×1920 → 实际提交 2048×2048')
   assert.equal(imageSizeSubmissionNote('smart-image', '2048x2048', '1:1'), '')

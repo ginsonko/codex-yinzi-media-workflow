@@ -227,3 +227,19 @@ test('a newer failed request remains current and the older successful result rem
   assert.match(scene.error_msg, /new request failed/);
   assert.equal(db.prepare('SELECT image_url FROM image_generations WHERE id=?').get(old.id).image_url, 'https://fixture.invalid/old.png');
 });
+
+test('a bare tier keeps the requested aspect: "2K" with 9:16 is stored and sent as 1152x2048', async () => {
+  const gen = imageService.create(db, log, { drama_id: 1, storyboard_id: 1, frame_type: 'first', prompt: 'frame', model: 'fixture', size: '2K', aspect_ratio: '9:16', use_first_frame_layout_lock: 0 });
+  assert.equal(db.prepare('SELECT size FROM image_generations WHERE id=?').get(gen.id).size, '1152x2048');
+  await until(() => requests.length === 1);
+  assert.equal(requests[0].body.size, '1152x2048');
+  await reply(0, 'https://fixture.invalid/frame.png'); await done(gen.task_id);
+});
+
+test('an explicit WxH is kept as-is, even when an aspect ratio comes with it', async () => {
+  const gen = imageService.create(db, log, { drama_id: 1, storyboard_id: 1, frame_type: 'first', prompt: 'frame', model: 'fixture', size: '2048x1152', aspect_ratio: '9:16', use_first_frame_layout_lock: 0 });
+  assert.equal(db.prepare('SELECT size FROM image_generations WHERE id=?').get(gen.id).size, '2048x1152');
+  await until(() => requests.length === 1);
+  assert.equal(requests[0].body.size, '2048x1152');
+  await reply(0, 'https://fixture.invalid/frame.png'); await done(gen.task_id);
+});

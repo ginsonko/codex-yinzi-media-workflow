@@ -157,7 +157,7 @@ describe('image reference transport copies', () => {
       const result = await callImageApi(db, log, {
         prompt: 'single continuous empty greenhouse scene',
         model: 'gpt-image-2',
-        size: '2560x1440',
+        size: '2048x1152',
         image_gen_id: 9001,
         imageServiceType: 'image',
         reference_image_urls: refs,
@@ -167,7 +167,7 @@ describe('image reference transport copies', () => {
       });
 
       assert.equal(result.image_url, 'https://cdn.example.test/generated.png');
-      assert.equal(receivedBody.size, '2560x1440');
+      assert.equal(receivedBody.size, '2048x1152');
       assert.equal(receivedBody.image.length, 3);
       assert.match(receivedBody.negative_prompt, /flowers, plants/);
       for (const dataUrl of receivedBody.image) {

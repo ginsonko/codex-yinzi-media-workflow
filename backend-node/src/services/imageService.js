@@ -64,6 +64,7 @@ const storageLayout = require('./storageLayout');
 const aiClient = require('./aiClient');
 const promptI18n = require('./promptI18n');
 const { isLatestImageAttempt, resolveStoryboardFrameType } = require('./imageAttemptOwnership');
+const { imageSizeFor } = require('./imageSizePresets');
 
 const LAST_FRAME_TYPES = new Set(['last', 'storyboard_last', 'tail', 'last_frame']);
 
@@ -586,7 +587,12 @@ function create(db, log, req) {
   }
   const mergedPrompt = mergePromptWithStyle(req.prompt || '', req.style);
   // 优先使用请求中直接传入的 size；其次将 aspect_ratio 转成 size；未提供则存 NULL 留给 processImageGeneration 从 drama 元数据读取
+  // Only the size column is stored, so a bare tier ("2K") with an aspect ratio becomes that shape's WxH
+  // here; otherwise the shape is lost and every protocol sees a square.
   let reqSize = req.size || null;
+  if (reqSize && req.aspect_ratio && /^[124]k$/i.test(String(reqSize).trim())) {
+    reqSize = imageSizeFor(req.model, reqSize, req.aspect_ratio) || reqSize;
+  }
   if (!reqSize && req.aspect_ratio) {
     reqSize = aspectRatioToSize(req.aspect_ratio) || null;
   }

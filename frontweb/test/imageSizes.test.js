@@ -5,15 +5,15 @@ import { manualItemRequest, newManualItem } from '../src/utils/manualBatch.js'
 
 const expected = {
   '1:1': ['1024x1024','2048x2048','2880x2880'],
-  '3:2': ['1536x1024','2160x1440','3456x2304'],
-  '16:9': ['1280x720','2560x1440','3840x2160'],
-  '9:16': ['720x1280','1440x2560','2160x3840'],
-  '4:3': ['1024x768','2048x1536','3200x2400'],
-  '3:4': ['768x1024','1536x2048','2400x3200'],
-  '21:9': ['1280x544','2560x1088','3840x1600'],
+  '3:2': ['1024x688','2048x1360','3520x2352'],
+  '16:9': ['1088x608','2048x1152','3840x2160'],
+  '9:16': ['608x1088','1152x2048','2160x3840'],
+  '4:3': ['1024x768','2048x1536','3312x2480'],
+  '3:4': ['768x1024','1536x2048','2480x3312'],
+  '21:9': ['1248x528','2048x880','3840x1648'],
 }
 
-test('image2 and image2.5 expose exactly the supplied 21 ratio/tier dimensions', () => {
+test('image2 and image2.5 expose exactly the 21 ratio/tier dimensions', () => {
   assert.deepEqual(imageRatios, Object.keys(expected))
   assert.deepEqual(imageTiers, ['1K','2K','4K'])
   for (const [ratio, sizes] of Object.entries(expected)) {
@@ -27,7 +27,7 @@ test('image2 and image2.5 expose exactly the supplied 21 ratio/tier dimensions',
 test('smart-image and the site variants of image2.5 use the same presets', () => {
   for (const model of ['smart-image', 'gpt-image-2.5-flare', 'gpt-image-2.5-sunburst']) {
     assert.equal(usesImageSizePresets(model), true, model)
-    assert.equal(imageSizeFor(model, '9:16', '2K', '1080x1920'), '1440x2560')
+    assert.equal(imageSizeFor(model, '9:16', '2K', '1080x1920'), '1152x2048')
   }
   for (const model of ['gpt-image-1', 'gpt-image-1.5', 'nano-banana-pro']) assert.equal(usesImageSizePresets(model), false, model)
 })
@@ -35,11 +35,11 @@ test('smart-image and the site variants of image2.5 use the same presets', () =>
 test('changing item model, aspect ratio or tier recomputes size without stale inherited dimensions', () => {
   const defaults = { model: 'gpt-image-2', settings: { aspect_ratio: '16:9', image_tier: '2K', size: '' } }
   const item = newManualItem({ prompt: 'test' })
-  assert.equal(manualItemRequest(item, 'image', defaults, []).size, '2560x1440')
+  assert.equal(manualItemRequest(item, 'image', defaults, []).size, '2048x1152')
   item.aspect_ratio = '9:16'; item.image_tier = '4K'
   assert.equal(manualItemRequest(item, 'image', defaults, []).size, '2160x3840')
   item.model = 'gpt-image-2.5'; item.aspect_ratio = '3:2'
-  assert.equal(manualItemRequest(item, 'image', defaults, []).size, '3456x2304')
+  assert.equal(manualItemRequest(item, 'image', defaults, []).size, '3520x2352')
   item.model = 'other-image'; item.size = '1000x1500'
   assert.equal(usesImageSizePresets(item.model), false)
   assert.equal(manualItemRequest(item, 'image', defaults, []).size, '1000x1500')
