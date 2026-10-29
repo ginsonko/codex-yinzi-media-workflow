@@ -4,9 +4,12 @@
  *
  * GPT Image 2 / 2.5 (and the sites' smart-image route, which dispatches to them) only route one size
  * per shape and tier; anything else, e.g. 1920x1920 or 1024x1536, gets "no eligible route" on the site
- * even though the model itself would accept it, so their sizes snap to IMAGE_SIZE_PRESETS. The table is
- * built from the same rule (a portrait 1440x2560 was scaled by the gateway to the invalid 2048x3641).
- * Same table as frontweb/src/utils/imageSizes.js.
+ * even though the model itself would accept it, so their sizes snap to IMAGE_SIZE_PRESETS; a given WxH
+ * goes to the smallest tier of its shape that is at least as big, so it is never shrunk while a larger
+ * tier exists. The table is built from the same rule (a portrait 1440x2560 was scaled by the gateway to
+ * the invalid 2048x3641). gpt-image-1 / 1.5 and dall-e-3 take three sizes each (FIXED_IMAGE_SIZES).
+ * Any other model given only an aspect ratio gets '', so the caller keeps its own aspect-ratio sizing.
+ * Same rule as frontweb/src/utils/imageSizes.js and the app's electron/image-sizes.cjs.
  */
 const TIER_EDGE = Object.freeze({ '1K': 1024, '2K': 2048, '4K': 4096 });
 const TIERS = Object.keys(TIER_EDGE);
@@ -22,6 +25,18 @@ const dims = (s) => s.split('x').map(Number);
 function usesImageSizePresets(model) {
   const m = String(model || '').trim().toLowerCase().split('/').pop();
   return m === 'smart-image' || /^gpt-image-2(?:\.5)?(?:-[\w.-]+)?$/.test(m);
+}
+
+// What the image API takes for these models besides "auto"; the size closest in shape is sent.
+const FIXED_IMAGE_SIZES = [
+  { match: /^gpt-image-1(?:\.5)?(?:-[\w.-]+)?$/, sizes: ['1024x1024', '1536x1024', '1024x1536'] },
+  { match: /^dall-e-3(?:-[\w.-]+)?$/, sizes: ['1024x1024', '1792x1024', '1024x1792'] },
+];
+
+function fixedImageSizes(model) {
+  const m = String(model || '').trim().toLowerCase().split('/').pop();
+  const hit = FIXED_IMAGE_SIZES.find((f) => f.match.test(m));
+  return hit ? hit.sizes : null;
 }
 
 /** w x h scaled to fit the spec, both edges a multiple of its step; the shape drifts by at most half a step. */
@@ -68,19 +83,18 @@ function nearestRatio(r) {
   return best;
 }
 
-/** The tier whose pixel count is closest; a tie goes to the larger one so a picture is never shrunk. */
-function nearestTier(label, pixels) {
-  let best = DEFAULT_TIER;
-  let diff = Infinity;
-  for (const tier of TIERS) {
-    const [w, h] = dims(IMAGE_SIZE_PRESETS[label][tier]);
-    const d = Math.abs(Math.log(pixels) - Math.log(w * h));
-    if (d <= diff + 1e-9) {
-      diff = d;
-      best = tier;
-    }
-  }
-  return best;
+const pixelsOf = (s) => dims(s)[0] * dims(s)[1];
+
+/** The smallest tier of the shape with at least `pixels`, so a given size is never shrunk; the largest when none is that big. */
+function tierAtLeast(label, pixels) {
+  const sizes = TIERS.map((t) => IMAGE_SIZE_PRESETS[label][t]);
+  return sizes.find((s) => pixelsOf(s) >= pixels) || sizes[sizes.length - 1];
+}
+
+/** The size in `sizes` whose shape is closest to `r`. */
+function nearestShape(sizes, r) {
+  const off = (s) => Math.abs(Math.log(r) - Math.log(dims(s)[0] / dims(s)[1]));
+  return sizes.reduce((a, b) => (off(b) < off(a) - 1e-9 ? b : a));
 }
 
 const readSize = (size) => {
@@ -91,15 +105,16 @@ const readSize = (size) => {
 };
 
 /**
- * The supported size closest to what was asked for. `size` may be "1920x1920", "1920*1920", a tier such
- * as "2K", or empty; `aspectRatio` (e.g. "9:16") is used when the size alone has no shape. Returns ''
- * when there is nothing to go on, so the caller leaves size out and the site uses its default.
+ * The supported size for what was asked: `size` may be "1920x1920", "1920*1920", a tier such as "2K",
+ * or empty; `aspectRatio` (e.g. "9:16") is used when the size alone has no shape. A WxH gets the closest
+ * shape and the smallest tier at least as big. Returns '' when there is nothing to go on, so the caller
+ * leaves size out and the site uses its default.
  */
 function snapImageSize(size, aspectRatio) {
   const { w, h, tier } = readSize(size);
   if (w) {
     const label = nearestRatio(w / h);
-    return IMAGE_SIZE_PRESETS[label][nearestTier(label, w * h)];
+    return tierAtLeast(label, w * h);
   }
   const ratio = parseRatio(aspectRatio);
   if (!ratio && !tier) return '';
@@ -107,16 +122,19 @@ function snapImageSize(size, aspectRatio) {
 }
 
 /**
- * The WxH to send to `model`: the preset for GPT Image 2 / 2.5 and smart-image, else the same rule with
- * the model's own shape (a given WxH keeps its shape, a tier takes `aspectRatio`). '' = leave size out.
+ * The WxH to send to `model`: the preset for GPT Image 2 / 2.5 and smart-image, the closest shape of
+ * FIXED_IMAGE_SIZES for gpt-image-1 / 1.5 and dall-e-3, else the same rule with the model's own shape (a
+ * given WxH keeps its shape, a tier takes `aspectRatio`). '' = leave size out, also for another model
+ * given only an aspect ratio, so the caller keeps its own aspect-ratio sizing.
  */
 function imageSizeFor(model, size, aspectRatio) {
   if (usesImageSizePresets(model)) return snapImageSize(size, aspectRatio);
   const { w, h, tier } = readSize(size);
-  if (w) return fit(w, h, DEFAULT_SPEC);
   const ratio = parseRatio(aspectRatio);
-  if (!ratio && !tier) return '';
-  return forTier(ratio || 1, tier || DEFAULT_TIER, DEFAULT_SPEC);
+  const fixed = fixedImageSizes(model);
+  if (fixed) return w || ratio || tier ? nearestShape(fixed, w ? w / h : ratio || 1) : '';
+  if (w) return fit(w, h, DEFAULT_SPEC);
+  return tier ? forTier(ratio || 1, tier, DEFAULT_SPEC) : '';
 }
 
-module.exports = { IMAGE_SIZE_PRESETS, TIER_EDGE, usesImageSizePresets, snapImageSize, imageSizeFor };
+module.exports = { IMAGE_SIZE_PRESETS, TIER_EDGE, FIXED_IMAGE_SIZES, usesImageSizePresets, snapImageSize, imageSizeFor };

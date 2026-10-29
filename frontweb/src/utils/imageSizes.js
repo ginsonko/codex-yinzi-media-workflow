@@ -32,14 +32,10 @@ function nearestRatio(r) {
   }
   return best
 }
-function nearestTier(label, pixels) {
-  let best = '2K', diff = Infinity
-  for (const tier of imageTiers) {
-    const [w, h] = dims(imageSizePresets[label][tier])
-    const d = Math.abs(Math.log(pixels) - Math.log(w * h))
-    if (d <= diff + 1e-9) { diff = d; best = tier }
-  }
-  return best
+// The smallest tier of the shape with at least `pixels`, so a given size is never shrunk.
+function tierAtLeast(label, pixels) {
+  const sizes = imageTiers.map(t => imageSizePresets[label][t])
+  return sizes.find(s => dims(s)[0] * dims(s)[1] >= pixels) || sizes[sizes.length - 1]
 }
 function parseRatio(value) {
   const m = String(value || '').trim().match(/^(\d+(?:\.\d+)?)\s*[:/xX*]\s*(\d+(?:\.\d+)?)$/)
@@ -47,13 +43,12 @@ function parseRatio(value) {
   return Number.isFinite(r) && r > 0 ? r : 0
 }
 
-// Same rule as backend imageSizePresets.snapImageSize: the preset closest to the request.
+// Same rule as backend imageSizePresets.snapImageSize: the closest shape, the smallest tier at least as big.
 export function snapImageSize(size, aspectRatio) {
   const s = String(size || '').trim().toLowerCase().replace(/\s/g, '')
   const wh = s.match(/^(\d+)[x*×](\d+)$/)
   if (wh && Number(wh[1]) > 0 && Number(wh[2]) > 0) {
-    const label = nearestRatio(Number(wh[1]) / Number(wh[2]))
-    return imageSizePresets[label][nearestTier(label, Number(wh[1]) * Number(wh[2]))]
+    return tierAtLeast(nearestRatio(Number(wh[1]) / Number(wh[2])), Number(wh[1]) * Number(wh[2]))
   }
   const ratio = parseRatio(aspectRatio)
   const tier = /^[124]k$/.test(s) ? s.toUpperCase() : ''

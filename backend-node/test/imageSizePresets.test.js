@@ -19,8 +19,10 @@ describe('image size presets for GPT Image 2 / 2.5 and smart-image', () => {
     assert.equal(snapImageSize('1920*1920'), '2048x2048');
     assert.equal(snapImageSize('1024x1536'), '1536x2048');
     assert.equal(snapImageSize('1536x1024'), '2048x1360');
-    assert.equal(snapImageSize('2240x1680'), '2048x1536');
-    assert.equal(snapImageSize('1680x2240'), '1536x2048');
+    // A given size is never shrunk while its shape has a tier at least as big.
+    assert.equal(snapImageSize('2240x1680'), '3312x2480');
+    assert.equal(snapImageSize('1680x2240'), '2480x3312');
+    assert.equal(snapImageSize('1280x720'), '2048x1152');
     assert.equal(snapImageSize('2940x1260'), '3840x1648');
     assert.equal(snapImageSize('512x512'), '1024x1024');
     assert.equal(snapImageSize('4096x4096'), '2880x2880');
@@ -50,6 +52,14 @@ describe('image size presets for GPT Image 2 / 2.5 and smart-image', () => {
     assert.equal(imageSizeFor('nano-banana-pro', 'auto'), '');
     assert.equal(imageSizeFor('gpt-image-2', '2K', '9:16'), '1152x2048');
     assert.equal(imageSizeFor(null, '2K', '9:16'), '1152x2048');
+    // Only a shape on another model: '' so imageService keeps aspectRatioToSize.
+    assert.equal(imageSizeFor('nano-banana-pro', '', '16:9'), '');
+    assert.equal(imageSizeFor('gpt-image-1.5', '', '16:9'), '1536x1024');
+    assert.equal(imageSizeFor('gpt-image-1', '1K', '3:2'), '1536x1024');
+    assert.equal(imageSizeFor('gpt-image-1', '2K', '9:16'), '1024x1536');
+    assert.equal(imageSizeFor('dall-e-3', '1920x1080'), '1792x1024');
+    assert.equal(imageSizeFor('dall-e-3', '', '9:16'), '1024x1792');
+    assert.equal(imageSizeFor('dall-e-3', ''), '');
   });
 
   it('builds a size from a tier or aspect ratio, and leaves out what it cannot read', () => {

@@ -594,7 +594,9 @@ function create(db, log, req) {
     reqSize = imageSizeFor(req.model, reqSize, req.aspect_ratio) || reqSize;
   }
   if (!reqSize && req.aspect_ratio) {
-    reqSize = aspectRatioToSize(req.aspect_ratio) || null;
+    // Models that take only a few sizes (GPT Image, dall-e-3) get one of theirs; imageSizeFor gives ''
+    // for the others, which keep aspectRatioToSize.
+    reqSize = imageSizeFor(req.model, '', req.aspect_ratio) || aspectRatioToSize(req.aspect_ratio) || null;
   }
   const useFirstFrameLayoutLock = resolveUseFirstFrameLayoutLock(req, frameType);
   const info = db.prepare(
