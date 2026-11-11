@@ -92,9 +92,10 @@ describe('normalizeYinziCatalog', () => {
       ],
     });
     const image = result.image.find((m) => m.model === 'smart-image');
-    assert.deepEqual(image.prices.filter((p) => p.effective_price !== null).map((p) => [p.group, p.billing_unit, p.effective_price, p.conditions.model]), [['甲', 'per_request', 0.00975, 'gpt-image-2'], ['甲', 'per_request', 0.00078, 'gpt-image-2.5-flare']]);
+    // r1-12a: the real model is unknown beforehand, so a group holds its dearest price (never the cheapest or an average).
+    assert.deepEqual(image.prices.filter((p) => p.effective_price !== null).map((p) => [p.group, p.billing_unit, p.effective_price, p.price_range, p.conditions.models]), [['甲', 'per_request', 0.00975, [0.00078, 0.00975], ['gpt-image-2', 'gpt-image-2.5-flare']]]);
     assert.equal(image.prices.find((p) => p.group === '乙').effective_price, null, 'a price that needs the quality is not guessed');
-    assert.equal(image.cheapest_effective_price, 0.00078);
+    assert.equal(image.cheapest_effective_price, 0.00975);
     const h3 = result.video.find((m) => m.model === 'MINIMAX H3 质量版');
     assert.deepEqual(h3.prices.map((p) => [p.billing_unit, p.effective_price, p.source]), [['per_second', 0.1, 'parameter_price']]);
     assert.equal(result.video.find((m) => m.model === 'Seedance 2.0 fast 480-720p').cheapest_effective_price, null, 'resolution-dependent stays unpriced');

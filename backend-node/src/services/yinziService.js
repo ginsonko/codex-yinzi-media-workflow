@@ -99,7 +99,19 @@ function parameterPrices(price) {
       currency: 'CNY',
       source: 'parameter_price',
     }))
-    .filter((p) => p.effective_price !== null);
+    .filter((p) => p.effective_price !== null)
+    .reduce(upperPerUnit, []);
+}
+
+// Which real model a virtual model lands on is only known afterwards, so one group's prices per unit become one
+// entry at the dearest (reservations and estimates must hold the upper bound); `price_range` keeps the spread.
+function upperPerUnit(out, p) {
+  const same = out.find((x) => x.group === p.group && x.billing_unit === p.billing_unit);
+  if (!same) return [...out, { ...p, price_range: [p.effective_price, p.effective_price] }];
+  same.price_range = [Math.min(same.price_range[0], p.effective_price), Math.max(same.price_range[1], p.effective_price)];
+  same.effective_price = same.price_range[1];
+  if (same.conditions.model !== p.conditions.model) same.conditions = { models: [...new Set([same.conditions.model, ...(same.conditions.models || []), p.conditions.model].filter(Boolean))] };
+  return out;
 }
 
 function normalizePricing(item) {
