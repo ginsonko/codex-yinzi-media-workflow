@@ -9,7 +9,10 @@ const AdmZip = require('adm-zip');
 const dependencyLock = require('../../../scripts/dependencies.json');
 const ROOT = path.resolve(__dirname, '../..');
 const MAX_BYTES = 512 * 1024 ** 2;
-const HOSTS = new Set(['github.com','api.github.com','release-assets.githubusercontent.com','objects.githubusercontent.com','raw.githubusercontent.com','media.githubusercontent.com','www.gyan.dev','huggingface.co','hf-mirror.com','cas-bridge.xethub.hf.co']);
+const HOSTS = new Set(['github.com','api.github.com','release-assets.githubusercontent.com','objects.githubusercontent.com','raw.githubusercontent.com','media.githubusercontent.com','www.gyan.dev','huggingface.co','hf-mirror.com','cas-bridge.xethub.hf.co','us.aws.cdn.hf.co']);
+// huggingface.co now answers /resolve/ with a 302 to its Xet CDN (us.aws.cdn.hf.co, path /xet-bridge-us/...), the
+// host cas-bridge.xethub.hf.co used to be; hf-mirror.com forwards to huggingface.co first. Checked 2026-11-12 with
+// curl -I on ggml-base.bin / ggml-tiny.bin. Only the host seen there is added; every byte is still SHA-256 checked.
 const fail = (code, message) => Object.assign(new Error(message), { code });
 function safeId(value) { if (!/^[a-z][a-z0-9.-]{1,99}$/.test(value || '')) throw fail('INVALID_COMPONENT_ID','组件编号无效'); return value; }
 function readJson(file) { try { return JSON.parse(fs.readFileSync(file,'utf8')); } catch { return null; } }

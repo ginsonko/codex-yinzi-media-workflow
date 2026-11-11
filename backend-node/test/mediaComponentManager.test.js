@@ -18,6 +18,16 @@ test('official asset API negotiates binary and validates redirected bytes',async
  });assert.equal(calls,2);assert.equal(await sha256(target),hash(bytes));}
  finally{fs.rmSync(root,{recursive:true,force:true});}
 });
+test('Hugging Face model files follow mirror → huggingface.co → Xet CDN; other hosts stay refused',async()=>{
+ const root=tmp(),bytes=Buffer.from('ggml-model'),target=path.join(root,'model.part');const seen=[];
+ const hops={'https://hf-mirror.com/ggerganov/whisper.cpp/resolve/main/ggml-base.bin':'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.bin','https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.bin':'https://us.aws.cdn.hf.co/xet-bridge-us/641ab5d15d107c5c5f346372/2f62d18b'};
+ try {
+  await download('https://hf-mirror.com/ggerganov/whisper.cpp/resolve/main/ggml-base.bin',target,hash(bytes),()=>{},async(url)=>{seen.push(new URL(url).hostname);return hops[url]?new Response(null,{status:url.includes('mirror')?308:302,headers:{location:hops[url]}}):response(bytes);});
+  assert.deepEqual(seen,['hf-mirror.com','huggingface.co','us.aws.cdn.hf.co']);assert.equal(await sha256(target),hash(bytes));
+  fs.rmSync(target);
+  await assert.rejects(download('https://huggingface.co/x/resolve/main/y.bin',target,hash(bytes),()=>{},async()=>new Response(null,{status:302,headers:{location:'https://cdn.example.invalid/y.bin'}})),(e)=>e.code==='UNTRUSTED_COMPONENT_SOURCE');
+ } finally{fs.rmSync(root,{recursive:true,force:true});}
+});
 test('trusted registry rejects arbitrary manifests and unknown components',()=>{
  const bytes=archive('ok'),m=createComponentManager({root:tmp(),registry:[manifest(bytes)]});
  assert.throws(()=>m.ensureComponent({component_id:'test.component',url:'https://evil.invalid/x'}),/任意/);

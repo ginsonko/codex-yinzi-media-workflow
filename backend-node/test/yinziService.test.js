@@ -61,6 +61,45 @@ describe('normalizeYinziCatalog', () => {
     assert.equal(result.text[0].model, 'gpt-5.6-sol');
   });
 
+  it('reads parameter_price groups: prices set by the route alone are listed, request-dependent ones stay unpriced', () => {
+    const pp = (unit, price, conditions) => ({ unit, currency: 'USD', unit_price: String(price), conditions });
+    const result = normalizeYinziCatalog({
+      success: true,
+      pricing_version: 'v2',
+      data: [
+        {
+          model_name: 'smart-image',
+          supported_endpoint_types: ['image-generation'],
+          enable_groups: ['甲', '乙'],
+          billing_mode: 'parameter_price',
+          group_pricing: {
+            甲: { group: '甲', billing_mode: 'parameter_price', billing_unit: 'parameter', parameter_prices: [pp('per_request', 0.00975, { model: 'gpt-image-2' }), pp('per_request', 0.00078, { model: 'gpt-image-2.5-flare' })] },
+            乙: { group: '乙', billing_mode: 'parameter_price', billing_unit: 'parameter', parameter_prices: [pp('per_image', 0.052, { model: 'gpt-image-2.5-flare', quality: '2k' })] },
+          },
+        },
+        {
+          model_name: 'MINIMAX H3 质量版',
+          supported_endpoint_types: ['openai-video'],
+          enable_groups: ['H3'],
+          group_pricing: { H3: { group: 'H3', billing_mode: 'parameter_price', billing_unit: 'parameter', parameter_prices: [pp('per_second', 0.1, {})] } },
+        },
+        {
+          model_name: 'Seedance 2.0 fast 480-720p',
+          supported_endpoint_types: ['openai-video'],
+          enable_groups: ['V'],
+          group_pricing: { V: { group: 'V', billing_mode: 'parameter_price', billing_unit: 'parameter', parameter_prices: [pp('per_second', 0.3, { resolution: '720p' })] } },
+        },
+      ],
+    });
+    const image = result.image.find((m) => m.model === 'smart-image');
+    assert.deepEqual(image.prices.filter((p) => p.effective_price !== null).map((p) => [p.group, p.billing_unit, p.effective_price, p.conditions.model]), [['甲', 'per_request', 0.00975, 'gpt-image-2'], ['甲', 'per_request', 0.00078, 'gpt-image-2.5-flare']]);
+    assert.equal(image.prices.find((p) => p.group === '乙').effective_price, null, 'a price that needs the quality is not guessed');
+    assert.equal(image.cheapest_effective_price, 0.00078);
+    const h3 = result.video.find((m) => m.model === 'MINIMAX H3 质量版');
+    assert.deepEqual(h3.prices.map((p) => [p.billing_unit, p.effective_price, p.source]), [['per_second', 0.1, 'parameter_price']]);
+    assert.equal(result.video.find((m) => m.model === 'Seedance 2.0 fast 480-720p').cheapest_effective_price, null, 'resolution-dependent stays unpriced');
+  });
+
   it('uses the V0.1.2 video price snapshot while the public catalog is on the known stale revision', () => {
     const staleVideoPrice = (model, unit, value, group = '特价视频分组(即梦)') => ({
       model_name: model,

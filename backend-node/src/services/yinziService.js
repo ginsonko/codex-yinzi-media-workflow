@@ -73,11 +73,50 @@ function isYinziSmartRoutingConfig(config) {
     || settings?.smart_routing === true;
 }
 
+const finiteOrNull = (value) => (value != null && value !== '' && Number.isFinite(Number(value)) ? Number(value) : null);
+
+/**
+ * A group billed by `parameter_price` (smart-image, smart-video, MINIMAX H3 …) has no effective_model_price: its
+ * prices are `parameter_prices[]`, each a unit_price under `conditions`. A price whose conditions are empty, or name
+ * only the real `model` a virtual model lands on, is set by the route alone, so it is listed (one entry each, with
+ * its conditions). One that also depends on the request (resolution, quality, duration …) cannot be told before the
+ * request and stays unpriced, as before. unit_price is in the same unit as effective_model_price (checked against
+ * the public catalog: gpt-image-2 in one group is 0.00975 both ways).
+ */
+function parameterPrices(price) {
+  const list = Array.isArray(price?.parameter_prices) ? price.parameter_prices : [];
+  return list
+    .filter((p) => Object.keys(p?.conditions && typeof p.conditions === 'object' ? p.conditions : {}).every((k) => k === 'model'))
+    .map((p) => ({
+      group: String(price.group || p.group || ''),
+      billing_mode: String(price.billing_mode || 'parameter_price'),
+      billing_unit: String(p.unit || ''),
+      effective_price: finiteOrNull(p.unit_price),
+      effective_input_usd: null,
+      effective_output_usd: null,
+      fixed_duration_seconds: null,
+      conditions: { ...(p.conditions || {}) },
+      currency: 'CNY',
+      source: 'parameter_price',
+    }))
+    .filter((p) => p.effective_price !== null);
+}
+
 function normalizePricing(item) {
   const groupPricing = item && item.group_pricing && typeof item.group_pricing === 'object'
     ? Object.values(item.group_pricing)
     : [];
-  return groupPricing.map((price) => ({
+  return groupPricing.flatMap((price) => {
+    if (finiteOrNull(price?.effective_model_price) === null) {
+      const listed = parameterPrices(price);
+      if (listed.length) return listed;
+    }
+    return [normalizeGroupPrice(price)];
+  });
+}
+
+function normalizeGroupPrice(price) {
+  return ({
     group: String(price.group || ''),
     billing_mode: String(price.billing_mode || ''),
     billing_unit: String(price.billing_unit || ''),
@@ -94,7 +133,7 @@ function normalizePricing(item) {
       ? Number(price.fixed_duration_seconds)
       : null,
     currency: 'CNY',
-  }));
+  });
 }
 
 function normalizeEndpointTypes(value) {
