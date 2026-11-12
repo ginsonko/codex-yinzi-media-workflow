@@ -888,6 +888,11 @@ async function prepareYinziSetupInput(input = {}, fetchImpl = fetch) {
   warnings.push(...(Array.isArray(pricingCatalog.warnings) ? pricingCatalog.warnings : []));
   if (!textEntries.length) warnings.push('当前文本 Key 未返回文本模型，已保留 gpt-5.6-sol 默认值');
   if (!imageEntries.length) warnings.push(`当前生图 Key 未返回生图模型，已保留 ${imageModel}；可直接使用指定模型`);
+  // The setup snapshot above keeps video-endpoint models only, so image-only models (smart-image) had no price
+  // anywhere on this machine: the image configs carry their own price snapshot, for this Key's image models.
+  const imageNames = new Set([...imageEntries.map((item) => item.model), imageModel].map((m) => String(m || '').toLowerCase()));
+  const imagePriced = (pricingCatalog.public_catalog?.image || pricingCatalog.image || [])
+    .filter((item) => imageNames.has(String(item?.model || '').toLowerCase()) && Array.isArray(item.prices) && item.prices.length);
 
   return {
     ...input,
@@ -960,6 +965,19 @@ async function prepareYinziSetupInput(input = {}, fetchImpl = fetch) {
         manual_only: item.manual_only === true,
       })),
     },
+    image_catalog: imagePriced.length
+      ? {
+        fetched_at: pricingCatalog.public_catalog?.fetched_at || pricingCatalog.fetched_at || new Date().toISOString(),
+        pricing_version: pricingCatalog.public_catalog?.pricing_version || pricingCatalog.pricing_version || '',
+        models: imagePriced.map((item) => ({
+          model: item.model,
+          endpoint_types: endpointTypes(item),
+          groups: Array.isArray(item.groups) ? item.groups : [],
+          prices: item.prices,
+          cheapest_effective_price: Number.isFinite(Number(item.cheapest_effective_price)) ? Number(item.cheapest_effective_price) : null,
+        })),
+      }
+      : null,
   };
 }
 
@@ -989,6 +1007,7 @@ function yinziConfigDefinitions(input) {
     distribution_profile: distributionProfile,
   };
   const settings = JSON.stringify(commonSettings);
+  const imageSettings = input.image_catalog ? JSON.stringify({ ...commonSettings, model_catalog_snapshot: input.image_catalog }) : settings;
   const videoSettings = JSON.stringify({
     ...commonSettings,
     auto_model_selection: true,
@@ -996,8 +1015,8 @@ function yinziConfigDefinitions(input) {
   });
   return [
     { ...shared, base_url: baseUrls.text, service_type: 'text', name: 'YinziAPI 文本', api_protocol: 'openai', api_key: textKey, model: textModels, default_model: textModel, endpoint: '/chat/completions', query_endpoint: '', settings },
-    { ...shared, base_url: baseUrls.image, service_type: 'image', name: 'YinziAPI 文本生图', api_protocol: 'openai', api_key: imageKey, model: imageModels, default_model: imageModel, endpoint: '/images/generations', query_endpoint: '', settings },
-    { ...shared, base_url: baseUrls.image, service_type: 'storyboard_image', name: 'YinziAPI 分镜图', api_protocol: 'openai', api_key: imageKey, model: imageModels, default_model: imageModel, endpoint: '/images/generations', query_endpoint: '', settings },
+    { ...shared, base_url: baseUrls.image, service_type: 'image', name: 'YinziAPI 文本生图', api_protocol: 'openai', api_key: imageKey, model: imageModels, default_model: imageModel, endpoint: '/images/generations', query_endpoint: '', settings: imageSettings },
+    { ...shared, base_url: baseUrls.image, service_type: 'storyboard_image', name: 'YinziAPI 分镜图', api_protocol: 'openai', api_key: imageKey, model: imageModels, default_model: imageModel, endpoint: '/images/generations', query_endpoint: '', settings: imageSettings },
     { ...shared, base_url: baseUrls.video, service_type: 'video', name: 'YinziAPI 视频', api_protocol: 'yinzi', api_key: videoKey, model: videoModels, default_model: videoModel, endpoint: '/videos', query_endpoint: '/videos/{taskId}', settings: videoSettings },
   ];
 }

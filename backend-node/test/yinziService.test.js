@@ -6,6 +6,7 @@ const {
   normalizeYinziCatalog,
   fetchYinziCatalogForConfig,
   prepareYinziSetupInput,
+  yinziConfigDefinitions,
   upsertYinziConfigs,
 } = require('../src/services/yinziService');
 
@@ -489,6 +490,43 @@ describe('prepareYinziSetupInput', () => {
     assert.equal(prepared.setup_catalog.selection_reason, 'only_current_key_video_model');
     assert.equal(prepared.setup_catalog.models.some((item) => item.model === 'gpt-5.6-sol'), false);
     assert.equal(prepared.setup_catalog.models.some((item) => item.model === 'MiniMax-H3-4k'), false);
+  });
+
+  it('keeps the prices of image-only models (smart-image) on the image configs', async () => {
+    const fetchImpl = async (url) => {
+      if (url.endsWith('/models')) {
+        return { ok: true, status: 200, async json() { return { data: [
+          { id: 'smart-image', supported_endpoint_types: ['image-generation'] },
+          { id: 'grok-imagine-video', supported_endpoint_types: ['openai-video'] },
+        ] }; } };
+      }
+      if (url.endsWith('/model-capabilities')) return { ok: false, status: 500 };
+      if (url === 'https://yinziapi.top/api/pricing') {
+        return { ok: true, status: 200, async json() { return {
+          success: true,
+          pricing_version: 'image-v1',
+          data: [
+            { model_name: 'grok-imagine-video', supported_endpoint_types: ['openai-video'], enable_groups: ['v'], group_pricing: { v: { group: 'v', billing_mode: 'fixed_price', billing_unit: 'per_request', effective_model_price: 0.1 } } },
+            { model_name: 'smart-image', supported_endpoint_types: ['image-generation'], enable_groups: ['a', 'b'], billing_mode: 'parameter_price', group_pricing: {
+              a: { group: 'a', billing_mode: 'parameter_price', parameter_prices: [{ unit: 'per_request', unit_price: '0.0975', conditions: { model: 'gpt-image-2' } }, { unit: 'per_request', unit_price: '0.17', conditions: { model: 'gpt-image-2.5' } }] },
+              b: { group: 'b', billing_mode: 'parameter_price', parameter_prices: [{ unit: 'per_request', unit_price: '0.02', conditions: { model: 'gpt-image-2.5-flare' } }] },
+            } },
+            { model_name: 'other-image', supported_endpoint_types: ['image-generation'], enable_groups: ['a'], group_pricing: { a: { group: 'a', billing_mode: 'fixed_price', billing_unit: 'per_request', effective_model_price: 0.5 } } },
+          ],
+        }; } };
+      }
+      throw new Error(`unexpected URL ${url}`);
+    };
+    const prepared = await prepareYinziSetupInput({ base_url: 'https://api.yinziapi.top/v1', api_key: 'smart-key', image_model: 'smart-image' }, fetchImpl);
+    assert.equal(prepared.setup_catalog.models.some((item) => item.model === 'smart-image'), false, 'the video snapshot stays video only');
+    assert.deepEqual(prepared.image_catalog.models.map((m) => m.model), ['smart-image'], 'only this Key\'s image models');
+    assert.deepEqual(prepared.image_catalog.models[0].prices.map((p) => [p.group, p.effective_price]), [['a', 0.17], ['b', 0.02]]);
+    const defs = yinziConfigDefinitions({ ...prepared, text_model: 't', image_model: 'smart-image', video_model: 'grok-imagine-video' });
+    for (const type of ['image', 'storyboard_image']) {
+      const s = JSON.parse(defs.find((d) => d.service_type === type).settings);
+      assert.equal(s.model_catalog_snapshot.models[0].model, 'smart-image');
+    }
+    assert.equal(JSON.parse(defs.find((d) => d.service_type === 'text').settings).model_catalog_snapshot, undefined);
   });
 
   it('prefers Seedance when both Seedance and Grok are verified for the current key', async () => {
