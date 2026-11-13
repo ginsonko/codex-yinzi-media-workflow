@@ -137,4 +137,10 @@ function imageSizeFor(model, size, aspectRatio) {
   return tier ? forTier(ratio || 1, tier, DEFAULT_SPEC) : '';
 }
 
-module.exports = { IMAGE_SIZE_PRESETS, TIER_EDGE, FIXED_IMAGE_SIZES, usesImageSizePresets, snapImageSize, imageSizeFor };
+/** The aspect ratio label of a WxH size (its nearest shape in RATIOS), '' when it is no WxH. */
+function aspectRatioOfSize(size) {
+  const { w, h } = readSize(size);
+  return w ? nearestRatio(w / h) : '';
+}
+
+module.exports = { IMAGE_SIZE_PRESETS, TIER_EDGE, FIXED_IMAGE_SIZES, usesImageSizePresets, snapImageSize, imageSizeFor, aspectRatioOfSize };

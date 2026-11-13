@@ -168,6 +168,7 @@ describe('image reference transport copies', () => {
 
       assert.equal(result.image_url, 'https://cdn.example.test/generated.png');
       assert.equal(receivedBody.size, '2048x1152');
+      assert.equal(receivedBody.aspect_ratio, '16:9', 'Yinzi gets the ratio of the size it is sent');
       assert.equal(receivedBody.image.length, 3);
       assert.match(receivedBody.negative_prompt, /flowers, plants/);
       for (const dataUrl of receivedBody.image) {
@@ -191,6 +192,7 @@ describe('image reference transport copies', () => {
         image_gen_id: 9003, imageServiceType: 'image', storage_local_path: storageRoot,
       });
       assert.equal(receivedBody.size, '2048x2048');
+      assert.equal(receivedBody.aspect_ratio, '1:1');
       await callImageApi(db, log, {
         prompt: 'portrait', model: 'gpt-image-2.5', size: '1024x1536',
         image_gen_id: 9004, imageServiceType: 'image', storage_local_path: storageRoot,
