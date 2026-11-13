@@ -236,3 +236,5 @@ Return the actual outputs plus an audit summary: what was reused, generated, edi
 For ordinary single-character replacement with Seedance 2.5, first consider one clear character image, the source video and a short prompt. Use the current provider contract; inspect actual output duration and content. Reverse-prompting, edited storyboards and local frame processing are upgrades for concrete quality needs, not required preparation for every request. See [character-replacement.md](references/character-replacement.md).
 
 For new media needs, search a few [production options](references/media-tool-options.md), then read matching details. Separate research options from executable modules and reuse [local editing recipes](references/local-composition.md) where suitable.
+
+When the host offers `sfx_tool`, take every sound effect and ambience bed from it (user folder, then the licensed built-in library, then a marked synthetic placeholder) and add them with its cue-based `mix`; see [sound-effects.md](references/sound-effects.md).
