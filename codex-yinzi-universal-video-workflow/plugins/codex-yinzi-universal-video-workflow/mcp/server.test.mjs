@@ -216,6 +216,7 @@ function currentNode() {
     attempt: state.attempt || 1,
     node_key: state.nodeKey || 'image',
     request_hash: state.reservedHash,
+    ...(state.nodeStatus ? { status: state.nodeStatus } : {}),
     progress: last.progress || (state.reservedHash ? { submission_state: 'submitting' } : {}),
     output_refs: last.output_refs || [],
     decision: last.decision || {},
@@ -744,6 +745,29 @@ test('image transport failures preserve the original request and can recover a l
       assert.equal(state.imageSubmissions, 1)
     } finally { client.close() }
   }
+})
+
+test('a reconcile poll that learns nothing new does not post the same failure again (0.6.7 node 196)', async () => {
+  resetState({ reservedHash: 'known', generation: { id: 41, status: 'failed', error_msg: '服务重启后任务中断，请重新操作' }, task: { id: 'task-41', status: 'failed', error: '服务重启后任务中断，请重新操作' } })
+  state.patches.push({ output_refs: [{ type: 'image_generation', id: '41' }, { type: 'async_task', id: 'task-41' }] })
+  const client = makeClient()
+  try {
+    const first = await client.call('reconcile_image', { session_id: 's1', node_key: 'image' })
+    assert.equal(first.data.outcome, 'unresolved')
+    assert.equal(state.actions.length, 1)
+    // The workflow now shows the node as failed with that progress, as the real orchestration service does.
+    state.nodeStatus = 'failed'
+    state.patches.push({ output_refs: state.patches.at(-1).output_refs, progress: state.actions[0].body.progress })
+    for (let i = 0; i < 3; i++) {
+      const again = await client.call('reconcile_image', { session_id: 's1', node_key: 'image' })
+      assert.equal(again.data.outcome, 'unresolved')
+      assert.equal(again.data.unchanged, true)
+    }
+    assert.equal(state.actions.length, 1, 'no second fail action')
+    state.generation = { id: 41, status: 'completed', local_path: 'media/images/41.png' }
+    const late = await client.call('reconcile_image', { session_id: 's1', node_key: 'image' })
+    assert.equal(late.data.outcome, 'succeeded', 'a late result is still picked up')
+  } finally { client.close() }
 })
 
 test('archived sessions remain discoverable through MCP without changing default queries', async () => {
