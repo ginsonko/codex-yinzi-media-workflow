@@ -623,8 +623,10 @@ function create(db, log, req) {
   );
   const imageGenId = info.lastInsertRowid;
   if (!imageGenId) throw new Error('insert failed');
+  // 付费上下文只来自发起这次生成的编排会话（paidGate.paidContextOf）；没有就是 null，由宿主请用户确认。
+  const paidContext = require('./paidGate').paidContextOf(db, req.orchestration_session_id);
   setImmediate(() => {
-    processImageGeneration(db, log, imageGenId);
+    processImageGeneration(db, log, imageGenId, { paid_context: paidContext });
   });
   return { id: imageGenId, task_id: taskId, status: 'pending', ...getById(db, imageGenId) };
 }
@@ -632,7 +634,7 @@ function create(db, log, req) {
 /**
  * 异步处理图片生成：与 Go ProcessImageGeneration 对齐，调用图生 API 并更新记录与任务
  */
-async function processImageGeneration(db, log, imageGenId) {
+async function processImageGeneration(db, log, imageGenId, extra = {}) {
   const t0 = Date.now();
   const elapsed = () => `${Date.now() - t0}ms`;
 
@@ -1457,6 +1459,7 @@ async function processImageGeneration(db, log, imageGenId) {
       storage_local_path: storageLocalPath,
       system_prompt: apiSystemPrompt,
       user_negative_prompt: row.negative_prompt || undefined,
+      paid_context: extra.paid_context || null,
       frame_identity_lock: isFrameIdentityLock,
     });
     log.info('[图生] Step4 图生 API 返回', { id: imageGenId, api_ms: Date.now() - tApi, has_error: !!result.error, elapsed: elapsed() });

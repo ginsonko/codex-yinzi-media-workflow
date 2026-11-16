@@ -7,6 +7,7 @@ const aiConfigService = require('./aiConfigService');
 let sharp; try { sharp = require('sharp'); } catch (_) { sharp = null; }
 const { uploadLocalImageToProxy, uploadToImageProxy } = require('./uploadService');
 const imageClient = require('./imageClient');
+const { paidFetch } = require('./paidGate');
 const {
   getYinziVideoCapability,
   clampYinziVideoDuration,
@@ -3799,15 +3800,15 @@ async function callYinziVideoApiOnce(db, config, log, opts) {
     publishSubmission('ambiguous', {}, {
       phase: 'post_started',
     });
-    res = await fetch(url, {
+    // 经宿主的收费闸发出（paidGate.js）：商业版先报价、确认再带报价提交；超时从真正发出时算起。
+    res = await paidFetch(url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         Authorization: 'Bearer ' + (config.api_key || ''),
       },
       body: JSON.stringify(body),
-      signal: AbortSignal.timeout(120000),
-    });
+    }, { context: opts.paid_context || null, timeoutMs: 120000 });
   } catch (error) {
     return publishSubmission('ambiguous', {
       error: `YinziAPI 视频提交连接中断（${error.message || '网络错误'}）。上游结果及费用未知；可以查询原记录，也可以明确重试创建新尝试，原记录会保留。`,
@@ -4995,6 +4996,7 @@ async function callVideoApi(db, log, opts) {
       provider_config_snapshot: providerConfigSnapshot,
       capability_context: yinziCapabilityContext,
       on_submission_state: opts.on_submission_state,
+      paid_context: opts.paid_context || null,
     });
   }
 

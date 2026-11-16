@@ -98,7 +98,9 @@ function createGeneration(db, log, body = {}, options = {}) {
     contractValidationMode, task.id, clientRequestKey, now, now
   );
   const videoGenId = db.prepare('SELECT last_insert_rowid() as id').get().id;
-  setImmediate(() => videoService.processVideoGeneration(db, log, videoGenId));
+  // 付费上下文只来自发起这次生成的编排会话（paidGate.paidContextOf）；没有就是 null，由宿主请用户确认。
+  const paidContext = require('../services/paidGate').paidContextOf(db, body.orchestration_session_id);
+  setImmediate(() => videoService.processVideoGeneration(db, log, videoGenId, { paid_context: paidContext }));
   return videoService.getById(db, videoGenId) || { id: videoGenId, task_id: task.id, status: 'processing' };
 }
 

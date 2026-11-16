@@ -1293,7 +1293,7 @@ function resumeProcessingVideoGenerations(db, log) {
   }
 }
 
-async function processVideoGeneration(db, log, videoGenId) {
+async function processVideoGeneration(db, log, videoGenId, extra = {}) {
   const existing = db.prepare('SELECT * FROM video_generations WHERE id = ? AND deleted_at IS NULL').get(Number(videoGenId));
   if (!existing) {
     log.error('Video generation not found', { id: videoGenId });
@@ -1439,6 +1439,7 @@ async function processVideoGeneration(db, log, videoGenId) {
       video_gen_id: videoGenId,
       video_config_id: row.video_config_id,
       provider_config_snapshot: parseObject(row.provider_config_snapshot_json),
+      paid_context: extra.paid_context || null,
       on_submission_state: (submission) => {
         persistVideoSubmissionState(db, videoGenId, submission.status, {
           http_status: submission.http_status, receipt: submission.receipt,

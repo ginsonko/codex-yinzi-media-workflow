@@ -552,7 +552,7 @@ async function generateVideo(args) {
   })
   if (!reserve.reserved) return { submitted: false, reused: true, reconciliation_required: true, request_hash: requestHash, node: reserve.node }
   try {
-    const result = await api('POST', '/api/v1/videos', video, Number(args.timeout_ms) || 30000)
+    const result = await api('POST', '/api/v1/videos', { ...video, orchestration_session_id: args.session_id }, Number(args.timeout_ms) || 30000)
     const taskId = result?.task_id || null
     const generationId = result?.id || null
     const providerTaskId = result?.provider_task_id || null
@@ -863,7 +863,7 @@ async function generateImage(args) {
   if (!reserve.reserved) return { submitted: false, reused: true, reconciliation_required: reserve.reconciliation_required, request_hash: requestHash, node: reserve.node }
   try {
     const clientRequestKey = `orchestration-image:${createHash('sha256').update(JSON.stringify([args.session_id, args.node_key, requestHash])).digest('hex')}`
-    const result = await api('POST', '/api/v1/images', { ...image, client_request_key: clientRequestKey }, Number(args.timeout_ms) || 30000)
+    const result = await api('POST', '/api/v1/images', { ...image, client_request_key: clientRequestKey, orchestration_session_id: args.session_id }, Number(args.timeout_ms) || 30000)
     const taskId = result?.task_id || null; const generationId = result?.id || null
     const updated = await api('PATCH', `/api/v1/orchestration-sessions/${encodeURIComponent(args.session_id)}/nodes/${encodeURIComponent(args.node_key)}`, {
       actor: 'codex', expected_attempt: reserve.node?.attempt, request_hash: requestHash,

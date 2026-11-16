@@ -3,6 +3,7 @@ const aiConfigService = require('./aiConfigService');
 const { applyDeepSeekChatOptions } = require('./deepseekConfig');
 const https = require('https');
 const http = require('http');
+const { gateFor } = require('./paidGate');
 
 /**
  * 非流式 POST，发送 JSON body，等待完整 HTTP 响应后返回。
@@ -81,14 +82,12 @@ function responseTextFromJSON(json) {
  * @returns {Promise<{ statusCode: number, raw: string }>}
  */
 /**
- * 发送前钩子：万能创作终端商业版在主进程装一道收费闸（electron/commerce-gate.cjs，globalThis.__omniPaidGate），
- * 付费的出图请求先报价、让用户确认，再带 X-Parameter-Quote 发出。没装闸或不归它管时原样发送。
+ * 发送前钩子：万能创作终端商业版在主进程装一道收费闸（paidGate.js），付费的出图请求先报价、让用户确认，
+ * 再带 X-Parameter-Quote 发出。没装闸或不归它管时原样发送。paidContext 是这次生成的付费上下文（paidGate.paidContextOf）。
  */
-function postJSONWithTimeout(url, headers, body, timeoutMs = 600000) {
-  const gate = globalThis.__omniPaidGate;
-  if (gate && typeof gate.covers === 'function' && gate.covers(url, 'POST')) {
-    return gate.runRaw({ url, body }, (extra) => sendJSONWithTimeout(url, { ...headers, ...extra }, body, timeoutMs));
-  }
+function postJSONWithTimeout(url, headers, body, timeoutMs = 600000, paidContext = null) {
+  const gate = gateFor(url);
+  if (gate) return gate.runRaw({ url, body, ctx: paidContext }, (extra) => sendJSONWithTimeout(url, { ...headers, ...extra }, body, timeoutMs));
   return sendJSONWithTimeout(url, headers, body, timeoutMs);
 }
 

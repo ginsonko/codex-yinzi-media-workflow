@@ -504,7 +504,7 @@ async function callKlingImageApi(config, log, opts) {
   let submitRaw;
   let submitStatus;
   try {
-    const out = await postJSONWithTimeout(submitUrl, headers, body, IMAGE_HTTP_TIMEOUT_MS);
+    const out = await postJSONWithTimeout(submitUrl, headers, body, IMAGE_HTTP_TIMEOUT_MS, opts.paid_context);
     submitStatus = out.statusCode;
     submitRaw = out.raw;
   } catch (e) {
@@ -689,7 +689,7 @@ async function callNanoBananaImageApi(config, log, opts) {
   let submitRaw;
   let submitStatus;
   try {
-    const out = await postJSONWithTimeout(submitUrl, headers, body, IMAGE_HTTP_TIMEOUT_MS);
+    const out = await postJSONWithTimeout(submitUrl, headers, body, IMAGE_HTTP_TIMEOUT_MS, opts.paid_context);
     submitStatus = out.statusCode;
     submitRaw = out.raw;
   } catch (e) {
@@ -930,7 +930,7 @@ async function callDashScopeImageApi(config, log, opts) {
     let raw;
     let httpStatus;
     try {
-      const out = await postJSONWithTimeout(url, qwenHeaders, body, IMAGE_HTTP_TIMEOUT_MS);
+      const out = await postJSONWithTimeout(url, qwenHeaders, body, IMAGE_HTTP_TIMEOUT_MS, opts.paid_context);
       httpStatus = out.statusCode;
       raw = out.raw;
     } catch (e) {
@@ -1019,7 +1019,7 @@ async function callDashScopeImageApi(config, log, opts) {
   let raw;
   let httpStatus;
   try {
-    const out = await postJSONWithTimeout(url, headers, body, IMAGE_HTTP_TIMEOUT_MS);
+    const out = await postJSONWithTimeout(url, headers, body, IMAGE_HTTP_TIMEOUT_MS, opts.paid_context);
     httpStatus = out.statusCode;
     raw = out.raw;
   } catch (e) {
@@ -1385,6 +1385,7 @@ async function callGeminiImageApi(db, config, log, opts) {
       { 'Content-Type': 'application/json' },
       body,
       IMAGE_HTTP_TIMEOUT_MS,
+      opts.paid_context,
     );
     geminiStatus = out.statusCode;
     raw = out.raw;
@@ -1517,6 +1518,7 @@ async function callImageApi(db, log, opts) {
       files_base_url: opts.files_base_url,
       storage_local_path: opts.storage_local_path,
       negative_prompt: mergedNegativePrompt,
+      paid_context: opts.paid_context,
     });
   }
 
@@ -1526,6 +1528,7 @@ async function callImageApi(db, log, opts) {
       reference_image_urls: opts.reference_image_urls,
       files_base_url: opts.files_base_url,
       storage_local_path: opts.storage_local_path,
+      paid_context: opts.paid_context,
     });
   }
 
@@ -1535,6 +1538,7 @@ async function callImageApi(db, log, opts) {
       reference_image_urls: opts.reference_image_urls,
       files_base_url: opts.files_base_url,
       storage_local_path: opts.storage_local_path,
+      paid_context: opts.paid_context,
     });
   }
 
@@ -1545,6 +1549,7 @@ async function callImageApi(db, log, opts) {
       files_base_url: opts.files_base_url,
       storage_local_path: opts.storage_local_path,
       system_prompt: opts.system_prompt,
+      paid_context: opts.paid_context,
     });
   }
 
@@ -1610,7 +1615,7 @@ async function callImageApi(db, log, opts) {
   let raw;
   let httpStatus;
   try {
-    const out = await postJSONWithTimeout(url, openaiCompatHeaders, body, IMAGE_HTTP_TIMEOUT_MS);
+    const out = await postJSONWithTimeout(url, openaiCompatHeaders, body, IMAGE_HTTP_TIMEOUT_MS, opts.paid_context);
     httpStatus = out.statusCode;
     raw = out.raw;
   } catch (e) {
