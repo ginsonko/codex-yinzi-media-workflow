@@ -3,9 +3,11 @@ const fs = require('node:fs');
 const path = require('node:path');
 const sharp = require('sharp');
 
-const YINZI_REFERENCE_IMAGE_PROFILE = 'yinzi-image-v1-jpeg1920-2m';
+const YINZI_REFERENCE_IMAGE_PROFILE = 'yinzi-image-v2-jpeg1920-1m';
 const YINZI_REFERENCE_IMAGE_MAX_LONG_EDGE = 1920;
-const YINZI_REFERENCE_IMAGE_MAX_BYTES = 2 * 1024 * 1024;
+// A 2.0 MB key-frame PNG went inline as a 2.6 MB request body and the link dropped at 18% (0.6.7 第 1 集第 1 镜);
+// the same frame as JPEG at 1920 is about 0.3 MB.
+const YINZI_REFERENCE_IMAGE_MAX_BYTES = 1024 * 1024;
 
 function sha256File(filePath) {
   return crypto.createHash('sha256').update(fs.readFileSync(filePath)).digest('hex');

@@ -60,6 +60,25 @@ describe('Yinzi local reference-image preparation', () => {
     }
   });
 
+  it('compresses a key frame between 1 MB and 2 MB that the old 2 MB profile sent as it was', async () => {
+    const storage = fs.mkdtempSync(path.join(os.tmpdir(), 'yinzi-reference-image-mid-'));
+    try {
+      const source = path.join(storage, 'frame.png');
+      const width = 600;
+      const height = 1000;
+      await sharp(crypto.randomBytes(width * height * 3), { raw: { width, height, channels: 3 } }).png().toFile(source);
+      const size = fs.statSync(source).size;
+      assert.ok(size > YINZI_REFERENCE_IMAGE_MAX_BYTES && size < 2 * 1024 * 1024, `fixture is ${size} bytes`);
+      const prepared = await prepareYinziReferenceImage(source, { storage_root: storage });
+      assert.equal(prepared.normalized, true);
+      assert.equal(prepared.probe.format, 'jpeg');
+      assert.ok(prepared.probe.bytes <= YINZI_REFERENCE_IMAGE_MAX_BYTES);
+      assert.ok(prepared.probe.bytes < size);
+    } finally {
+      fs.rmSync(storage, { recursive: true, force: true });
+    }
+  });
+
   it('fails closed on an invalid local image', async () => {
     const storage = fs.mkdtempSync(path.join(os.tmpdir(), 'yinzi-reference-image-invalid-'));
     try {

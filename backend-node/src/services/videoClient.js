@@ -29,6 +29,23 @@ const {
 const { identityForConfig, attachSnapshotFields } = require('./productionConfigIdentity');
 const videoDurationSupport = require('./videoDurationSupport');
 
+// undici reports every transport failure as "fetch failed"; the useful part
+// (ECONNRESET, UND_ERR_CONNECT_TIMEOUT, ...) lives on error.cause.
+function networkCause(error) {
+  const cause = error && error.cause;
+  return {
+    error_name: error?.name || null,
+    message: String(error?.message || '').slice(0, 200),
+    cause_code: cause?.code || error?.code || null,
+    cause_message: cause ? String(cause.message || cause).slice(0, 200) : null,
+  };
+}
+
+function maskTaskId(id) {
+  const s = String(id || '');
+  return s.length > 10 ? `${s.slice(0, 4)}…${s.slice(-4)}` : s || null;
+}
+
 /**
  * ?? provider ??????????api_protocol ??????????
  */
@@ -3813,7 +3830,7 @@ async function callYinziVideoApiOnce(db, config, log, opts) {
     return publishSubmission('ambiguous', {
       error: `YinziAPI 视频提交连接中断（${error.message || '网络错误'}）。上游结果及费用未知；可以查询原记录，也可以明确重试创建新尝试，原记录会保留。`,
       ambiguous_submission: true,
-    }, { phase: 'transport_error', message: error.message });
+    }, { phase: 'transport_error', ...networkCause(error) });
   }
 
   // A gateway trace ID is evidence for support, not a provider task ID.
@@ -5555,7 +5572,14 @@ async function pollVideoTask(
         return { error: failMsg.slice(0, 500) };
       }
     } catch (e) {
-      log.warn('Video poll request failed', { attempt, error: e.message });
+      log.warn('Video poll request failed', {
+        attempt,
+        phase: 'poll',
+        video_gen_id: videoGenId,
+        task: maskTaskId(taskId),
+        http_status: null,
+        ...networkCause(e),
+      });
     }
   }
   return {

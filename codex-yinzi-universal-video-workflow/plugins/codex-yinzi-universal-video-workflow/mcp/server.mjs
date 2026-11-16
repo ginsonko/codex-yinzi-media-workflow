@@ -915,6 +915,12 @@ async function reconcileImage(args) {
     const progressMessage = submissionState === 'uncertain'
       ? `${message}；本地未取得结果，上游结果及扣费待核实。保留原请求，不自动重发。`
       : message
+    // The node already says exactly this: a poll that learns nothing new writes nothing (no new node version).
+    const progressState = submissionState === 'uncertain' ? 'provider_unknown' : 'failed'
+    const p = node.progress || {}
+    if (node.status === 'failed' && p.state === progressState && p.submission_state === submissionState && p.message === progressMessage && String(p.generation_id ?? '') === String(generation?.id || generationId || '')) {
+      return { outcome: unresolved ? 'unresolved' : 'failed', reconciliation_required: submissionState === 'uncertain', message: progressMessage, generation, task, node, unchanged: true }
+    }
     const failed = await api('POST', `/api/v1/orchestration-sessions/${encodeURIComponent(args.session_id)}/nodes/${encodeURIComponent(args.node_key)}/actions/fail`, {
       actor: 'codex', expected_attempt: node.attempt, request_hash: node.request_hash, message, original_code: unresolved ? 'IMAGE_PROVIDER_RESULT_UNCERTAIN' : 'IMAGE_GENERATION_FAILED', retryable: 'unknown', correlation_id: taskId || null,
       next_actions: submissionState === 'uncertain' ? ['reconcile_image', 'retry', 'inspect_provider_task'] : ['retry', 'inspect', 'edit_plan'],

@@ -11,7 +11,7 @@ const { isLatestImageAttempt } = require('./imageAttemptOwnership');
 const { loadConfig } = require('../config');
 const { postJSONWithTimeout } = require('./aiClient');
 const seedance2AssetGuards = require('../utils/seedance2AssetGuards');
-const { usesImageSizePresets, snapImageSize } = require('./imageSizePresets');
+const { usesImageSizePresets, snapImageSize, aspectRatioOfSize } = require('./imageSizePresets');
 
 /** 图生 POST 使用 Node http(s)，默认 10 分钟，避免 undici fetch 大包体/慢链路下模糊失败 */
 const IMAGE_HTTP_TIMEOUT_MS = 600000;
@@ -1588,6 +1588,8 @@ async function callImageApi(db, log, opts) {
     // doubao-seedream API 不使用 n，其他 OpenAI 兼容接口保留
     ...(!isSeedream ? { n: 1 } : {}),
     ...(effectiveSize ? { size: effectiveSize } : {}),
+    // Yinzi's routes do not all keep the shape of `size` alone; the ratio of the size sent goes with it.
+    ...(provider === 'yinzi' && aspectRatioOfSize(effectiveSize) ? { aspect_ratio: aspectRatioOfSize(effectiveSize) } : {}),
     ...(quality ? { quality } : {}),
     // volcengine 原生或 doubao-seedream 模型均需关闭水印（默认为 true）
     ...((isVolc || isSeedream) ? { watermark: false } : {}),
@@ -1605,6 +1607,7 @@ async function callImageApi(db, log, opts) {
     image_gen_id,
     has_ref_images: resolvedRefs.length > 0,
     size: effectiveSize,
+    aspect_ratio: body.aspect_ratio,
     original_size: size !== effectiveSize ? size : undefined,
     is_agnes: isAgnes,
   });

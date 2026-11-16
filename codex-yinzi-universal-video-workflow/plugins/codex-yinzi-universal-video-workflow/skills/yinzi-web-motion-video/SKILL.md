@@ -128,3 +128,7 @@ productions (see the notes).
 - A shader uniform used but not declared, or a scene module failing to load, rendered silently
   wrong frames; log page errors and fail the render on them.
 - Bloom and additive light overexpose easily; check stills at the brightest moments.
+
+## Sound effects
+
+When the host offers `sfx_tool`, take effects from it instead of synthesizing clicks and whooshes by hand. The timeline file already knows when each visual event happens, so write the effects as cues from it: `{use: "点击", at: <event seconds>}` for a button press, `{use: "叮", at: ...}` for a result appearing, `{use: "嗖", at: ...}` for a fast transition. After `render_video` produces the film, call `{action: "mix", input: <film>, cues: [...]}`; it writes a new file, aligns each short sound's onset to `at`, keeps effects on their own bus and leaves the library files untouched. A result marked `placeholder: true` is a synthetic stand-in; say so. Details: [sound-effects.md](../codex-yinzi-universal-video/references/sound-effects.md).

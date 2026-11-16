@@ -122,6 +122,18 @@ function failOrphanedAsyncTasksOnStartup(db, log) {
   log.warn('Failing orphaned async tasks after startup', { count: orphaned.length });
   for (const row of orphaned) {
     updateTaskError(db, row.id, ORPHAN_ASYNC_TASK_MSG);
+    // The image record of the same task follows it: left at processing, every reconcile reads a failed task over
+    // a running record and reports the same failure again on each poll (0.6.7 live run, node 196, version 341).
+    if (row.type === 'image_generation') {
+      try {
+        db.prepare(
+          `UPDATE image_generations SET status = 'failed', error_msg = ?, updated_at = ?
+           WHERE task_id = ? AND status IN ('pending', 'processing') AND deleted_at IS NULL`
+        ).run(ORPHAN_ASYNC_TASK_MSG, new Date().toISOString(), row.id);
+      } catch (error) {
+        if (!String(error.message || '').includes('no such table')) throw error;
+      }
+    }
     log.info('Orphaned async task marked failed', {
       task_id: row.id,
       type: row.type,
