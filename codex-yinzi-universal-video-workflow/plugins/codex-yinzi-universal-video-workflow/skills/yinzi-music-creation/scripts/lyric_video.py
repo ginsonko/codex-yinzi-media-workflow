@@ -239,7 +239,7 @@ def render_karaoke_mp4(
 
         # 4 Metronome dots
         for b_i in range(1, 5):
-            cx = W - 490 + (b_i - 1) * 34
+            cx = W - 740 + (b_i - 1) * 34
             cy = 78
             if b_i == beat_in_bar:
                 r = int(10 + 4 * pulse)
@@ -251,7 +251,7 @@ def render_karaoke_mp4(
 
         mm, ss = int(t // 60), t % 60
         hud_txt = f"Bar {bar_num:02d}/{total_bars} · Beat {beat_in_bar}  |  {bpm:g} BPM  |  {mm:02d}:{ss:04.1f}"
-        dr.text((W - 350, 62), hud_txt, font=f_meta, fill=(220, 230, 248))
+        dr.text((W - 76 - dr.textlength(hud_txt, font=f_meta), 62), hud_txt, font=f_meta, fill=(220, 230, 248))
 
         # 2. Section & Gag Callout Banner
         cur_sec = sections_timeline[0] if sections_timeline else None
