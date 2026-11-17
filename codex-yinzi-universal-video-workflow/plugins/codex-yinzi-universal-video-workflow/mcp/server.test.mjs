@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { spawn } from 'node:child_process'
+import { execFileSync, spawn } from 'node:child_process'
 import http from 'node:http'
 import { after, before, test } from 'node:test'
 import path from 'node:path'
@@ -9,6 +9,24 @@ import os from 'node:os'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const serverPath = path.join(here, 'server.mjs')
+
+test('all tool inputSchema arrays declare items for Gemini', () => {
+  const response = execFileSync(process.execPath, [serverPath], {
+    input: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' }) + '\n',
+    encoding: 'utf8', windowsHide: true,
+  })
+  const { tools } = JSON.parse(response).result
+  const action = tools.find(tool => tool.name === 'node_action')
+  for (const field of ['input_refs', 'output_refs']) {
+    assert.deepEqual(action.inputSchema.properties[field], { type: 'array', items: { type: 'object' } })
+  }
+  function check(schema, location) {
+    if (!schema || typeof schema !== 'object') return
+    if ([schema.type].flat().includes('array')) assert.ok(Object.hasOwn(schema, 'items'), location + ' missing items')
+    for (const [key, value] of Object.entries(schema)) check(value, location + '.' + key)
+  }
+  for (const tool of tools) check(tool.inputSchema, tool.name)
+})
 
 let apiServer
 let apiBase
