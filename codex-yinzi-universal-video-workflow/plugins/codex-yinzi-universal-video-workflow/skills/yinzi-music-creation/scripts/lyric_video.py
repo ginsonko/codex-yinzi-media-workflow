@@ -107,6 +107,7 @@ def render_karaoke_mp4(
     roleB_lines: list,
     sections_timeline: list,
     fps: int = 30,
+    preroll_s: float = 0.0,
 ):
     """
     Render 1920x1080 30fps dual-role karaoke & MV beat-animatic MP4.
@@ -230,7 +231,7 @@ def render_karaoke_mp4(
         dr = ImageDraw.Draw(frame)
 
         # 1. Beat & Bar Metronome HUD (top-right)
-        total_beats = t / beat_s
+        total_beats = max(0.0, t - preroll_s) / beat_s
         bar_num = min(total_bars, int(total_beats // 4.0) + 1)
         beat_in_bar = int(total_beats % 4.0) + 1
         beat_frac = total_beats % 1.0
@@ -333,7 +334,7 @@ def main():
     """python lyric_video.py <母带.wav> <工程/lyric_lines.json> <输出.mp4>
     主唱轨（role=lead 的第一条）粉色在上，其余（和声、应援、捧哏）蓝色在下，逐字高亮，带小节/拍号节拍灯，可当 MV 节拍样片。"""
     import json
-    wav, lines_json, out = sys.argv[1:4]
+    wav, lines_json, out = (os.path.abspath(x) for x in sys.argv[1:4])
     d = json.load(open(lines_json, encoding="utf-8"))
     tracks = d["tracks"]
     lead = next((t for t in tracks if t["role"] == "lead"), tracks[0])
@@ -343,15 +344,16 @@ def main():
     B = conv([l for l in d["lines"] if l["track"] != lead["name"]])
     others = "、".join(t["label"] for t in tracks if t["name"] != lead["name"]) or "和声"
     beat = 60.0 / d["bpm"]
+    pre = float(d.get("preroll_s", 0.0))
     secs = []
     for s in d.get("sections", []):
         b0, b1 = [int(x) for x in str(s["bars"]).split("-")]
-        secs.append({"start_s": (b0 - 1) * 4 * beat, "end_s": b1 * 4 * beat, "section": s.get("name", ""), "gag": s.get("gag", "")})
+        secs.append({"start_s": pre + (b0 - 1) * 4 * beat, "end_s": pre + b1 * 4 * beat, "section": s.get("name", ""), "gag": s.get("gag", "")})
     theme = {"title_text": f"《{d['title']}》", "roleA_name": lead["label"], "roleB_name": others,
              "bg_top": (22, 18, 38), "bg_bot": (10, 14, 28), "panel_bg": (32, 28, 54), "panel_border": (110, 85, 160),
              **THEMES["A"], **THEMES["B"]}
     bars = d.get("bars") or int(sf.info(wav).duration / (4 * beat)) + 1
-    render_karaoke_mp4(wav, out, d["bpm"], bars, theme, A, B, secs, fps=30)
+    render_karaoke_mp4(wav, out, d["bpm"], bars, theme, A, B, secs, fps=30, preroll_s=pre)
     print(json.dumps({"video": out}, ensure_ascii=False))
 
 

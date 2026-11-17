@@ -41,6 +41,9 @@ from score_setup import default_root, load_state  # noqa: E402
 
 TPQ = 480
 SR = 44100
+# DiffSinger starts a word's consonant before its note (≈100–300 ms). Bar 1 beat 1 at t=0 would cut it off
+# (heard as a missing first word), so every output starts with this much silence; LRC/字幕 shift with it.
+PREROLL_S = 1.0
 POLY = {"长": "chang", "传": "chuan", "谁": "shui", "塞": "sai", "都": "dou", "没": "mei", "折": "zhe", "得": "de",
         "啦": "la", "别": "bie", "么": "me", "呀": "ya", "吧": "ba", "的": "de", "着": "zhe", "只": "zhi", "个": "ge",
         "更": "geng", "要": "yao", "场": "chang", "咱": "zan", "难": "nan", "差": "cha", "还": "hai", "行": "xing",
@@ -261,7 +264,7 @@ def mix(song, stems_dir, acc_wav, offset, n):
     lead = np.zeros((n, 2))
     back = np.zeros((n, 2))
     for tr in song["tracks"]:
-        m = load_mono(os.path.join(stems_dir, tr["name"] + ".wav"), offset, n)
+        m = load_mono(os.path.join(stems_dir, tr["name"] + ".wav"), offset - int(PREROLL_S * SR), n)
         p = float(tr.get("pan", 0))
         if tr.get("role", "lead") == "lead":
             lead += board(pan(m, p), lead_chain)
@@ -274,7 +277,8 @@ def mix(song, stems_dir, acc_wav, offset, n):
     lead = lead + board(pre, Pedalboard([HighpassFilter(350), LowpassFilter(6500), Reverb(0.38, 0.55, 1.0, 0.0, 0.9)])) * 0.085
     a, _ = sf.read(acc_wav, always_2d=True)
     acc = np.zeros((n, 2))
-    acc[:min(n, len(a))] = a[:n]
+    pre = int(PREROLL_S * SR)
+    acc[pre:pre + min(n - pre, len(a))] = a[:n - pre]
     acc = board(acc, Pedalboard([HighpassFilter(35), LowShelfFilter(95, 1.2, 0.75), PeakFilter(350, -5.0, 1.1), PeakFilter(620, -3.4, 1.2),
                                  PeakFilter(2800, -2.6, 1.0), HighShelfFilter(8000, 2.8, 0.75), Compressor(-18, 2.4, 12, 110)]))
     # duck 1–4.4 kHz of the band while anyone sings
@@ -310,7 +314,7 @@ def lrc_lines(song):
     for tr in song["tracks"]:
         cur = []
         for n in sorted(tr["notes"], key=lambda n: tick_of(n[0], n[1])):
-            s0 = ((n[0] - 1) * 4 + n[1] - 1) * beat_s
+            s0 = PREROLL_S + ((n[0] - 1) * 4 + n[1] - 1) * beat_s
             s1 = s0 + n[2] * beat_s
             if cur and (s0 - cur[-1][2] > 0.4 or len(cur) >= 12):
                 out.append({"role": tr.get("label", tr["name"]), "track": tr["name"], "start_s": cur[0][1], "end_s": cur[-1][2],
@@ -403,7 +407,7 @@ def main():
         os.makedirs(stems, exist_ok=True)
         run([warble, "sing", score, "-o", voc, "--stems", stems, "--mix", "dry", "--no-master", "--seed", a.seed, "--sample-rate", str(SR)])
     offset = int(round(float(json.load(open(voc + ".render.json", encoding="utf-8")).get("score_offset_ms", 0)) / 1000 * SR))
-    n = int(round(((song.get("bars") or max(c[0] for c in song["chords"])) * 4 * 60 / song["bpm"] + 2.4) * SR))
+    n = int(round(((song.get("bars") or max(c[0] for c in song["chords"])) * 4 * 60 / song["bpm"] + 2.4 + PREROLL_S) * SR))
     lead, back, acc = mix(song, stems, acc_wav, offset, n)
     m, scale = master(lead + back + acc)
 
@@ -418,7 +422,7 @@ def main():
     files["lrc"] = fresh(os.path.join(out, f"{title}_{tag}.lrc"))
     write_lrc(song, lines, files["lrc"])
     with open(os.path.join(work, "lyric_lines.json"), "w", encoding="utf-8") as f:
-        json.dump({"title": title, "bpm": song["bpm"], "bars": song.get("bars"), "sections": song.get("sections", []),
+        json.dump({"title": title, "bpm": song["bpm"], "preroll_s": PREROLL_S, "bars": song.get("bars"), "sections": song.get("sections", []),
                    "tracks": [{"name": t["name"], "label": t.get("label", t["name"]), "role": t.get("role", "lead")} for t in song["tracks"]],
                    "lines": lines}, f, ensure_ascii=False, indent=1)
     report = {"files": files, "engine": "DiffSinger（warble）逐字歌声；伴奏 FluidSynth", "placeholders": [],
