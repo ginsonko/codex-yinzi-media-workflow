@@ -1,0 +1,122 @@
+{
+  "note": "精确作曲路线的大文件。都不进安装包：第一次用时由 score_setup.py 下载到数据目录。commercial 写的是本表整理时（2026-11）读到的条款，正式发布作品前仍以下载包里的使用须知为准。",
+  "python_packages": [
+    "numpy", "scipy", "soundfile", "librosa==0.11.0", "mido==1.3.3", "pyloudnorm==0.2.0",
+    "pedalboard==0.9.26", "pypinyin==0.55.0", "pyworld==0.3.5", "onnxruntime", "pyyaml",
+    "faster-whisper==1.2.1", "matplotlib", "pillow"
+  ],
+  "components": {
+    "warble": {
+      "kind": "engine",
+      "label": "warble 歌声合成命令行（DiffSinger/UTAU 推理 + 自带审听）",
+      "git": "https://github.com/erz0r/warble.git",
+      "commit": "c5b692a",
+      "size_mb": 5,
+      "license": "MIT",
+      "commercial": "yes",
+      "required": true
+    },
+    "fluidsynth": {
+      "kind": "engine",
+      "label": "FluidSynth 2.6.2（MIDI + SoundFont 渲染伴奏）",
+      "url": "https://github.com/FluidSynth/fluidsynth/releases/download/v2.6.2/fluidsynth-v2.6.2-win10-x64-cpp11.zip",
+      "size_mb": 3,
+      "platform": "win32",
+      "license": "LGPL-2.1（只调用可执行文件，不改源码）",
+      "commercial": "yes",
+      "required": true
+    },
+    "sf-generaluser": {
+      "kind": "soundfont",
+      "label": "GeneralUser GS 2.0（通用 GM 音色，样片和正式伴奏都能用）",
+      "url": "https://raw.githubusercontent.com/mrbumpy409/GeneralUser-GS/main/GeneralUser-GS.sf2",
+      "file": "GeneralUser-GS.sf2",
+      "size_mb": 31,
+      "license": "GeneralUser GS License v2.0：作者允许私人和商业音乐制作",
+      "commercial": "yes",
+      "required": true
+    },
+    "sf-musescore": {
+      "kind": "soundfont",
+      "label": "MuseScore_General（更好听的 GM 音色，可选）",
+      "url": "https://ftp.osuosl.org/pub/musescore/soundfont/MuseScore_General/MuseScore_General.sf2",
+      "file": "MuseScore_General.sf2",
+      "size_mb": 206,
+      "license": "MIT（FluidR3Mono 派生）",
+      "commercial": "yes",
+      "required": false,
+      "fallback": "下载失败就只用 GeneralUser GS；也可以手动下载后用 --adopt 登记"
+    },
+    "vocoder-pc-2025": {
+      "kind": "vocoder",
+      "label": "DiffSinger 社区声码器 PC-NSF-HiFiGAN 2025.02（绮萱、Alemon 需要）",
+      "url": "https://github.com/openvpi/vocoders/releases/download/pc-nsf-hifigan-44.1k-hop512-128bin-2025.02/pc_nsf_hifigan_44.1k_hop512_128bin_2025.02.zip",
+      "dir": "pc_nsf_hifigan_44.1k_hop512_128bin_2025.02",
+      "size_mb": 50,
+      "license": "CC BY-NC-SA 4.0（OpenVPI Team）",
+      "commercial": "no",
+      "warn": "声码器权重是「署名-非商业-相同方式共享」。用它合成的歌拿去商用前，要先向 OpenVPI 确认或换可商用的声码器。",
+      "required": true
+    },
+    "vocoder-nsf-2024": {
+      "kind": "vocoder",
+      "label": "DiffSinger 社区声码器 NSF-HiFiGAN 2024.02（Ria 需要）",
+      "url": "https://github.com/openvpi/vocoders/releases/download/nsf-hifigan-44.1k-hop512-128bin-2024.02/nsf_hifigan_44.1k_hop512_128bin_2024.02.zip",
+      "dir": "nsf_hifigan_44.1k_hop512_128bin_2024.02",
+      "size_mb": 50,
+      "license": "CC BY-NC-SA 4.0（OpenVPI Team）",
+      "commercial": "no",
+      "warn": "同上，非商业许可。",
+      "required": false
+    },
+    "qixuan": {
+      "kind": "voicebank",
+      "label": "绮萱 Qixuan v2.7.0（甜美少女声，中日英）",
+      "url": "https://github.com/yqzhishen/qixuan-diffsinger/releases/download/v2.7.0/Qixuan_v2.7.0_DiffSinger_OpenUtau.zip",
+      "size_mb": 402,
+      "voice": "女 · 少女 · 甜、清纯、咬字清楚；E4–D5 最好听",
+      "needs": ["vocoder-pc-2025"],
+      "license": "绮萱声库使用条款 2.7.0（压缩包内 Terms_of_Use.zh-CN.pdf）",
+      "commercial": "yes",
+      "credit": "公开发布须注明声库「绮萱」、技术「DiffSinger」，并在明显位置注明 AI 合成",
+      "warn": "作品可商用；但禁止拿输出训练其他模型、禁止改模型权重、二次分发必须完整免费。",
+      "required": false
+    },
+    "alemon": {
+      "kind": "voicebank",
+      "label": "Alemon 柠檬君 v3.5（男声，中日英，Amber/Airy 两种音色）",
+      "url": "https://github.com/tuskinekinase/alemon_ds/releases/download/v3.5/Alemon_CN.EN.JP_v3.5.zip",
+      "size_mb": 502,
+      "voice": "男 · 青年 · 浑厚，说唱和保镖类群喊好用；E2–A3 最稳",
+      "needs": ["vocoder-pc-2025"],
+      "license": "仓库 README 未写使用规约（UTAU 版属 UTAU 中华组公共规约）",
+      "commercial": "unknown",
+      "warn": "没找到明确的商用授权：内部测试可以用，商用前请先联系作者（幽寂 emilyhanxiao@gmail.com）。",
+      "required": false
+    },
+    "ria": {
+      "kind": "voicebank",
+      "label": "Ria 狸安 v0.4 multi-dict（中性偏男声，粤/普/日）",
+      "url": "https://github.com/RibosomeK/RiaDiffSinger/releases/download/v0.4-multi-dict/Ria-v0.4-multi-dict.zip",
+      "extra": [{ "url": "https://github.com/RibosomeK/RiaDiffSinger/releases/download/v0.4-dlc/dsvocoder.zip", "into": "dsvocoder" }],
+      "size_mb": 461,
+      "voice": "中性偏男 · A2–G#4；普通话只有 30 分钟数据，快嘴声母偏糊",
+      "needs": ["vocoder-nsf-2024"],
+      "license": "Ria 用前须知（白名单制，压缩包内 用前须知.pdf）",
+      "commercial": "unknown",
+      "credit": "传播作品须注明声库名 Ria / 狸安",
+      "warn": "须知只写了「可作为媒体传播并署名」，没写可以商用：按不可商用处理；且禁止用 RVC/SVC 变声处理。",
+      "required": false
+    },
+    "whisper": {
+      "kind": "asr",
+      "label": "faster-whisper large-v3-turbo（审听：核对唱的字）",
+      "hf_repo": "mobiuslabsgmbh/faster-whisper-large-v3-turbo",
+      "size_mb": 1600,
+      "license": "MIT",
+      "commercial": "yes",
+      "required": false,
+      "fallback": "不装就用 faster-whisper 的 small 模型（约 480 MB，首用自动下载），字音核对会粗一些"
+    }
+  }
+}

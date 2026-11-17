@@ -1,11 +1,19 @@
 ---
 name: yinzi-music-creation
-description: Write lyrics and create sung songs, rap, instrumental music or bilingual versions with the Yinzi media workflow. Inspect hardware, choose local YuE2 or MusicGen versus an authorized online service, test a musical section, review the singing and deliver audio or prepare an MV.
+description: Write lyrics and create sung songs, rap, crosstalk-rap, instrumental music or bilingual versions with the Yinzi media workflow. Two routes - 精确作曲 (score every syllable, DiffSinger sings it on this PC, MIDI band, mix, ASR/beat/loudness self-review, LRC and lyric video; free, exact lyrics and beat placement) or AI whole-song generation (local YuE2/MusicGen or an authorized online service). Inspect hardware, test a section, review the singing and deliver audio or prepare an MV.
 ---
 
 # 银子歌曲创作
 
-Turn the user's story and mood into an actual musical result. Distinguish a **sung song** (YuE2), **instrumental background music** (MusicGen), and **spoken narration / dialogue** (TTS). Pitch/time editing is useful for a deliberately spoken remix; it is not a substitute for singing.
+Turn the user's story and mood into an actual musical result. Distinguish a **sung song** (DiffSinger score or YuE2), **instrumental background music** (MusicGen or the score route's band), and **spoken narration / dialogue** (TTS). TTS speaks; it never sings. Pitch/time editing is useful for a deliberately spoken remix; it is not a substitute for singing.
+
+## Pick the route first
+
+- **精确作曲（score route）** — choose it when the words, melody, roles or beat placement must be exact: self-praise idol songs with call-and-response, 相声/说唱 where every punchline lands on a beat, ad jingles, children's songs, multi-character duets, songs for a beat-synced MV, or when the user wants it free and editable phrase by phrase. You write lyrics + melody + harmony + rhythm per syllable; DiffSinger voicebanks sing it locally; the band is rendered from the chord sheet; the script mixes to -14 LUFS and checks itself with speech recognition, beat tracking and loudness. Read [score route](references/score-route.md) and run `scripts/score_setup.py --inspect`, then `scripts/score_song.py` (sample with `--demo` first), `scripts/lyric_video.py` for the lyric/beat video, `scripts/score_qa.py` to re-check.
+- **AI whole-song generation** — choose it when the user gives a mood or story and wants a full-sounding produced song with little control over individual notes, or wants a realistic band/human timbre. Continue with the sections below.
+- They combine: AI sketch → transcribe to MIDI → refine in the score route; or score-route vocals over an AI instrumental.
+
+Score-route rules: rap and crosstalk-rap are DiffSinger notes too (`rap`/`pocket` tags bend pitch along each syllable's Mandarin tone in a narrow range); TTS may only voice un-timed spoken lines (报幕, 「去你的吧」), or a clearly labelled per-character forced-aligned TTS comparison; label any un-timed TTS as a placeholder and keep it out of finished songs. Voicebanks, vocoders and soundfonts are large and are downloaded on first use into the data directory, never bundled. Before downloading, tell the user the size and the licences in [score licences](references/score-licenses.md): the DiffSinger community vocoder is CC BY-NC-SA (non-commercial), Alemon and Ria have no stated commercial permission, 绮萱 allows commercial use with credit. Warn the user whenever they intend to publish or sell.
 
 Use the sibling [media workflow](../codex-yinzi-universal-video/SKILL.md) for task progress, module discovery and local-job APIs. Keep current user choices and authorization. The chosen local route or an already authorized retry needs no additional approval.
 

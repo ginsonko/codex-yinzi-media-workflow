@@ -1,4 +1,4 @@
 interface:
   display_name: "银子歌曲创作"
-  short_description: "检查电脑配置，写歌词并制作有歌声的音乐、说唱与双语歌曲，核对唱词和情绪"
-  default_prompt: "使用 $yinzi-music-creation，先检查电脑配置，根据我的故事和心情写歌词，制作有真实歌唱的音乐小样，再根据听感完善。"
+  short_description: "写歌词、作曲、做歌曲/说唱/相声说唱：精确作曲（DiffSinger 逐字唱、本机免费、卡点精确）或 AI 整首生成，带审听、LRC 和歌词字幕版"
+  default_prompt: "使用 $yinzi-music-creation，先判断走精确作曲还是 AI 整首生成；精确作曲先检查本机组件和声库许可，写谱出样片，审听后再出正式母带、LRC 和字幕版。"
