@@ -155,7 +155,12 @@ before(async () => {
     }
     if (req.method === 'POST' && url.pathname === '/api/v1/images') {
       state.imageSubmissions += 1
+      state.imageBodies = [...(state.imageBodies || []), body]
       state.lastImageBody = body
+      if (state.rejectExplicitSizeOnce && body.size) {
+        state.rejectExplicitSizeOnce = false
+        return json(res, 400, { success: false, error: { message: `invalid parameter: unsupported size ${body.size}` } })
+      }
       if (state.imageCreateError) return json(res, state.imageCreateError.status || 500, { success: false, error: { message: state.imageCreateError.message } })
       return json(res, 201, { success: true, data: state.imageCreate })
     }
@@ -176,11 +181,12 @@ before(async () => {
       return json(res, 200, { success: true, data: { node: { ...currentNode(), ...body } } })
     }
     if (req.method === 'GET' && url.pathname === '/api/v1/orchestration-sessions/s1') {
-      return json(res, 200, { success: true, data: { nodes: [currentNode()] } })
+      state.getSessionQueries = [...(state.getSessionQueries || []), Object.fromEntries(url.searchParams)]
+      return json(res, 200, { success: true, data: state.sessionBundle || { nodes: [currentNode()] } })
     }
     if (req.method === 'GET' && url.pathname === '/api/v1/orchestration-sessions') {
       state.sessionQueries = [...(state.sessionQueries || []), Object.fromEntries(url.searchParams)]
-      return json(res, 200, { success: true, data: { items: [] } })
+      return json(res, 200, { success: true, data: state.sessionListPayload || { items: [] } })
     }
     if (req.method === 'GET' && url.pathname === '/api/v1/images/41') {
       return json(res, 200, { success: true, data: state.generation })
@@ -1296,4 +1302,106 @@ test('a legitimate zero quote stays distinct from unknown price',async()=>{
     assert.equal(result.data.estimated_cost_cny,0)
     assert.equal(result.data.diagnostics.some(item=>item.code==='price_unknown'),false)
   } finally {client.close()}
+})
+
+test('get_session defaults event_limit to 25 and caps explicit event_limit at 80', async () => {
+  resetState()
+  const client = makeClient()
+  try {
+    await client.call('get_session', { session_id: 's1' })
+    await client.call('get_session', { session_id: 's1', event_limit: 50 })
+    await client.call('get_session', { session_id: 's1', event_limit: 500 })
+    assert.deepEqual(
+      state.getSessionQueries.map((q) => q.event_limit),
+      ['25', '50', '80'],
+    )
+  } finally {
+    client.close()
+  }
+})
+
+test('get_session and list_sessions bound oversized JSON payloads under 32000 chars while preserving status and artifacts', async () => {
+  const bloatedEvents = Array.from({ length: 40 }, (_, i) => ({
+    id: i + 1,
+    event_type: `step.${i + 1}`,
+    at: new Date(Date.UTC(2026, 10, 18, 0, 0, i)).toISOString(),
+    payload: { detail: 'x'.repeat(2500) },
+  }))
+  const bloatedNodes = Array.from({ length: 8 }, (_, i) => ({
+    id: `n-${i + 1}`,
+    node_key: `shot-${i + 1}`,
+    status: i < 6 ? 'completed' : 'running',
+    response_summary: 'r'.repeat(5000),
+    pricing_snapshot: { raw: 'p'.repeat(4000) },
+    capability_snapshot: { raw: 'c'.repeat(4000) },
+    decision: {
+      why: 'ok',
+      response_summary: 'd'.repeat(4000),
+      pricing_snapshot: 'p'.repeat(4000),
+      capability_snapshot: 'c'.repeat(4000),
+    },
+    progress: { state: 'completed', message: '已完成' },
+    output_refs: [{ type: 'generated_image', id: `img-${i + 1}`, path: `H:/work/frame-${i + 1}.png` }],
+  }))
+  resetState({
+    sessionBundle: {
+      session: { id: 's1', status: 'running', title: '水獭漫剧' },
+      nodes: bloatedNodes,
+      events: bloatedEvents,
+      artifacts: [{ artifact_id: 'art-1', type: 'video', title: '成片', status: 'ready', path: 'H:/work/final.mp4' }],
+    },
+    sessionListPayload: {
+      items: Array.from({ length: 120 }, (_, i) => ({
+        id: `sess-${i + 1}`,
+        title: `任务 ${i + 1}`,
+        status: 'running',
+        user_goal: 'g'.repeat(1200),
+        work_dir: `H:/work/${i + 1}`,
+        nodes: [{ response_summary: 'n'.repeat(2000) }],
+      })),
+    },
+  })
+  const client = makeClient()
+  try {
+    const got = await client.call('get_session', { session_id: 's1' })
+    assert.equal(got.isError, false)
+    const rawGot = JSON.stringify(got.data, null, 2)
+    assert.ok(rawGot.length <= 32000, `expected <= 32000 chars, got ${rawGot.length}`)
+    assert.equal(got.data.truncated, true)
+    assert.equal(got.data.session.status, 'running')
+    assert.equal(got.data.nodes.length, 8)
+    assert.equal(got.data.events.length, 15)
+    assert.equal(got.data.events.at(-1).id, 40)
+    assert.ok(got.data.artifact_paths.includes('H:/work/final.mp4'))
+    assert.ok(got.data.artifact_paths.includes('H:/work/frame-1.png'))
+    assert.equal('response_summary' in got.data.nodes[0], false)
+    assert.equal('pricing_snapshot' in got.data.nodes[0], false)
+    assert.equal('capability_snapshot' in got.data.nodes[0], false)
+
+    const listed = await client.call('list_sessions', {})
+    assert.equal(listed.isError, false)
+    const rawList = JSON.stringify(listed.data, null, 2)
+    assert.ok(rawList.length <= 32000, `expected <= 32000 chars, got ${rawList.length}`)
+    assert.equal(listed.data.truncated, true)
+    assert.ok(listed.data.items.length >= 1)
+  } finally {
+    client.close()
+  }
+})
+
+test('generate_image_once retries once without explicit size on HTTP 400 size parameter error', async () => {
+  resetState({ nodeKey: 'image', rejectExplicitSizeOnce: true })
+  const client = makeClient()
+  try {
+    const result = await client.call('generate_image_once', imageArgs({ size: '1440x2560', aspect_ratio: '9:16' }))
+    assert.equal(result.isError, false, JSON.stringify(result.data))
+    assert.equal(result.data.submitted, true)
+    assert.equal(state.imageSubmissions, 2)
+    assert.equal(state.imageBodies[0].size, '1440x2560')
+    assert.equal(state.imageBodies[1].size, undefined)
+    assert.equal(state.imageBodies[1].aspect_ratio, '9:16')
+    assert.ok(result.data.diagnostics.some((d) => d.code === 'size_downgraded'))
+  } finally {
+    client.close()
+  }
 })
