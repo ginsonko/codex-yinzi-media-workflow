@@ -1621,6 +1621,28 @@ async function callImageApi(db, log, opts) {
     const out = await postJSONWithTimeout(url, openaiCompatHeaders, body, IMAGE_HTTP_TIMEOUT_MS, opts.paid_context);
     httpStatus = out.statusCode;
     raw = out.raw;
+    // 画布/生图节点显式携带 size 被渠道以 400/422 参数不兼容拒绝时，自动去掉显式像素 size 保留标准 aspect_ratio 重试一次
+    const isSizeIncompatible =
+      Boolean(body.size) &&
+      (httpStatus === 400 || httpStatus === 422) &&
+      /(?:size|resolution|dimension|pixel|width|height|parameter|invalid|unsupported|尺寸|分辨率|参数)/i.test(String(raw || ''));
+    if (isSizeIncompatible) {
+      const fallbackBody = { ...body };
+      delete fallbackBody.size;
+      if (!fallbackBody.aspect_ratio && aspectRatioOfSize(effectiveSize)) {
+        fallbackBody.aspect_ratio = aspectRatioOfSize(effectiveSize);
+      }
+      log.warn('Image API explicit size rejected, retrying once without size', {
+        image_gen_id,
+        model,
+        rejected_size: body.size,
+        aspect_ratio: fallbackBody.aspect_ratio || null,
+        status: httpStatus,
+      });
+      const retryOut = await postJSONWithTimeout(url, openaiCompatHeaders, fallbackBody, IMAGE_HTTP_TIMEOUT_MS, opts.paid_context);
+      httpStatus = retryOut.statusCode;
+      raw = retryOut.raw;
+    }
   } catch (e) {
     log.error('Image API network error', { image_gen_id, error: e.message, url: url.slice(0, 80) });
     return { error: e.message && e.message.includes('timeout')
