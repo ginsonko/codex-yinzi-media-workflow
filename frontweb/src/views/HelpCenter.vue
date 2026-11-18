@@ -260,7 +260,7 @@ const workflow = [
   { name: '剪辑交付', description: '按镜头切点合成，补旁白、字幕和音频；AI 与全自动模式下直到成片完成才通知你。', output: '成片 + 完整交付包' },
 ]
 const configs = [
-  { order: '01', type: 'text', name: '文本模型', purpose: '写剧本、抽取资源、生成分镜与审核建议。', model: 'gpt-5.6-sol 或兼容文本模型' },
+  { order: '01', type: 'text', name: '文本模型', purpose: '写剧本、抽取资源、生成分镜与审核建议。', model: 'gpt-6.2-sol 或兼容文本模型' },
   { order: '02', type: 'image', name: '资源生图', purpose: '生成角色多视图、场景和道具设定图。', model: 'gpt-image-2' },
   { order: '03', type: 'storyboard_image', name: '分镜生图', purpose: '按已批准资产生成每个镜头参考图。', model: 'gpt-image-2' },
   { order: '04', type: 'video', name: '视频模型', purpose: '根据参考包生成逐镜头视频片段。', model: '按镜头自动路由，也可手动选择' },

@@ -1072,7 +1072,7 @@ input_reference = (图片文件，可选)</pre>
         <div class="one-key-section">
           <div class="one-key-section-title">📋 分别填写三类服务，自动创建 4 个配置</div>
           <ul class="one-key-list">
-            <li><b>文本 / 剧本</b>：老李站点没有文本模型，请填写其它兼容文本站点；默认 gpt-5.6-sol</li>
+            <li><b>文本 / 剧本</b>：老李站点没有文本模型，请填写其它兼容文本站点；默认 gpt-6.2-sol</li>
             <li><b>图片 / 分镜图</b>：默认 gpt-image-2</li>
             <li><b>视频</b>：默认 Seedance 2.5-720（固定 30 秒），Seedance 2.0-720（5 / 10 / 15 秒）作为备用</li>
           </ul>
@@ -1116,7 +1116,7 @@ input_reference = (图片文件，可选)</pre>
         <div class="one-key-section">
           <div class="one-key-section-title">📋 一次填写三个 Key，自动创建 4 个配置</div>
           <ul class="one-key-list">
-            <li><b>文本 / 剧本</b>：默认 gpt-5.6-sol</li>
+            <li><b>文本 / 剧本</b>：默认 gpt-6.2-sol</li>
             <li><b>图片 / 分镜图</b>：默认 gpt-image-2（图片 Key 共用）</li>
             <li><b>视频</b>：默认 3.5（即梦 2.5，固定 30 秒），3.0（即梦 2.0，5/10/15 秒）备用</li>
           </ul>
@@ -1134,7 +1134,7 @@ input_reference = (图片文件，可选)</pre>
           <div class="yinzi-field-grid">
             <el-form-item label="文本 Base URL" required><el-input v-model="oneKeyLaoliForm.text_base_url" placeholder="https://你的文本站点/v1" clearable /></el-form-item>
             <el-form-item label="文本 Key" required><el-input v-model="oneKeyLaoliForm.text_api_key" type="password" show-password clearable autocomplete="new-password" placeholder="文本分组 Key" /></el-form-item>
-            <el-form-item label="文本模型"><el-input v-model="oneKeyLaoliForm.text_model" placeholder="gpt-5.6-sol" /></el-form-item>
+            <el-form-item label="文本模型"><el-input v-model="oneKeyLaoliForm.text_model" placeholder="gpt-6.2-sol" /></el-form-item>
           </div>
         </div>
         <div class="laoli-service-block">
@@ -1353,7 +1353,7 @@ input_reference = (图片文件，可选)</pre>
           <section class="yinzi-service-card"><h4>文本服务</h4>
             <el-form-item label="文本 Base URL" required><el-input v-model="oneKeyYinziForm.text_base_url" placeholder="https://你的文本站点/v1" clearable /></el-form-item>
             <el-form-item label="文本 Key" required><el-input v-model="oneKeyYinziForm.text_api_key" type="password" show-password clearable autocomplete="new-password" placeholder="文本服务专用 Key" /></el-form-item>
-            <el-form-item label="文本模型" required><el-input v-model="oneKeyYinziForm.text_model" placeholder="例如 gpt-5.6-sol" clearable /></el-form-item>
+            <el-form-item label="文本模型" required><el-input v-model="oneKeyYinziForm.text_model" placeholder="例如 gpt-6.2-sol" clearable /></el-form-item>
           </section>
           <section class="yinzi-service-card"><h4>图片服务</h4>
             <el-form-item label="图片 Base URL" required><el-input v-model="oneKeyYinziForm.image_base_url" placeholder="https://图片站点/v1" clearable /></el-form-item>
@@ -1773,7 +1773,7 @@ const oneKeyYinziForm = ref({
   text_api_key: '',
   image_api_key: '',
   video_api_key: '',
-  text_model: 'gpt-5.6-sol',
+  text_model: 'gpt-6.2-sol',
   image_model: '',
   video_model: '',
 })
@@ -1787,7 +1787,7 @@ const oneKeyImageYinziForm = ref({
   text_api_key: '',
   image_api_key: '',
   video_api_key: '',
-  text_model: 'gpt-5.6-sol',
+  text_model: 'gpt-6.2-sol',
   image_model: 'gpt-image-2',
   video_model: 'Seedance 2.5-720',
 })
@@ -1810,7 +1810,7 @@ const oneKeyLaoliForm = ref({
   text_api_key: '',
   image_api_key: '',
   video_api_key: '',
-  text_model: 'gpt-5.6-sol',
+  text_model: 'gpt-6.2-sol',
   image_model: 'gpt-image-2',
   video_model: '3.5',
 })
@@ -1860,7 +1860,7 @@ const yinziSelectionReason = computed(() => {
 /** 预设厂商与模型（与参考前端一致） */
 const providerConfigs = {
   text: [
-    { id: 'yinzi', name: 'YinziAPI', models: ['gpt-5.6-sol', 'gpt-5.4-mini', 'deepseek-v4-flash'] },
+    { id: 'yinzi', name: 'YinziAPI', models: ['gpt-6.2-sol', 'gpt-6.1-sol', 'gpt-6.2-astra', 'deepseek-v4.1-flash', 'gpt-5.6-sol'] },
     { id: 'openai', name: 'OpenAI', models: ['gpt-4o', 'gpt-4', 'gpt-3.5-turbo'] },
     { id: 'volcengine', name: '火山引擎', models: ['deepseek-v3-2-251201', 'doubao-1-5-pro-32k-250115', 'kimi-k2-thinking-251104'] },
     // { id: 'chatfire', name: 'Chatfire', models: ['gemini-3-flash-preview', 'claude-sonnet-4-5-20250929', 'doubao-seed-1-8-251228'] },
@@ -2867,7 +2867,7 @@ function catalogOptionLabel(item, serviceType = '') {
 function applyYinziCatalogDefaults() {
   const form = oneKeyYinziForm.value
   const catalog = yinziCatalog.value
-  if (!form.text_model) form.text_model = catalog.text.find((item) => item.model === 'gpt-5.6-sol')?.model || catalog.text[0]?.model || 'gpt-5.6-sol'
+  if (!form.text_model) form.text_model = catalog.text.find((item) => item.model === 'gpt-6.2-sol')?.model || catalog.text[0]?.model || 'gpt-6.2-sol'
   if (!form.image_model && catalog.image.length) form.image_model = catalog.image[0].model
 }
 
@@ -3009,7 +3009,7 @@ function resetOneKeyLaoli() {
   oneKeyLaoliForm.value.text_api_key = ''
   oneKeyLaoliForm.value.image_api_key = ''
   oneKeyLaoliForm.value.video_api_key = ''
-  oneKeyLaoliForm.value.text_model = 'gpt-5.6-sol'
+  oneKeyLaoliForm.value.text_model = 'gpt-6.2-sol'
   oneKeyLaoliForm.value.image_model = 'gpt-image-2'
   oneKeyLaoliForm.value.video_model = '3.5'
 }
@@ -3041,7 +3041,7 @@ function resetOneKeyImageYinzi() {
   oneKeyImageYinziForm.value.text_api_key = ''
   oneKeyImageYinziForm.value.image_api_key = ''
   oneKeyImageYinziForm.value.video_api_key = ''
-  oneKeyImageYinziForm.value.text_model = 'gpt-5.6-sol'
+  oneKeyImageYinziForm.value.text_model = 'gpt-6.2-sol'
   oneKeyImageYinziForm.value.image_model = 'gpt-image-2'
   oneKeyImageYinziForm.value.video_model = 'Seedance 2.5-720'
 }

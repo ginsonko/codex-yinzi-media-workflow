@@ -1234,7 +1234,10 @@ function mergeDiscoveredCatalog(discovery, pricingCatalog, options = {}) {
       catalog_verified: !discoveryFallback && capabilityCatalogVerified,
     };
   });
-  if (provider === 'yinzi' && serviceType === 'video' && options.include_public_catalog === true) {
+  // 当公开价格目录来自离线过期磁盘缓存（stale=true）且当前 Key 实时 /models 已成功返回时，
+  // 不把过期缓存中的历史模型重新塞回候选池，防止已下架死模型“诈尸”；仅在实时公开目录可用或回退模式下补充。
+  const publicCatalogIsStale = publicCatalog?.stale === true || pricingCatalog?.stale === true;
+  if (provider === 'yinzi' && serviceType === 'video' && options.include_public_catalog === true && (!publicCatalogIsStale || discoveryFallback)) {
     const seen = new Set(catalog.map((item) => String(item.model || '').toLowerCase()));
     for (const publicItem of publicItems) {
       const model = String(publicItem?.model || '').trim();

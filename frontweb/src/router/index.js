@@ -1,4 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
+import { resolveEmbedRedirect } from '@/utils/omniEmbed'
+import { syncEmbedFromRoute } from '@/composables/useTheme'
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -145,6 +147,12 @@ const router = createRouter({
 })
 
 router.beforeEach((to) => {
+  // 同步 URL query 中的无壳嵌入标记与宿主主题参数，并在嵌入模式下将管理后台路由重定向至画布创作页
+  const embedded = syncEmbedFromRoute(to.query)
+  const redirectTarget = resolveEmbedRedirect(to.path, embedded)
+  if (redirectTarget && redirectTarget !== to.path) {
+    return { path: redirectTarget, replace: true }
+  }
   if (to.meta.title) {
     document.title = `${to.meta.title} - Codex 银子万能媒体工作流`
   }

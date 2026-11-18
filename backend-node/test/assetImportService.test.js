@@ -180,7 +180,7 @@ describe('asset import sessions', () => {
     assert.equal(artifact.content.included, false);
   });
   it('uses an injected classifier and does not log source text', async () => {
-    const session = service.createSession(db, { target_run_id: run.id, options: { classifier_model: 'gpt-5.6-sol' } });
+    const session = service.createSession(db, { target_run_id: run.id, options: { classifier_model: 'gpt-6.2-sol' } });
     const seen = []; const result = await service.scanSession(db, session.id, { files: [{ relative_path: 'story.txt', source_path: path.join(sourceDir, 'story.txt') }] }, {
       classify: async ({ file }) => { seen.push(file.relativePath); return { detected_type: file.ext === '.mp4' ? 'video' : 'script', candidate_stage: file.ext === '.mp4' ? 'shot_video' : 'script', usage_role: file.ext === '.mp4' ? 'reference_or_direct_clip' : 'source_document', direct_clip_candidate: file.ext === '.mp4', template_candidates: [{ id: 'novel-drama', confidence: 0.98 }], confidence: 0.98, evidence: { reason: '内容结构' } }; },
     }, log);
@@ -193,7 +193,7 @@ describe('asset import sessions', () => {
       (service_type,provider,api_protocol,name,base_url,api_key,model,default_model,endpoint,query_endpoint,priority,is_default,is_active,settings,created_at,updated_at)
       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
       'text', 'openai', 'openai', '测试文本配置', 'https://example.test/v1', 'test-key',
-      JSON.stringify(['gpt-5.6-sol']), 'gpt-5.6-sol', '/chat/completions', '', 0, 1, 1, null, now, now,
+      JSON.stringify(['gpt-6.2-sol']), 'gpt-6.2-sol', '/chat/completions', '', 0, 1, 1, null, now, now,
     );
     const aiClient = require('../src/services/aiClient');
     const originalGenerateText = aiClient.generateText;
@@ -206,7 +206,7 @@ describe('asset import sessions', () => {
       });
     };
     try {
-      const classify = service.createConfiguredClassifier(db, log, { enabled: true, model: 'gpt-5.6-sol' });
+      const classify = service.createConfiguredClassifier(db, log, { enabled: true, model: 'gpt-6.2-sol' });
       assert.equal(typeof classify, 'function');
       const result = await classify({
         file: { file_name: 'story.txt', relativePath: 'story.txt', ext: '.txt', extension: '.txt', content: { text: '第一场：人物进入房间。' }, mediaMetadata: {} },
@@ -406,7 +406,7 @@ describe('asset import sessions', () => {
         visionCalls += 1;
         return { detected_type: 'image', candidate_stage: 'asset_images', usage_role: 'primary_subject_reference', confidence: 0.99,
           evidence: { source: 'multimodal_ai', reason: '观察到角色主体' },
-          analysis_receipt: { requested: true, used: true, modality: 'image_or_video_frame', model: 'gpt-5.6-sol', completed_at: new Date().toISOString() } };
+          analysis_receipt: { requested: true, used: true, modality: 'image_or_video_frame', model: 'gpt-6.2-sol', completed_at: new Date().toISOString() } };
       },
     }, log);
     assert.equal(visionCalls, 1);

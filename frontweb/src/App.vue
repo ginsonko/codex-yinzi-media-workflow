@@ -57,4 +57,36 @@ html, body, #app, .app {
   color: var(--text-primary);
   transition: background 0.25s, color 0.25s;
 }
+
+/* 无壳嵌入模式全局容器贴边适配：禁止外层文档出现第二条滚动条，画布与 3D 导演台自适应填满视口 */
+html[data-omni-embed="1"],
+html[data-omni-embed="1"] body,
+html[data-omni-embed="1"] #app,
+html[data-omni-embed="1"] .app {
+  height: 100vh;
+  overflow: hidden;
+}
+html[data-omni-embed="1"] .workspace-frame {
+  width: 100%;
+  min-height: 100%;
+  margin: 0;
+  padding: 0;
+}
+html[data-omni-embed="1"] .workspace-frame > .creation-workspace {
+  height: 100vh;
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+html[data-omni-embed="1"] .workspace-frame > .creation-workspace .canvas-layout {
+  flex: 1;
+  height: auto;
+  min-height: 0;
+}
+html[data-omni-embed="1"] .workspace-frame > .director-studio {
+  height: 100vh;
+  min-height: 0;
+  border-radius: 0;
+}
 </style>

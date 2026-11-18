@@ -638,6 +638,48 @@ describe('prepareYinziSetupInput', () => {
     assert.ok(result.setup_catalog.warnings.some(item => /401/.test(item)));
     assert.equal(result.setup_catalog.scope_verified, false);
   });
+
+  it('prefers gpt-6.2-sol, prunes delisted requested models when live /models succeeds, and pins preferred_video_models', async () => {
+    const fetchImpl = async (url) => {
+      if (url.endsWith('/models')) {
+        return {
+          ok: true,
+          status: 200,
+          async json() {
+            return {
+              data: [
+                { id: 'gpt-5.6-sol', supported_endpoint_types: ['openai'] },
+                { id: 'gpt-6.2-sol', supported_endpoint_types: ['openai'] },
+                { id: 'smart-image', supported_endpoint_types: ['image-generation'] },
+                { id: 'smart-video', supported_endpoint_types: ['openai-video'] },
+                { id: 'WAN3.0-可参考视频', supported_endpoint_types: ['openai-video'] },
+                { id: 'MINIMAX H3-Fast', supported_endpoint_types: ['openai-video'] },
+              ],
+            };
+          },
+        };
+      }
+      return { ok: false, status: 503 };
+    };
+
+    const prepared = await prepareYinziSetupInput({
+      base_url: 'https://api.yinziapi.top/v1',
+      api_key: 'live-key',
+      text_model: 'dead-text-model',
+      image_model: 'dead-image-model',
+      video_model: 'dead-seedance-1.0',
+      preferred_video_models: ['not-supported-on-this-key', 'WAN3.0-可参考视频', 'MINIMAX H3-Fast'],
+    }, fetchImpl);
+
+    assert.equal(prepared.text_model, 'gpt-6.2-sol');
+    assert.equal(prepared.image_model, 'smart-image');
+    assert.equal(prepared.video_model, 'WAN3.0-可参考视频');
+    assert.equal(prepared.video_models.includes('dead-seedance-1.0'), false);
+    assert.equal(prepared.image_models.includes('dead-image-model'), false);
+    assert.equal(prepared.text_models.includes('dead-text-model'), false);
+    assert.deepEqual(prepared.video_models.slice(0, 2), ['WAN3.0-可参考视频', 'MINIMAX H3-Fast']);
+    assert.equal(prepared.setup_catalog.selection_reason, 'user_priority_order');
+  });
 });
 
 describe('upsertYinziConfigs', () => {

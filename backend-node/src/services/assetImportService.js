@@ -566,7 +566,7 @@ function createConfiguredClassifier(db, log, options = {}) {
   // semantics stay identical to the rest of the production text pipeline.
   const config = aiClient.getDefaultConfig(db, 'text');
   if (!config?.api_key || options.enabled === false) return null;
-  const model = String(options.model || parse(config.settings)?.asset_import_classifier_model || config.default_model || 'gpt-5.6-sol').trim();
+  const model = String(options.model || parse(config.settings)?.asset_import_classifier_model || config.default_model || 'gpt-6.2-sol').trim();
   return async ({ file, session }) => {
     const prompt = classifierPrompt(file, session);
     let result;
@@ -853,7 +853,7 @@ async function scanSession(db, sessionId, input = {}, adapters = {}, log = conso
   const workflow = templateExecutionPlan.getWorkflowSpec(options.template_id || session.options?.template_id || 'free') || {};
   const targetShotResolution = resolveManagedTargetShots(options, workflow, classified);
   options.target_shots = targetShotResolution.value;
-  const plan = { schema_version: 1, generated_at: nowIso(), target_run_id: session.target_run_id, items: planItems, conflicts, recommended_settings: { target_shots: targetShotResolution }, summary: { total: planItems.length, ready: planItems.filter((x) => x.status === 'ready').length, partial: planItems.filter((x) => x.status === 'partial').length, failed: planItems.filter((x) => x.status === 'failed').length, unknown: planItems.filter((x) => !x.candidate_stage).length, total_bytes: totalBytes }, ai: { requested: classifierEnabled, used: aiUsedCount > 0, attempted_count: classifierEnabled ? planItems.filter((x) => x.status !== 'failed').length : 0, used_count: aiUsedCount, failure_count: aiFailureCount, model: aiModel || (classifierEnabled ? 'gpt-5.6-sol' : null), source: aiUsedCount > 0 ? 'configured_multimodal' : classifierEnabled ? 'configured_failed_or_partial' : 'local_rules', started_at: aiStartedAt, completed_at: aiCompletedAt } };
+  const plan = { schema_version: 1, generated_at: nowIso(), target_run_id: session.target_run_id, items: planItems, conflicts, recommended_settings: { target_shots: targetShotResolution }, summary: { total: planItems.length, ready: planItems.filter((x) => x.status === 'ready').length, partial: planItems.filter((x) => x.status === 'partial').length, failed: planItems.filter((x) => x.status === 'failed').length, unknown: planItems.filter((x) => !x.candidate_stage).length, total_bytes: totalBytes }, ai: { requested: classifierEnabled, used: aiUsedCount > 0, attempted_count: classifierEnabled ? planItems.filter((x) => x.status !== 'failed').length : 0, used_count: aiUsedCount, failure_count: aiFailureCount, model: aiModel || (classifierEnabled ? 'gpt-6.2-sol' : null), source: aiUsedCount > 0 ? 'configured_multimodal' : classifierEnabled ? 'configured_failed_or_partial' : 'local_rules', started_at: aiStartedAt, completed_at: aiCompletedAt } };
   const templateScores = new Map();
   for (const item of planItems) for (const candidate of item.template_candidates || []) templateScores.set(candidate.id, (templateScores.get(candidate.id) || 0) + (Number(candidate.confidence) || 0));
   plan.template_candidates = [...templateScores.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5).map(([id, score]) => ({ id, score: Number(score.toFixed(3)) }));

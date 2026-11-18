@@ -42,7 +42,10 @@ describe('distribution profiles', () => {
       assert.equal(site.routing_mode, 'group');
       assert.equal(site.credential_mode, 'three_keys');
       assert.deepEqual(site.defaults, {
-        text_model: 'gpt-5.6-sol', image_model: 'gpt-image-2', video_model: 'Seedance 2.5-720',
+        text_model: 'gpt-6.2-sol', image_model: 'gpt-image-2', video_model: 'Seedance 2.5-720',
+      });
+      assert.deepEqual(profile.defaults, {
+        text_model: 'gpt-6.2-sol', image_model: 'smart-image', video_model: 'smart-video',
       });
       assert.deepEqual(site.model_capabilities['Seedance 2.5-720'].allowed_durations, [30]);
       assert.deepEqual(site.model_capabilities['Seedance 2.0-720'].allowed_durations, [5, 10, 15]);

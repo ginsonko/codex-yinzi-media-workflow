@@ -84,13 +84,13 @@ function definitions(input = {}) {
   const textKey = key(input.text_api_key, '文本');
   const imageKey = key(input.image_api_key, '图片');
   const videoKey = key(input.video_api_key, '视频');
-  const textModel = String(input.text_model || 'gpt-5.6-sol').trim();
+  const textModel = String(input.text_model || 'gpt-6.2-sol').trim();
   const imageModel = String(input.image_model || 'gpt-image-2').trim();
   const videoModel = String(input.video_model || '3.5').trim();
   const distributionProfile = resolveDistributionProfile(input);
   if (!textModel || !imageModel || !videoModel) throw new Error('文本、图片、视频默认模型不能为空');
   const modelLists = {
-    text: [...new Set(['gpt-5.6-sol', textModel].filter(Boolean))],
+    text: [...new Set(['gpt-6.2-sol', textModel].filter(Boolean))],
     image: [...new Set(['gpt-image-2', imageModel].filter(Boolean))],
     video: [...new Set(['3.5', '3.0', videoModel].filter(Boolean))],
   };

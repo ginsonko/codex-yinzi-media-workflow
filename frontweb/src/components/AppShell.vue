@@ -1,6 +1,7 @@
 <template>
-  <div class="app-shell">
-    <aside :class="['shell-sidebar', { open: mobileOpen }]" aria-label="主导航">
+  <div :class="['app-shell', { 'is-embed': isEmbedded }]">
+    <!-- 无壳嵌入模式（?embed=1 / ?embed=omni）下完全不渲染左侧边栏，避免出现双重导航 -->
+    <aside v-if="!isEmbedded" :class="['shell-sidebar', { open: mobileOpen }]" aria-label="主导航">
       <div class="shell-brand">
         <span class="shell-brand-mark" aria-hidden="true"><i>银</i></span>
         <div class="shell-brand-text">
@@ -36,10 +37,11 @@
       </div>
     </aside>
 
-    <div v-if="mobileOpen" class="shell-scrim" @click="mobileOpen = false" aria-hidden="true"></div>
+    <div v-if="!isEmbedded && mobileOpen" class="shell-scrim" @click="mobileOpen = false" aria-hidden="true"></div>
 
     <div class="shell-content">
-      <header class="shell-topbar">
+      <!-- 无壳嵌入模式下不渲染顶栏，由万能创作终端外层工作台统一承载导航与状态 -->
+      <header v-if="!isEmbedded" class="shell-topbar">
         <div class="shell-topbar-start">
           <button class="shell-menu" type="button" aria-label="打开导航" :aria-expanded="mobileOpen" @click="mobileOpen = !mobileOpen">
             <el-icon><Menu /></el-icon>
@@ -83,8 +85,8 @@
         </div>
       </header>
 
-      <div v-if="fxOpen" class="shell-fx-scrim" @click="fxOpen = false" aria-hidden="true"></div>
-      <section v-if="fxOpen" class="shell-fx-panel" role="dialog" aria-label="界面效果与性能">
+      <div v-if="!isEmbedded && fxOpen" class="shell-fx-scrim" @click="fxOpen = false" aria-hidden="true"></div>
+      <section v-if="!isEmbedded && fxOpen" class="shell-fx-panel" role="dialog" aria-label="界面效果与性能">
         <header>
           <strong>界面效果</strong>
           <span>效果越少，界面越省电、鼠标越跟手</span>
@@ -129,7 +131,7 @@ defineProps({
 })
 defineEmits(['refresh', 'quality-change'])
 
-const { isDark, toggle: toggleTheme } = useTheme()
+const { isDark, isEmbedded, toggle: toggleTheme } = useTheme()
 const mobileOpen = ref(false)
 
 /* 界面效果档位；帧率持续偏低时自动降一档，只提示一次 */
@@ -428,6 +430,33 @@ const navGroups = computed(() => [
   max-width:1480px; margin:0 auto;
   padding:24px clamp(16px,3vw,40px) 64px;
   width:100%;
+}
+
+/* 无壳嵌入模式：铺满 100% 宽高，消除外层留白与双滚动条 */
+.app-shell.is-embed {
+  width:100%;
+  height:100vh;
+  min-height:100vh;
+  margin:0;
+  padding:0;
+  overflow:hidden;
+}
+.app-shell.is-embed .shell-content {
+  width:100%;
+  height:100vh;
+  margin:0;
+  padding:0;
+  overflow:hidden;
+}
+.app-shell.is-embed .shell-main {
+  flex:1;
+  max-width:none;
+  width:100%;
+  height:100%;
+  margin:0;
+  padding:0;
+  overflow-y:auto;
+  overflow-x:hidden;
 }
 
 /* Scrim */

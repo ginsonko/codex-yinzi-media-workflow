@@ -162,4 +162,76 @@ describe('Yinzi video capability contract', () => {
     assert.equal(capabilityAcceptsDuration(seedance25, 15, { automatic: true }), false);
     assert.equal(getYinziVideoCapability('破甲seedance 720p-fast').automatic_eligible, false);
   });
+
+  it('infers dynamic family contracts for 2026 live Yinzi video models without hardcoding every SKU', () => {
+    const { inferYinziVideoCapability } = require('../src/services/yinziVideoCapabilities');
+
+    // 1. smart-video 智能路由族
+    const smart = getYinziVideoCapability('smart-video');
+    assert.ok(smart);
+    assert.deepEqual(smart.allowed_durations, [5, 10, 15]);
+    assert.deepEqual(smart.allowed_resolutions, ['480p', '720p', '1080p']);
+    assert.equal(smart.default_resolution, '720p');
+    assert.equal(smart.max_images, 4);
+    assert.equal(smart.max_videos, 1);
+
+    // 2. MiniMax H3 家族（含 H3-KS、官转、XN2 等动态后缀）
+    for (const h3Name of ['MINIMAX H3 质量版', 'MINIMAX H3-Fast', 'H3-KS', '官转-MiniMax H3', 'XN2-MiniMax H3']) {
+      const cap = getYinziVideoCapability(h3Name);
+      assert.ok(cap, `missing H3 capability for ${h3Name}`);
+      assert.deepEqual(cap.allowed_durations, [5, 6, 10]);
+      assert.deepEqual(cap.allowed_resolutions, ['480p', '720p', '1080p']);
+      assert.equal(cap.first_last_frame_supported, true);
+      assert.equal(cap.max_images, 3);
+      assert.equal(cap.max_videos, 0);
+      assert.ok(capabilitySupportsRole(cap, 'image', 'first_frame'));
+      assert.ok(capabilitySupportsRole(cap, 'image', 'last_frame'));
+    }
+
+    // 3. Seedance 2.5 新后缀族（非特价 5-15s vs 特价固定 30s）
+    const s25 = getYinziVideoCapability('XN2-Seedance 2.5-Fast-VIP');
+    assert.ok(s25);
+    assert.deepEqual(s25.allowed_durations, [5, 10, 15]);
+    assert.equal(s25.max_images, 9);
+    assert.equal(s25.max_videos, 3);
+    assert.equal(s25.max_audios, 3);
+
+    const s25Discount = getYinziVideoCapability('特价渠道-Seedance 2.5-1080p');
+    assert.ok(s25Discount);
+    assert.equal(s25Discount.fixed_duration_seconds, 30);
+    assert.deepEqual(s25Discount.allowed_durations, [30]);
+
+    // 4. Seedance 2.0 新后缀族
+    const s20 = getYinziVideoCapability('Seedance 2.0 满血 480-720p');
+    assert.ok(s20);
+    assert.deepEqual(s20.allowed_durations, [5, 10, 15]);
+    assert.equal(s20.max_images, 9);
+    assert.equal(s20.max_videos, 3);
+
+    // 5. WAN 3.0 可参考视频 vs 不可参考视频
+    const wanRef = getYinziVideoCapability('WAN3.0-可参考视频');
+    assert.ok(wanRef);
+    assert.deepEqual(wanRef.allowed_durations, [5, 10, 15]);
+    assert.equal(wanRef.max_videos, 2);
+    assert.ok(capabilitySupportsRole(wanRef, 'video', 'reference'));
+
+    const wanNoRef = getYinziVideoCapability('WAN3.0-不可参考视频');
+    assert.ok(wanNoRef);
+    assert.deepEqual(wanNoRef.allowed_durations, [5, 10, 15]);
+    assert.equal(wanNoRef.max_videos, 0);
+    assert.equal(capabilitySupportsRole(wanNoRef, 'video', 'reference'), false);
+
+    // 6. grok-imagine-video 新后缀与显式 video 端点兜底
+    const grok2 = getYinziVideoCapability('grok-imagine-video-v2');
+    assert.ok(grok2);
+    assert.equal(grok2.duration_min, 5);
+    assert.equal(grok2.duration_max, 10);
+
+    const genericVideo = inferYinziVideoCapability('brand-new-2027-video', { endpoint_types: ['openai-video'] });
+    assert.ok(genericVideo);
+    assert.equal(genericVideo.duration_min, 5);
+    assert.equal(genericVideo.duration_max, 10);
+    assert.equal(genericVideo.default_resolution, '720p');
+    assert.equal(inferYinziVideoCapability('brand-new-2027-text', { endpoint_types: ['openai'] }), null);
+  });
 });

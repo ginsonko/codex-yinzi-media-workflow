@@ -377,6 +377,238 @@ function normalizeModelName(model) {
   return String(model || '').trim().toLowerCase();
 }
 
+/**
+ * 判断外部传入的提示信息是否明确声明该模型属于视频生成端点（如 openai-video）。
+ * 仅在站点目录明确标注 video 端点时才启用通用视频兜底契约，避免把普通文本模型误判为视频模型。
+ */
+function hasExplicitVideoEndpointHint(hint) {
+  if (!hint || typeof hint !== 'object') return false;
+  if (hint.is_video_endpoint === true) return true;
+  const rawEndpoints = Array.isArray(hint.endpoint_types)
+    ? hint.endpoint_types
+    : Array.isArray(hint.supported_endpoint_types)
+      ? hint.supported_endpoint_types
+      : Array.isArray(hint.endpoints) ? hint.endpoints : [];
+  return rawEndpoints.some((ep) => String(ep || '').trim().toLowerCase().includes('video'));
+}
+
+/**
+ * 按模型家族命名规律与端点声明动态推断视频能力契约。
+ * 当精确字典（AIZZZ_PROFILES / getYinziVideoReferenceContract）未命中，但模型属于已知主力视频家族
+ * 或站点明确声明了 video 端点时返回结构化契约；未知非视频模型返回 null，绝不臆造限制。
+ */
+function inferYinziVideoCapability(modelName, hint = {}) {
+  const raw = String(modelName || '').trim();
+  if (!raw) return null;
+  const normalized = raw.normalize('NFKC').toLowerCase();
+
+  // 1. smart-video 智能视频路由：支持 5/10/15s、720p/1080p、首尾帧与参考图
+  if (normalized === 'smart-video') {
+    return freezeProfile({
+      provider_contract: 'yinzi-openai-video-v1',
+      family: 'smart-video',
+      capability_source: 'family_inferred',
+      duration_mode: 'enumerated',
+      allowed_durations: [5, 10, 15],
+      duration_min: 5,
+      duration_max: 15,
+      auto_duration_min: 5,
+      auto_duration_max: 15,
+      allowed_resolutions: Object.freeze(['480p', '720p', '1080p']),
+      resolutions: Object.freeze(['480p', '720p', '1080p']),
+      default_resolution: '720p',
+      resolution: '720p',
+      quality_tier: 'balanced',
+      max_images: 4,
+      max_videos: 1,
+      max_audios: 0,
+      max_total_references: 5,
+      max_reference_video_seconds_total: 15,
+      first_last_frame_supported: true,
+      automatic_eligible: true,
+      preference_rank: 5,
+      route_profiles: ['short_image_guided', 'long_previs_guided'],
+      roles: { image: ['first_frame', 'last_frame', 'reference'], video: ['reference'], audio: [] },
+    });
+  }
+
+  // 2. MiniMax H3 家族：MINIMAX H3* / H3-KS / *MiniMax H3*（含质量版、升级版、极速版、特价渠道 MiniMax H3 480p-1080p [...]）
+  if (/^h3[-_\s]*ks\b/i.test(normalized) || /(?:^|[^a-z0-9])minimax[-_\s]*h3(?=$|[^a-z0-9])/i.test(normalized)) {
+    const nativeCamera = /极速|高质量|质量|升级|^minimax\s+h3/i.test(normalized) && !/turbo\s*\d|h3[-_\s]*turbo/i.test(normalized);
+    return freezeProfile({
+      provider_contract: 'yinzi-openai-video-v1',
+      family: 'minimax-h3-family',
+      capability_source: 'family_inferred',
+      // 兼容离散 5/6/10s 提示与 5–10s 连续范围校验
+      duration_mode: 'range',
+      allowed_durations: [5, 6, 10],
+      duration_min: 5,
+      duration_max: 10,
+      auto_duration_min: 5,
+      auto_duration_max: 10,
+      allowed_resolutions: Object.freeze(['480p', '720p', '1080p']),
+      resolutions: Object.freeze(['480p', '720p', '1080p']),
+      default_resolution: '720p',
+      resolution: '720p',
+      quality_tier: /质量|升级/i.test(normalized) ? 'quality' : /极速/i.test(normalized) ? 'fast' : 'balanced',
+      max_images: 3,
+      max_videos: 0,
+      max_audios: 0,
+      max_total_references: 3,
+      max_reference_video_seconds_total: 0,
+      first_last_frame_supported: true,
+      native_camera_presets: true,
+      supports_camera_presets: nativeCamera,
+      automatic_eligible: true,
+      preference_rank: 15,
+      route_profiles: ['short_image_guided', 'long_previs_guided'],
+      roles: { image: ['first_frame', 'last_frame', 'reference'], video: [], audio: [] },
+    });
+  }
+
+  // 3. Seedance 2.5 家族：Seedance 2.5* / XN2-Seedance 2.5*（含满血 480-720p、native，兼容固定 30s 特价款识别）
+  if (/^(?:xn2[-_\s]*|特价(?:渠道)?[-_\s]*|官转[-_\s]*)?seedance[-_\s]*2\.5(?=$|[-_\s]|满血|fast|mini|pro|native|\d)/i.test(normalized)) {
+    const isFixed30s = /(?:^|[-_\s])30s(?=$|[-_\s])|^特价(?:渠道)?[-_\s]*seedance[-_\s]*2\.5[-_\s]*(?:480|720|1080)p?$/i.test(normalized);
+    const resolutions = /1080p/i.test(normalized)
+      ? Object.freeze(['480p', '720p', '1080p'])
+      : Object.freeze(['480p', '720p']);
+    const defaultRes = /480p/i.test(normalized) && !/720p/i.test(normalized) ? '480p' : '720p';
+    return freezeProfile({
+      family: 'seedance-2.5-family',
+      capability_source: 'family_inferred',
+      duration_mode: isFixed30s ? 'fixed' : 'range',
+      allowed_durations: isFixed30s ? [30] : [5, 10, 15],
+      fixed_duration_seconds: isFixed30s ? 30 : null,
+      duration_min: isFixed30s ? 30 : 5,
+      duration_max: isFixed30s ? 30 : 15,
+      auto_duration_min: isFixed30s ? 30 : 5,
+      auto_duration_max: isFixed30s ? 30 : 15,
+      allowed_resolutions: resolutions,
+      resolutions,
+      default_resolution: defaultRes,
+      resolution: defaultRes,
+      quality_tier: /满血|pro|native/i.test(normalized) ? 'quality' : /fast/i.test(normalized) ? 'fast' : 'balanced',
+      max_images: 9,
+      max_videos: 3,
+      max_audios: 3,
+      max_total_references: 15,
+      max_reference_video_seconds_total: 15,
+      automatic_eligible: true,
+      preference_rank: 20,
+      route_profiles: ['short_image_guided', 'long_previs_guided'],
+      roles: { image: ['reference', 'first_frame', 'last_frame'], video: ['reference'], audio: ['reference'] },
+    });
+  }
+
+  // 4. Seedance 2.0 家族：Seedance 2.0*（含 fast 480-720p、mini 480-720p、满血 480-720p、native）
+  if (/^(?:xn2[-_\s]*|特价(?:渠道)?[-_\s]*|官转[-_\s]*|cm[-_\s]*|mg[-_\s]*|cc[-_\s]*|af[-_\s]*)?seedance[-_\s]*2\.0(?=$|[-_\s]|满血|fast|mini|pro|native|\d)/i.test(normalized)) {
+    const noVideo = /(?:^|[-_\s])nv(?=$|[-_\s])|不可参考视频/i.test(normalized);
+    const resolutions = /1080p/i.test(normalized)
+      ? Object.freeze(['480p', '720p', '1080p'])
+      : Object.freeze(['480p', '720p']);
+    const defaultRes = /480p/i.test(normalized) && !/720p/i.test(normalized) ? '480p' : '720p';
+    const isExpensiveBypass = /破甲/.test(normalized);
+    return freezeProfile({
+      family: 'seedance-2.0-family',
+      capability_source: 'family_inferred',
+      duration_mode: 'range',
+      allowed_durations: [5, 10, 15],
+      duration_min: 5,
+      duration_max: 15,
+      auto_duration_min: 5,
+      auto_duration_max: 15,
+      allowed_resolutions: resolutions,
+      resolutions,
+      default_resolution: defaultRes,
+      resolution: defaultRes,
+      quality_tier: /mini/i.test(normalized)
+        ? 'economy'
+        : /fast/i.test(normalized)
+          ? 'fast'
+          : /满血|pro|native/i.test(normalized) ? 'quality' : 'balanced',
+      max_images: 9,
+      max_videos: noVideo ? 0 : 3,
+      max_audios: 3,
+      max_total_references: noVideo ? 12 : 15,
+      max_reference_video_seconds_total: noVideo ? 0 : 15,
+      automatic_eligible: !isExpensiveBypass,
+      expensive_bypass: isExpensiveBypass,
+      preference_rank: 30,
+      route_profiles: ['short_image_guided', 'long_previs_guided'],
+      roles: {
+        image: ['reference', 'first_frame', 'last_frame'],
+        video: noVideo ? [] : ['reference'],
+        audio: ['reference'],
+      },
+    });
+  }
+
+  // 5. WAN 3.0 家族：WAN3.0-可参考视频（图片+参考视频，5–15s）与 WAN3.0-不可参考视频（首帧/参考图，禁参考视频，5–15s）
+  if (/^wan[-_\s]*3(?:\.\d+)?/i.test(normalized) && !/image|t2i|i2i|绘图|图片/i.test(normalized)) {
+    const canReferenceVideo = /可参考视频/.test(normalized) && !/不可参考视频/.test(normalized);
+    return freezeProfile({
+      provider_contract: 'yinzi-openai-video-v1',
+      family: canReferenceVideo ? 'wan3-video-reference' : 'wan3-image-guided',
+      capability_source: 'family_inferred',
+      duration_mode: 'range',
+      allowed_durations: [5, 10, 15],
+      duration_min: 5,
+      duration_max: 15,
+      auto_duration_min: 5,
+      auto_duration_max: 15,
+      allowed_resolutions: Object.freeze(['480p', '720p', '1080p']),
+      resolutions: Object.freeze(['480p', '720p', '1080p']),
+      default_resolution: '720p',
+      resolution: '720p',
+      quality_tier: 'quality',
+      max_images: canReferenceVideo ? 4 : 2,
+      max_videos: canReferenceVideo ? 2 : 0,
+      max_audios: 0,
+      max_total_references: canReferenceVideo ? 6 : 2,
+      max_reference_video_seconds_total: canReferenceVideo ? 15 : 0,
+      first_last_frame_supported: !canReferenceVideo,
+      automatic_eligible: true,
+      preference_rank: canReferenceVideo ? 35 : 40,
+      route_profiles: ['short_image_guided', 'long_previs_guided'],
+      roles: {
+        image: canReferenceVideo ? ['first_frame', 'reference'] : ['first_frame', 'last_frame', 'reference'],
+        video: canReferenceVideo ? ['reference'] : [],
+        audio: [],
+      },
+    });
+  }
+
+  // 6. grok-imagine-video* 及其他站点明确声明 endpoint_types 含 video 的新模型：赋予安全通用视频契约
+  if (/^grok-imagine-video/i.test(normalized) || hasExplicitVideoEndpointHint(hint)) {
+    return freezeProfile({
+      provider_contract: 'yinzi-openai-video-v1',
+      family: /^grok-imagine-video/i.test(normalized) ? 'grok-imagine-video' : 'generic-video',
+      capability_source: 'family_inferred',
+      duration_mode: 'range',
+      duration_min: 5,
+      duration_max: 10,
+      auto_duration_min: 5,
+      auto_duration_max: 10,
+      allowed_resolutions: Object.freeze(['720p']),
+      resolutions: Object.freeze(['720p']),
+      default_resolution: '720p',
+      resolution: '720p',
+      quality_tier: 'balanced',
+      max_images: 1,
+      max_videos: 0,
+      max_audios: 0,
+      max_total_references: 1,
+      max_reference_video_seconds_total: 0,
+      automatic_eligible: true,
+      preference_rank: 210,
+      route_profiles: ['short_image_guided', 'long_previs_guided'],
+      roles: { image: ['first_frame', 'reference'], video: [], audio: [] },
+    });
+  }
+
+  return null;
+}
+
 function applyAutomaticRouteAvailability(model, capability) {
   if (!capability) return null;
   const exclusionReason = CURRENT_AUTOMATIC_ROUTE_EXCLUSIONS[normalizeModelName(model)];
@@ -390,11 +622,14 @@ function applyAutomaticRouteAvailability(model, capability) {
   });
 }
 
-function getYinziVideoCapability(model) {
+function getYinziVideoCapability(model, hint = undefined) {
   const normalized = normalizeModelName(model);
+  if (!normalized) return null;
   const profileKey = MODEL_CAPABILITY_ALIASES[normalized] || normalized;
-  return applyAutomaticRouteAvailability(model,
-    AIZZZ_PROFILES[profileKey] || getYinziVideoReferenceContract(model));
+  const exact = AIZZZ_PROFILES[profileKey] || getYinziVideoReferenceContract(model);
+  if (exact) return applyAutomaticRouteAvailability(model, exact);
+  const inferred = inferYinziVideoCapability(model, hint);
+  return inferred ? applyAutomaticRouteAvailability(model, inferred) : null;
 }
 
 function listYinziVideoCapabilities() {
@@ -480,6 +715,7 @@ module.exports = {
   CURRENT_YINZI_JIMENG_MODELS,
   CURRENT_AUTOMATIC_ROUTE_EXCLUSIONS,
   getYinziVideoCapability,
+  inferYinziVideoCapability,
   listYinziVideoCapabilities,
   capabilitySupportsRole,
   capabilitySupportsRoute,

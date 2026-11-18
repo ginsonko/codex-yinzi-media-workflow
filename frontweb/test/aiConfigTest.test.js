@@ -36,7 +36,7 @@ test('draft tests prefer default_model and omit an empty saved key placeholder',
 test('new draft tests include a user-entered temporary key', () => {
   const request = buildDraftConfigTestRequest({
     service_type: 'text', provider: 'yinzi', base_url: 'https://draft.example/v1',
-    api_key: 'temporary-runtime-value', modelText: 'gpt-5.6-sol',
+    api_key: 'temporary-runtime-value', modelText: 'gpt-6.2-sol',
   })
   assert.equal(Object.hasOwn(request, 'config_id'), false)
   assert.equal(request.draft.api_key, 'temporary-runtime-value')

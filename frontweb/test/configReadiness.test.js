@@ -50,7 +50,7 @@ test('explains why a service is not ready without treating saved state as tested
 
 test('ignores disabled defaults and accepts an explicit default_model', () => {
   assert.equal(isConfiguredDefault(config('text', { is_active: false })), false)
-  assert.equal(isConfiguredDefault(config('text', { model: [], default_model: 'gpt-5.6-sol' })), true)
+  assert.equal(isConfiguredDefault(config('text', { model: [], default_model: 'gpt-6.2-sol' })), true)
 
   const readiness = getConfigReadiness([
     config('text', { is_active: false }),

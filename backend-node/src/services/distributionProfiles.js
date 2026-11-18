@@ -57,7 +57,7 @@ const IMAGE_YINZI_SITE = Object.freeze({
   credential_mode: 'three_keys',
   key_roles: Object.freeze({ text: 'text', image: 'image + storyboard_image', video: 'video' }),
   protocol: Object.freeze({ text: 'openai', image: 'openai', storyboard_image: 'openai', video: 'yinzi' }),
-  defaults: Object.freeze({ text_model: 'gpt-5.6-sol', image_model: 'gpt-image-2', video_model: 'Seedance 2.5-720' }),
+  defaults: Object.freeze({ text_model: 'gpt-6.2-sol', image_model: 'gpt-image-2', video_model: 'Seedance 2.5-720' }),
   video_models: Object.freeze({ 'Seedance 2.5-720': '固定 30 秒', 'Seedance 2.0-720': '5 / 10 / 15 秒' }),
   price_snapshot: IMAGE_YINZI_PRICE_SNAPSHOT,
   model_capabilities: IMAGE_YINZI_VIDEO_CAPABILITIES,
@@ -78,13 +78,20 @@ const LAOLI_SITE = Object.freeze({
   credential_mode: 'three_keys',
   key_roles: Object.freeze({ text: 'text', image: 'image + storyboard_image', video: 'video' }),
   protocol: Object.freeze({ text: 'openai', image: 'openai', storyboard_image: 'openai', video: 'yinzi' }),
-  defaults: Object.freeze({ text_model: 'gpt-5.6-sol', image_model: 'gpt-image-2', video_model: '3.5' }),
+  defaults: Object.freeze({ text_model: 'gpt-6.2-sol', image_model: 'gpt-image-2', video_model: '3.5' }),
   video_models: Object.freeze({
     '3.5': '即梦 2.5 兼容别名，固定 30 秒',
     '3.0': '即梦 2.0 兼容别名，支持 5 / 10 / 15 秒',
   }),
   model_aliases: Object.freeze({ '3.5': 'Seedance 2.5-720', '3.0': 'Seedance 2.0-720' }),
   model_capabilities: LAOLI_VIDEO_CAPABILITIES,
+});
+
+// 0.7.0 全局通用默认三件套（文本升至 gpt-6.2-sol，生图/视频优先走智能路由模型）
+const UNIVERSAL_MEDIA_DEFAULTS = Object.freeze({
+  text_model: 'gpt-6.2-sol',
+  image_model: 'smart-image',
+  video_model: 'smart-video',
 });
 
 const DISTRIBUTION_PROFILES = Object.freeze({
@@ -94,12 +101,14 @@ const DISTRIBUTION_PROFILES = Object.freeze({
     description: '填写一个银子 API 智能路由 Key 即可自动发现文本、生图和视频模型；普通站点仍可按三 Key 配置。',
     smart_routing_entry: true,
     preferred_site: 'yinzi_api',
+    defaults: UNIVERSAL_MEDIA_DEFAULTS,
     sites: Object.freeze({
       yinzi_api: Object.freeze({
         name: 'YinziAPI 智能路由',
         base_url: 'https://api.yinziapi.top/v1',
         smart_routing: true,
         credential_mode: 'one_key_or_three_keys',
+        defaults: UNIVERSAL_MEDIA_DEFAULTS,
       }),
       image_yinzi: IMAGE_YINZI_SITE,
       laoli: LAOLI_SITE,
@@ -111,12 +120,14 @@ const DISTRIBUTION_PROFILES = Object.freeze({
   description: '无需额外智能路由：默认引导老李站点三 Key，也兼容其它 NewAPI / sub2 站点；站点能力只作提示。',
     smart_routing_entry: false,
     preferred_site: 'laoli',
+    defaults: UNIVERSAL_MEDIA_DEFAULTS,
     sites: Object.freeze({
       generic: Object.freeze({
         name: '通用 NewAPI / sub2',
         base_url: '',
         smart_routing: false,
         credential_mode: 'three_keys',
+        defaults: UNIVERSAL_MEDIA_DEFAULTS,
       }),
       image_yinzi: IMAGE_YINZI_SITE,
       laoli: LAOLI_SITE,
@@ -156,6 +167,7 @@ function getDistributionProfile(value, cfg = {}) {
     description: profile.description,
     smart_routing_entry: profile.smart_routing_entry,
     preferred_site: profile.preferred_site,
+    defaults: profile.defaults,
     sites: profile.sites,
   });
 }

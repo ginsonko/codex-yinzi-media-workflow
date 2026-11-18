@@ -188,7 +188,7 @@ function normalizeCatalogItem(item, pricingVersion = '') {
     prices,
     cheapest_effective_price: fixedPrices.length ? Math.min(...fixedPrices) : null,
     capabilities: videoCapability,
-    capability_source: videoCapability ? 'builtin_exact_contract' : 'unknown',
+    capability_source: videoCapability ? (videoCapability.capability_source || 'builtin_exact_contract') : 'unknown',
     contract_status: videoCapability ? 'known' : 'missing',
     automatic_eligible: videoCapability?.automatic_eligible === true,
     reported_endpoint_types: reportedEndpointTypes,
@@ -198,10 +198,12 @@ function normalizeCatalogItem(item, pricingVersion = '') {
 }
 
 function recommendedRank(kind, model) {
+  // 0.7.0 默认模型全系升级至 6.2 梯队，同时保留 6.1 与 5.6 向下兼容兜底排序
   const recommendations = {
-    text: ['gpt-5.6-sol', 'gpt-5.4-mini', 'deepseek-v4-flash', 'gpt-5.6-terra', 'gpt-5.4'],
-    image: ['gpt-image-2.5', 'gpt-image-2.5-flare', 'gpt-image-2.5-sunburst', 'gpt-image-2', 'flux-2-pro', 'seedream-v5-lite'],
+    text: ['gpt-6.2-sol', 'gpt-6.1-sol', 'gpt-6.2-astra', 'deepseek-v4.1-flash', 'gpt-5.6-sol', 'gpt-5.4-mini', 'deepseek-v4-flash', 'gpt-5.6-terra', 'gpt-5.4'],
+    image: ['smart-image', 'gpt-image-2.5', 'gpt-image-2.5-flare', 'gpt-image-2.5-sunburst', 'gpt-image-2', 'flux-2-pro', 'seedream-v5-lite'],
     video: [
+      'smart-video',
       'seedance-2.5-720p',
       'seedance2.0 -720p-fast-15s',
       'cm-seedance2.0特价fast-720p-gz-15s',
@@ -779,11 +781,32 @@ function modelsForService(items, serviceType) {
   });
 }
 
-function preferredModel(requested, available, preferred, fallback) {
+/**
+ * 从实时发现的模型目录中挑选默认模型：
+ * 1. 当实时目录验证成功且非空时，自动剔除已下架、不在目录中的历史残留请求模型；
+ * 2. 当目录请求失败（离线或 401/503 降级）时，保留用户已配置的手动模型不清空；
+ * 3. 支持传入按优先级排序的推荐候选数组（如 6.2 -> 6.1 -> 5.6 梯队）。
+ */
+function preferredModel(requested, available, preferred, fallback, options = {}) {
   const requestedModel = normalizeOpaqueModel(requested);
-  if (requestedModel) return requestedModel;
   const names = (available || []).map((item) => normalizeOpaqueModel(item.model)).filter(Boolean);
-  return names.find((model) => model === preferred) || names[0] || fallback;
+  if (requestedModel) {
+    if (options.liveVerified === true && names.length > 0 && options.allowUnlistedManual !== true) {
+      const matched = names.find((model) => model.toLowerCase() === requestedModel.toLowerCase());
+      if (matched) return matched;
+      if (typeof options.onPruned === 'function') options.onPruned(requestedModel);
+    } else {
+      return requestedModel;
+    }
+  }
+  const preferredList = (Array.isArray(preferred) ? preferred : [preferred])
+    .map(normalizeOpaqueModel)
+    .filter(Boolean);
+  for (const candidate of preferredList) {
+    const hit = names.find((model) => model.toLowerCase() === candidate.toLowerCase());
+    if (hit) return hit;
+  }
+  return names[0] || fallback;
 }
 
 function chooseDefaultYinziVideoModel(videoCatalog, requested = '') {
@@ -853,9 +876,9 @@ async function prepareYinziSetupInput(input = {}, fetchImpl = fetch) {
   };
 
   const [textDiscovery, imageDiscovery, videoDiscovery] = await Promise.all([
-    discover(textKey, 'text', baseUrls.text, normalizeOpaqueModel(input.text_model) || 'gpt-5.6-sol'),
-    discover(imageKey, 'image', baseUrls.image, normalizeOpaqueModel(input.image_model) || 'gpt-image-2.5'),
-    discover(videoKey, 'video', baseUrls.video, normalizeOpaqueModel(input.video_model) || 'Seedance 2.5-720'),
+    discover(textKey, 'text', baseUrls.text, normalizeOpaqueModel(input.text_model) || 'gpt-6.2-sol'),
+    discover(imageKey, 'image', baseUrls.image, normalizeOpaqueModel(input.image_model) || 'smart-image'),
+    discover(videoKey, 'video', baseUrls.video, normalizeOpaqueModel(input.video_model) || 'smart-video'),
   ]);
   // Capability contracts and public prices enrich the key-scoped /models
   // result, but never decide whether a valid key can be configured.
@@ -880,13 +903,55 @@ async function prepareYinziSetupInput(input = {}, fetchImpl = fetch) {
     ? videoCatalog.filter((item) => item.credential_verified === true || item.smart_routing_candidate === true)
     : credentialVideoCatalog;
 
-  const textModel = preferredModel(input.text_model, textEntries, 'gpt-5.6-sol', 'gpt-5.6-sol');
-  const imageModel = preferredModel(input.image_model, imageEntries, 'gpt-image-2.5', 'gpt-image-2.5');
-  const videoModel = chooseDefaultYinziVideoModel(routableVideoCatalog, input.video_model) || 'Seedance 2.5-720';
   const warnings = [];
+  const allowUnlistedManual = input.allow_unlisted_manual === true;
+  const textModel = preferredModel(
+    input.text_model,
+    textEntries,
+    ['gpt-6.2-sol', 'gpt-6.1-sol', 'gpt-6.2-astra', 'deepseek-v4.1-flash', 'gpt-5.6-sol'],
+    'gpt-6.2-sol',
+    {
+      liveVerified: !textDiscovery.partial && textEntries.length > 0,
+      allowUnlistedManual,
+      onPruned: (dead) => warnings.push(`原文本模型 ${dead} 已不在站点实时目录中，已自动切换为可用模型`),
+    }
+  );
+  const imageModel = preferredModel(
+    input.image_model,
+    imageEntries,
+    ['smart-image', 'gpt-image-2.5', 'gpt-image-2'],
+    'smart-image',
+    {
+      liveVerified: !imageDiscovery.partial && imageEntries.length > 0,
+      allowUnlistedManual,
+      onPruned: (dead) => warnings.push(`原生图模型 ${dead} 已不在站点实时目录中，已自动切换为可用模型`),
+    }
+  );
+
+  // 若实时视频目录已成功返回且非空，淘汰已下架的旧请求模型；若传入了客户端「视频模型优先级顺序」，将其支持的模型置顶并优先设为 default_model
+  const rawRequestedVideo = normalizeOpaqueModel(input.video_model);
+  let liveRequestedVideo = rawRequestedVideo;
+  if (rawRequestedVideo && !videoDiscovery.partial && videoCatalog.length > 0 && !allowUnlistedManual) {
+    const matchedVideo = videoCatalog.find((item) => item.model.toLowerCase() === rawRequestedVideo.toLowerCase());
+    if (matchedVideo) {
+      liveRequestedVideo = matchedVideo.model;
+    } else {
+      warnings.push(`原视频模型 ${rawRequestedVideo} 已不在站点实时目录中，已自动淘汰并切换为可用模型`);
+      liveRequestedVideo = '';
+    }
+  }
+  const preferredVideoOrder = normalizeModelList(input.preferred_video_models);
+  const supportedPreferredVideo = preferredVideoOrder
+    .map((candidate) => routableVideoCatalog.find((item) => item.model.toLowerCase() === candidate.toLowerCase())?.model
+      || (videoDiscovery.partial ? candidate : ''))
+    .filter(Boolean);
+  const videoModel = supportedPreferredVideo[0]
+    || chooseDefaultYinziVideoModel(routableVideoCatalog, liveRequestedVideo)
+    || (smartRouting ? 'smart-video' : 'Seedance 2.5-720');
+
   if (!routableVideoCatalog.length) warnings.push('目录未提供视频候选，已保留指定模型；实际生成结果以提交回执为准');
   warnings.push(...(Array.isArray(pricingCatalog.warnings) ? pricingCatalog.warnings : []));
-  if (!textEntries.length) warnings.push('当前文本 Key 未返回文本模型，已保留 gpt-5.6-sol 默认值');
+  if (!textEntries.length) warnings.push('当前文本 Key 未返回文本模型，已保留 gpt-6.2-sol 默认值');
   if (!imageEntries.length) warnings.push(`当前生图 Key 未返回生图模型，已保留 ${imageModel}；可直接使用指定模型`);
   // The setup snapshot above keeps video-endpoint models only, so image-only models (smart-image) had no price
   // anywhere on this machine: the image configs carry their own price snapshot, for this Key's image models.
@@ -911,7 +976,11 @@ async function prepareYinziSetupInput(input = {}, fetchImpl = fetch) {
     video_model: videoModel,
     text_models: normalizeModelList([...textEntries.map((item) => item.model), textModel]),
     image_models: normalizeModelList([...imageEntries.map((item) => item.model), imageModel]),
-    video_models: normalizeModelList([...videoCatalog.map((item) => item.model), videoModel]),
+    video_models: normalizeModelList([
+      ...supportedPreferredVideo,
+      ...videoCatalog.map((item) => item.model),
+      videoModel,
+    ]),
     setup_catalog: {
       fetched_at: videoDiscovery.snapshot?.fetched_at || pricingCatalog.fetched_at || new Date().toISOString(),
       availability_scope: videoDiscovery.snapshot?.availability_scope || videoDiscovery.availability_scope || 'credential',
@@ -929,11 +998,13 @@ async function prepareYinziSetupInput(input = {}, fetchImpl = fetch) {
       public_video_model_count: videoCatalog.filter((item) => item.public_catalog === true && item.credential_verified !== true).length,
       selected_video_model: videoModel,
       selection_mode: smartRouting ? 'smart_seedance_preferred_then_cost' : 'credential_seedance_preferred_then_cost',
-      selection_reason: normalizeOpaqueModel(input.video_model)
-        ? 'user_selected'
-        : /seedance/i.test(videoModel) ? 'current_key_seedance_preferred'
-          : routableVideoCatalog.length === 1 ? 'only_current_key_video_model'
-            : 'current_key_compatible_model',
+      selection_reason: supportedPreferredVideo.length
+        ? 'user_priority_order'
+        : liveRequestedVideo
+          ? 'user_selected'
+          : /seedance/i.test(videoModel) ? 'current_key_seedance_preferred'
+            : routableVideoCatalog.length === 1 ? 'only_current_key_video_model'
+              : 'current_key_compatible_model',
       warnings: [
         ...warnings,
         ...[textDiscovery, imageDiscovery, videoDiscovery]

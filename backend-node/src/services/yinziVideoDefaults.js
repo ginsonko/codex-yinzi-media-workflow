@@ -23,6 +23,8 @@ function price(model, group, billingUnit, effectivePrice, options = {}) {
   });
 }
 
+// 注意：以下默认价格表仅用于在已知旧版公开目录快照（KNOWN_STALE_PRICING_VERSION）或缺少单价字段时，
+// 为站点实时目录中已存在的同名模型补齐历史参考单价；绝不作为注入模型列表的来源，不会把已下架模型塞回配置。
 const DEFAULT_VIDEO_PRICES = Object.freeze([
   price('官转-seedance2.0 720p-fast', '特价视频分组(即梦)', 'per_second', 1.014),
   price('官转-seedance2.0 720p-pro', '特价视频分组(即梦)', 'per_second', 1.17),

@@ -478,7 +478,7 @@ async function analyze() {
       reuse_staged_files: true,
       reuse_relative_paths: restoredRelativePaths(files.value),
       classifier_enabled: useAi.value,
-      options: { classifier_enabled: useAi.value, classifier_model: 'gpt-5.6-sol', template_id: props.templateId || null, target_shots: Number(props.targetShots) || 1, target_shots_user_edited: props.targetShotsUserEdited, user_intent: props.userIntent || '' },
+      options: { classifier_enabled: useAi.value, classifier_model: 'gpt-6.2-sol', template_id: props.templateId || null, target_shots: Number(props.targetShots) || 1, target_shots_user_edited: props.targetShotsUserEdited, user_intent: props.userIntent || '' },
     }, { timeout: 600000, signal: controller.value.signal })
     const data = result.data || result
     session.value = data.session; plan.value = data.plan || null; analyzedItems.value = data.items || []; phase.value = 'success'; progress.value = 100

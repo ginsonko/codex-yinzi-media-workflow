@@ -419,7 +419,7 @@ const stageLabel = (value) => ({ script: '剧本', asset_text: '资源设定', a
 const scopeLabel = (value) => ({ run: '项目', resource: '资源对象', shot: '镜头' }[value] || value)
 const itemStatusLabel = (row) => row.status === 'excluded' ? '已排除' : row.status === 'partial' ? `部分可用${row.error_message ? `：${row.error_message}` : ''}` : row.status === 'failed' ? '解析失败' : row.candidate_stage ? '可导入' : '待指定阶段'
 const itemStatusType = (value) => ({ ready: 'success', partial: 'warning', failed: 'danger', excluded: 'info' }[value] || 'info')
-const evidenceLabel = (row) => { const source = row.evidence?.source === 'multimodal_ai' ? `AI（${row.evidence.model || 'gpt-5.6-sol'}）` : row.evidence?.source === 'local_rules' ? '本地规则' : row.evidence?.source === 'extension_and_metadata' ? '扩展名和元数据' : row.evidence?.source || '—'; const receipt = row.metadata?.analysis_receipt?.used ? ' · 已实际读取媒体' : ''; return row.error_message ? `${source}${receipt}；${row.error_message}` : `${source}${receipt}` }
+const evidenceLabel = (row) => { const source = row.evidence?.source === 'multimodal_ai' ? `AI（${row.evidence.model || 'gpt-6.2-sol'}）` : row.evidence?.source === 'local_rules' ? '本地规则' : row.evidence?.source === 'extension_and_metadata' ? '扩展名和元数据' : row.evidence?.source || '—'; const receipt = row.metadata?.analysis_receipt?.used ? ' · 已实际读取媒体' : ''; return row.error_message ? `${source}${receipt}；${row.error_message}` : `${source}${receipt}` }
 const statusLabel = computed(() => ({ draft: '待扫描', planned: '待确认', applied: '已导入', rolled_back: '已回滚' }[session.value?.status] || session.value?.status || ''))
 const statusType = computed(() => ({ planned: 'warning', applied: 'success', rolled_back: 'info' }[session.value?.status] || 'info'))
 const statusText = (value) => ({ draft: '待扫描', planned: '待确认', applied: '已导入', rolled_back: '已回滚' }[value] || value)
@@ -518,7 +518,7 @@ async function scan() {
       options: {
         classifier_enabled: classifierEnabled,
         classifier_mode: classifierEnabled ? 'ai' : 'local',
-        classifier_model: 'gpt-5.6-sol',
+        classifier_model: 'gpt-6.2-sol',
         template_id: templateId.value || session.value.options?.template_id || null,
         // 只有后端真正会读的键才进请求体：max_file_bytes 用于判超限，
         // 分类开关用 classifier_enabled / classifier_mode。包含与排除规则、
