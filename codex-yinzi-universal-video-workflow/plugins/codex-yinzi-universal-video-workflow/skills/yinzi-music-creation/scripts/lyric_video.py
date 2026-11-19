@@ -23,6 +23,12 @@ FONT_REG_CANDIDATES = [
     "C:/Windows/Fonts/simsun.ttc",
 ]
 
+def progress(pct, stage, msg):
+    """One progress line on stderr for the app (music-studio.cjs reads lines starting with ##PROGRESS), flushed at once."""
+    import json
+    print("##PROGRESS " + json.dumps({"pct": round(float(pct), 1), "stage": stage, "msg": msg}, ensure_ascii=False), file=sys.stderr, flush=True)
+
+
 def load_font(candidates, size):
     for p in candidates:
         if os.path.exists(p):
@@ -108,6 +114,7 @@ def render_karaoke_mp4(
     sections_timeline: list,
     fps: int = 30,
     preroll_s: float = 0.0,
+    progress_span=None,
 ):
     """
     Render 1920x1080 30fps dual-role karaoke & MV beat-animatic MP4.
@@ -225,7 +232,11 @@ def render_karaoke_mp4(
                 )
             cur_x += cw
 
+    # Progress for the app's job card: 82 → 95 over the frames, at most once a second of video.
+    span = progress_span or (82, 95)
     for f_idx in range(n_frames):
+        if f_idx % max(1, fps) == 0:
+            progress(span[0] + (span[1] - span[0]) * f_idx / max(1, n_frames), "video", f"渲染歌词字幕版 {f_idx // max(1, fps)}/{int(n_frames / max(1, fps))} 秒")
         t = f_idx / fps
         frame = base_bg.copy()
         dr = ImageDraw.Draw(frame)
@@ -354,6 +365,7 @@ def main():
              **THEMES["A"], **THEMES["B"]}
     bars = d.get("bars") or int(sf.info(wav).duration / (4 * beat)) + 1
     render_karaoke_mp4(wav, out, d["bpm"], bars, theme, A, B, secs, fps=30, preroll_s=pre)
+    progress(95, "video", "歌词字幕版渲染完成")
     print(json.dumps({"video": out}, ensure_ascii=False))
 
 

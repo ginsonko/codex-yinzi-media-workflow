@@ -94,9 +94,16 @@ def rap_contour(ch, pitch, dur_ticks, bpm, downbeat):
     return name_of(m), pts
 
 
-def controls(track, n, dur_ticks, bpm):
+def progress(pct, stage, msg):
+    """One progress line on stderr for the app (music-studio.cjs reads lines starting with ##PROGRESS), flushed at once."""
+    print("##PROGRESS " + json.dumps({"pct": round(float(pct), 1), "stage": stage, "msg": msg}, ensure_ascii=False), file=sys.stderr, flush=True)
+
+
+def controls(track, n, dur_ticks, bpm, tier="fast"):
     tag = n[5] if len(n) > 5 else "norm"
     beats = dur_ticks / TPQ
+    if tier == "premium":
+        return premium_controls(track, tag, beats)
     c = [f"gender={track.get('gender', 0)}", "vel=96", f"cons={1.22 if beats <= 0.6 else 1.12}"]
     if track.get("tension") is not None:
         c.append(f"tenc={track['tension']}")
@@ -106,6 +113,58 @@ def controls(track, n, dur_ticks, bpm):
         c += ["brec=16", "expr=0.78"]
     elif tag in ("accent", "stacc", "shout"):
         c.append("expr=0.95")
+    return c
+
+
+def run_ticking(cmd, env, lo, hi, notes, stage, msg):
+    """Runs one long step (warble sing) and keeps the progress bar moving from lo toward hi while it works.
+    warble prints nothing per phrase, so the bar eases toward hi (never reaching it) on a time constant scaled by the
+    note count; it only paces the bar, the step's real end is the 64 line after it."""
+    import tempfile
+    import time
+    tau = max(10.0, notes * 0.15)
+    with tempfile.TemporaryFile() as fo, tempfile.TemporaryFile() as fe:
+        p = subprocess.Popen(cmd, env=env, stdout=fo, stderr=fe)
+        t0 = time.time()
+        while p.poll() is None:
+            time.sleep(2.0)
+            el = time.time() - t0
+            progress(lo + (hi - 1 - lo) * (1 - np.exp(-el / tau)), stage, f"{msg}（已 {int(el)} 秒）")
+        if p.returncode:
+            fo.seek(0)
+            fe.seek(0)
+            raise SystemExit(json.dumps({"error": "step_failed", "cmd": cmd[:3], "stdout": fo.read().decode("utf-8", "replace")[-1500:],
+                                         "stderr": fe.read().decode("utf-8", "replace")[-1500:]}, ensure_ascii=False))
+
+
+def premium_controls(track, tag, beats):
+    """精品档的表情参数，照 music-lab 题一正式版（produce_formal_song1.py lead_ctrl / harm_ctrl / guard_ctrl）：
+    快字（≤0.55 拍）vel=118 防吞辅音、断音 120、群喊 122；长音句尾颤音 5.8:24:170；轻声段气声 brec=20–22；
+    和声轨气声 18、颤音 5.6:18:190；群喊轨带张力 tenc。clarity 是 ASR 自审没过时每轮加的一档咬字力度。"""
+    role = track.get("role", "lead")
+    clarity = int(track.get("clarity", 0))
+    vel = 118 if beats <= 0.55 else 108
+    if tag == "stacc":
+        vel = 120
+    if tag == "shout":
+        vel = 122
+    vel = min(127, vel + 2 * clarity)
+    c = [f"gender={track.get('gender', 0)}", f"vel={vel}", f"cons={round((1.22 if beats <= 0.6 else 1.12) + 0.08 * clarity, 2)}"]
+    if track.get("tension") is not None:
+        c.append(f"tenc={track['tension']}")
+    if role == "harmony":
+        c = [f"gender={track.get('gender', 0)}", f"vel={min(127, 112 + 2 * clarity)}", "brec=18", "expr=0.78"]
+        if beats >= 1.0:
+            c.append("vib=5.6:18:190")
+        return c
+    if tag == "soft":
+        c += ["brec=20", "expr=0.72"]
+    elif tag == "vib_soft":
+        c += ["brec=22", "expr=0.75", "vib=5.4:18:180"]
+    elif tag in ("vib", "sing_vib") and beats >= 0.75:
+        c += ["expr=0.90", "vib=5.8:24:170"]
+    elif tag in ("accent", "stacc", "shout"):
+        c.append("expr=0.95" if tag != "stacc" else "expr=0.92")
     return c
 
 
@@ -130,7 +189,7 @@ def build_score(song, banks, out_txt):
                 lines.append(f"r {st - pos}/480")
             lyric = pinyin_of(n[3], n[6] if len(n) > 6 else None)
             tag = n[5] if len(n) > 5 else "norm"
-            ctl = controls(tr, n, dur, bpm)
+            ctl = controls(tr, n, dur, bpm, song.get("tier", "fast"))
             pitch = n[4]
             if tag in ("rap", "pocket"):
                 pitch, pts = rap_contour(n[3], n[4], dur, bpm, abs(((n[1] - 1) % 2)) < 0.08)
@@ -171,6 +230,9 @@ def build_accompaniment(song, path, demo=False):
     style = "demo" if demo else song.get("style", "pop")
     ev = {c: [] for c in (0, 1, 2, 3, 9)}
     prog = {"pop": (1, 29, 34, 48), "boombap": (4, 105, 33, 107), "ballad": (0, 24, 32, 48), "demo": (0, 0, 33, 0)}[style if style in ("pop", "boombap", "ballad") else "demo"]
+    # AI 编排给的配器（键盘 / 节奏和声 / 贝斯 / 铺底四个 GM 音色号），样片仍用钢琴+鼓
+    if not demo and isinstance(song.get("programs"), list) and len(song["programs"]) == 4 and all(isinstance(p, int) and 0 <= p <= 127 for p in song["programs"]):
+        prog = tuple(song["programs"])
 
     def note(c, st, d, m, v):
         if d > 10 and 16 <= m <= 115:
@@ -275,18 +337,36 @@ def mix(song, stems_dir, acc_wav, offset, n):
                 back += board(pan(m, side * 0.45, side * (4.5 - k)), double_chain) * 0.5
     pre = np.vstack([np.zeros((int(0.04 * SR), 2)), lead[:-int(0.04 * SR)]])  # 40 ms pre-delay keeps consonants dry
     lead = lead + board(pre, Pedalboard([HighpassFilter(350), LowpassFilter(6500), Reverb(0.38, 0.55, 1.0, 0.0, 0.9)])) * 0.085
+    # 念白 / 旁白：配音或克隆声音的整句干音，按 start_s 放进人声总线（同样会压低伴奏），不经过歌声链的混响。
+    for sp in song.get("speech", []):
+        if not sp.get("file") or not os.path.exists(sp["file"]):
+            continue
+        x, sr0 = sf.read(sp["file"], always_2d=True)
+        m = x.mean(axis=1)
+        if sr0 != SR:
+            from math import gcd
+            g = gcd(int(sr0), SR)
+            m = sig.resample_poly(m, SR // g, int(sr0) // g)
+        st = int(round(float(sp.get("start_s", 0)) * SR))
+        if st >= n:
+            continue
+        seg = m[:n - st] * 10 ** (float(sp.get("gain_db", 0)) / 20)
+        lead[st:st + len(seg)] += board(pan(seg, float(sp.get("pan", 0))), Pedalboard([HighpassFilter(90), Compressor(-20, 3.0, 6, 90), Gain(3.0)]))
     a, _ = sf.read(acc_wav, always_2d=True)
     acc = np.zeros((n, 2))
     pre = int(PREROLL_S * SR)
     acc[pre:pre + min(n - pre, len(a))] = a[:n - pre]
     acc = board(acc, Pedalboard([HighpassFilter(35), LowShelfFilter(95, 1.2, 0.75), PeakFilter(350, -5.0, 1.1), PeakFilter(620, -3.4, 1.2),
                                  PeakFilter(2800, -2.6, 1.0), HighShelfFilter(8000, 2.8, 0.75), Compressor(-18, 2.4, 12, 110)]))
-    # duck 1–4.4 kHz of the band while anyone sings
+    # duck the band's presence band while anyone sings: 快速档 1–4.4 kHz；精品档 song["duck_band"]（250 Hz–3 kHz，
+    # 连 250–800 Hz 的浑浊段一起让开，人声基频到咬字共振峰都不和伴奏抢）
+    lo, hi = song.get("duck_band", [1000, 4400])
+    depth = float(song.get("duck_depth", 0.42))
     env = np.sqrt(np.maximum(0, sig.fftconvolve(((lead + back * 0.8) ** 2).mean(axis=1), np.ones(int(0.025 * SR)) / int(0.025 * SR), mode="same")))
     b, aa = sig.butter(1, 10 / (SR / 2))
     duck = sig.filtfilt(b, aa, np.clip((env - 0.008) / 0.055, 0, 1))[:, None]
-    midband = sig.sosfiltfilt(sig.butter(2, [1000 / (SR / 2), 4400 / (SR / 2)], btype="band", output="sos"), acc, axis=0)
-    acc = (acc * (1 - 0.13 * duck) - midband * 0.42 * duck) * float(song.get("band_gain", 0.5))
+    midband = sig.sosfiltfilt(sig.butter(2, [float(lo) / (SR / 2), float(hi) / (SR / 2)], btype="band", output="sos"), acc, axis=0)
+    acc = (acc * (1 - 0.13 * duck) - midband * depth * duck) * float(song.get("band_gain", 0.5))
     fade = int(1.2 * SR)
     for x in (lead, back, acc):
         x[-fade:] *= (np.linspace(1, 0, fade) ** 1.5)[:, None]
@@ -312,6 +392,8 @@ def lrc_lines(song):
     beat_s = 60.0 / song["bpm"]
     out = []
     for tr in song["tracks"]:
+        if tr.get("role") == "harmony":
+            continue  # 和声唱的是主唱同一句，字幕和 LRC 只留主唱那一行
         cur = []
         for n in sorted(tr["notes"], key=lambda n: tick_of(n[0], n[1])):
             s0 = PREROLL_S + ((n[0] - 1) * 4 + n[1] - 1) * beat_s
@@ -324,6 +406,12 @@ def lrc_lines(song):
         if cur:
             out.append({"role": tr.get("label", tr["name"]), "track": tr["name"], "start_s": cur[0][1], "end_s": cur[-1][2],
                         "text": "".join(c[0] for c in cur), "chars": [list(c) for c in cur]})
+    for sp in song.get("speech", []):
+        text = str(sp.get("text", ""))
+        s0, s1 = float(sp.get("start_s", 0)), float(sp.get("end_s", 0)) or float(sp.get("start_s", 0)) + max(1.0, len(text) / 4.0)
+        step = (s1 - s0) / max(1, len(text))
+        out.append({"role": sp.get("label", "念白"), "track": "speech", "start_s": round(s0, 3), "end_s": round(s1, 3), "text": text,
+                    "chars": [[ch, round(s0 + i * step, 3), round(s0 + (i + 1) * step, 3)] for i, ch in enumerate(text)]})
     return sorted(out, key=lambda x: x["start_s"])
 
 
@@ -390,25 +478,36 @@ def main():
     os.makedirs(work, exist_ok=True)
     title = song["title"]
     tag = "样片" if a.demo else "母带"
+    # 只有念白、没有唱的轨（全是 speech）不交给 warble：空轨它会报错
+    song["tracks"] = [t for t in song["tracks"] if t.get("notes")]
+    if not song["tracks"]:
+        raise SystemExit(json.dumps({"error": "no_sung_notes", "hint": "歌词里至少要有一句唱的"}, ensure_ascii=False))
+    progress(38, "score", "核对逐字乐谱")
     score = build_score(song, banks, os.path.join(work, "score.txt"))
     chk = json.loads(run([warble, "check", score]))
     if not chk.get("ok"):
         raise SystemExit(json.dumps({"error": "score_problems", "problems": chk.get("problems")}, ensure_ascii=False))
     run([warble, "export", score, "-o", fresh(os.path.join(out, f"{title}_歌声工程.ustx"))])
     write_vocal_midi(song, fresh(os.path.join(out, f"{title}_人声旋律.mid")))
-    acc_mid = fresh(os.path.join(out, f"{title}_伴奏编曲.mid"))
-    build_accompaniment(song, acc_mid, a.demo)
-    acc_wav = os.path.join(work, "acc_raw.wav")
-    run([fluid, "-ni", "-F", acc_wav, "-r", str(SR), "-g", "0.7", sf2, acc_mid])
 
     stems = os.path.join(work, "stems")
     voc = os.path.join(work, "vocals_raw.wav")
     if a.force_vocals or not all(os.path.exists(os.path.join(stems, t["name"] + ".wav")) for t in song["tracks"]):
         os.makedirs(stems, exist_ok=True)
-        run([warble, "sing", score, "-o", voc, "--stems", stems, "--mix", "dry", "--no-master", "--seed", a.seed, "--sample-rate", str(SR)])
+        notes = sum(len(t["notes"]) for t in song["tracks"])
+        progress(42, "synth", f"DiffSinger 逐字演唱（{len(song['tracks'])} 轨 {notes} 个音）")
+        sing_cmd = [warble, "sing", score, "-o", voc, "--stems", stems, "--mix", "dry", "--no-master", "--seed", a.seed, "--sample-rate", str(SR)]
+        run_ticking(sing_cmd, env, 42, 64, notes, "synth", "DiffSinger 逐字演唱中")
+    progress(64, "synth", "人声合成完成")
+    acc_mid = fresh(os.path.join(out, f"{title}_伴奏编曲.mid"))
+    build_accompaniment(song, acc_mid, a.demo)
+    acc_wav = os.path.join(work, "acc_raw.wav")
+    progress(68, "band", "FluidSynth 渲染伴奏")
+    run([fluid, "-ni", "-F", acc_wav, "-r", str(SR), "-g", "0.7", sf2, acc_mid])
     offset = int(round(float(json.load(open(voc + ".render.json", encoding="utf-8")).get("score_offset_ms", 0)) / 1000 * SR))
     n = int(round(((song.get("bars") or max(c[0] for c in song["chords"])) * 4 * 60 / song["bpm"] + 2.4 + PREROLL_S) * SR))
     lead, back, acc = mix(song, stems, acc_wav, offset, n)
+    progress(73, "master", "混音并做 -14 LUFS 母带")
     m, scale = master(lead + back + acc)
 
     files = {"master_wav": fresh(os.path.join(out, f"{title}_{tag}.wav"))}
@@ -428,10 +527,11 @@ def main():
     report = {"files": files, "engine": "DiffSinger（warble）逐字歌声；伴奏 FluidSynth", "placeholders": [],
               "licenses": {b: st[b]["commercial"] for b in banks if b in st}}
     if not a.no_asr:
+        progress(78, "asr", "语音识别自审咬字与响度")
         from score_qa import audit
         vb = os.path.join(work, "qa_vocal_bus.wav")
         sf.write(vb, np.clip((lead + back * 0.6) * scale, -0.99, 0.99).astype(np.float32), SR)
-        lyr = "".join(c for t in song["tracks"] for nn in t["notes"] for c in nn[3])
+        lyr = "".join(c for t in song["tracks"] if t.get("role") != "harmony" for nn in t["notes"] for c in nn[3])
         wh = st.get("whisper", {}).get("path")
         qa = audit(files["master_wav"], song["bpm"], lyr, vb, os.path.join(out, "qa", os.path.basename(files["master_wav"])[:-4]), wh)
         qa.pop("asr_segments", None)
