@@ -1,6 +1,6 @@
 name: Omni Creator macOS build
 
-# Builds the Omni Creator (万能创作终端 银子版) macOS app (Apple silicon + Intel, ad-hoc signed, not notarized) from the private
+# Builds the Omni Creator (玲珑工坊; 银子版 up to 0.6.7) macOS app (Apple silicon + Intel, ad-hoc signed, not notarized) from the private
 # source repository and optionally attaches the .dmg / .zip files to a draft release here.
 on:
   workflow_dispatch:
@@ -29,8 +29,8 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  BRAND: yinzi
-  EDITION: Yinzi
+  BRAND: linglong
+  EDITION: Linglong
   SRC_REPO: ginsonko/omni-creator
 
 defaults:
