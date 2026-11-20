@@ -15,6 +15,9 @@ import { styleSupervisorTools, styleSupervisorRequest, selectionSchema } from '.
 import { activityResponse } from '../skills/codex-yinzi-universal-video/scripts/activity-response.mjs'
 import { readRegistry, localOrigin, verifyUi, openBrowser } from '../scripts/runtime-state.mjs'
 import { runtimeLaunchFailure } from '../scripts/runtime-launch-error.mjs'
+import resultSlimmer from './result-slimmer.cjs'
+
+const { slimToolResult, boundSessionResult } = resultSlimmer
 
 const execFileAsync = promisify(execFile)
 
@@ -43,197 +46,8 @@ const MEDIA = new Map([
   ['.txt', 'document'], ['.md', 'document'], ['.pdf', 'document'], ['.docx', 'document'], ['.csv', 'document'], ['.json', 'document'], ['.srt', 'subtitle'], ['.vtt', 'subtitle'],
 ])
 
-const MAX_SESSION_RESULT_CHARS = 32000
 const DEFAULT_SESSION_EVENT_LIMIT = 25
 const MAX_SESSION_EVENT_LIMIT = 80
-const BULKY_NODE_KEYS = new Set([
-  'response_summary',
-  'pricing_snapshot',
-  'price_snapshot',
-  'capability_snapshot',
-  'provider_result',
-  'request',
-  'diagnostics',
-])
-
-function clipShort(value, maxLen = 240) {
-  if (typeof value !== 'string') return value
-  return value.length > maxLen ? `${value.slice(0, maxLen)}…` : value
-}
-
-function slimObjectStrings(value, maxLen = 200, depth = 0) {
-  if (depth > 4) return '[clipped]'
-  if (value == null || typeof value === 'number' || typeof value === 'boolean') return value
-  if (typeof value === 'string') return clipShort(value, maxLen)
-  if (Array.isArray(value)) return value.slice(0, 12).map((item) => slimObjectStrings(item, maxLen, depth + 1))
-  if (typeof value === 'object') {
-    const out = {}
-    for (const [key, item] of Object.entries(value)) {
-      if (BULKY_NODE_KEYS.has(key)) continue
-      out[key] = slimObjectStrings(item, maxLen, depth + 1)
-    }
-    return out
-  }
-  return clipShort(String(value), maxLen)
-}
-
-function slimNodeForSession(node) {
-  if (!node || typeof node !== 'object') return node
-  const out = {}
-  for (const [key, value] of Object.entries(node)) {
-    if (BULKY_NODE_KEYS.has(key)) continue
-    if (key === 'decision' && value && typeof value === 'object') {
-      const slimDecision = {}
-      for (const [dk, dv] of Object.entries(value)) {
-        if (BULKY_NODE_KEYS.has(dk)) continue
-        slimDecision[dk] = slimObjectStrings(dv, 160, 1)
-      }
-      out.decision = slimDecision
-    } else if (key === 'output_refs' && Array.isArray(value)) {
-      out.output_refs = value.slice(-8).map((ref) => ({
-        ...(ref?.type ? { type: ref.type } : {}),
-        ...(ref?.id != null ? { id: ref.id } : {}),
-        ...(ref?.role ? { role: ref.role } : {}),
-        ...(ref?.path ? { path: ref.path } : {}),
-        ...(ref?.url ? { url: clipShort(ref.url, 240) } : {}),
-        ...(ref?.task_id ? { task_id: ref.task_id } : {}),
-      }))
-    } else if (key === 'input_refs' && Array.isArray(value)) {
-      out.input_refs = value.slice(-6).map((ref) => slimObjectStrings(ref, 160, 1))
-    } else if (key === 'progress' && value && typeof value === 'object') {
-      out.progress = slimObjectStrings(value, 200, 1)
-    } else if (key === 'error' && value && typeof value === 'object') {
-      out.error = slimObjectStrings(value, 240, 1)
-    } else {
-      out[key] = typeof value === 'string' ? clipShort(value, 240) : value
-    }
-  }
-  return out
-}
-
-function pickRecentEvents(events, count = 15) {
-  if (!Array.isArray(events)) return []
-  if (events.length <= count) return events
-  const firstTs = Date.parse(events[0]?.created_at || events[0]?.at || '')
-  const lastTs = Date.parse(events[events.length - 1]?.created_at || events[events.length - 1]?.at || '')
-  // 兼容按时间正序或倒序返回的事件数组，始终保留最近 count 条事件
-  if (Number.isFinite(firstTs) && Number.isFinite(lastTs) && firstTs > lastTs) {
-    return events.slice(0, count)
-  }
-  return events.slice(-count)
-}
-
-/**
- * MCP 会话查询安全体积守门（裁定 166）：
- * 若 get_session / list_sessions 序列化后超过 32000 字符，自动裁剪旧事件与节点冗余大字段，
- * 保留会话状态、节点最新状态、最近 15 条事件与产物路径，并附上 truncated: true 说明。
- */
-function boundSessionResult(toolName, data, maxChars = MAX_SESSION_RESULT_CHARS) {
-  if (!data || typeof data !== 'object') return data
-  const initialJson = JSON.stringify(data, null, 2)
-  if (initialJson.length <= maxChars) return data
-
-  if (toolName === 'list_sessions') {
-    const rawItems = Array.isArray(data.items) ? data.items : Array.isArray(data.sessions) ? data.sessions : Array.isArray(data) ? data : []
-    const slimItems = rawItems.map((item) => ({
-      id: item?.id ?? item?.session_id ?? null,
-      ...(item?.session_id ? { session_id: item.session_id } : {}),
-      title: clipShort(item?.title || '', 120),
-      status: item?.status || null,
-      mode: item?.mode || null,
-      user_goal: clipShort(item?.user_goal || '', 160),
-      work_dir: item?.work_dir || null,
-      updated_at: item?.updated_at || null,
-      created_at: item?.created_at || null,
-    }))
-    let count = slimItems.length
-    while (count > 1) {
-      const candidate = {
-        ...(Array.isArray(data) ? {} : { total: data.total ?? rawItems.length }),
-        items: slimItems.slice(0, count),
-        truncated: true,
-        truncation_note: `会话列表超过 ${maxChars} 字符安全上限，已精简字段并保留前 ${count}/${rawItems.length} 条摘要。`,
-      }
-      if (JSON.stringify(candidate, null, 2).length <= maxChars) return candidate
-      count = Math.max(1, Math.floor(count * 0.7))
-    }
-    return {
-      items: slimItems.slice(0, 1),
-      truncated: true,
-      truncation_note: `会话列表超过 ${maxChars} 字符安全上限，已裁剪至最小摘要。`,
-    }
-  }
-
-  const artifactPaths = []
-  if (Array.isArray(data.artifacts)) {
-    for (const art of data.artifacts) {
-      const p = art?.path || art?.local_path || art?.url
-      if (p && !artifactPaths.includes(p)) artifactPaths.push(p)
-    }
-  }
-  if (Array.isArray(data.nodes)) {
-    for (const n of data.nodes) {
-      for (const ref of n?.output_refs || []) {
-        if (ref?.path && !artifactPaths.includes(ref.path)) artifactPaths.push(ref.path)
-      }
-    }
-  }
-
-  const recentEvents = pickRecentEvents(data.events, 15).map((ev) => slimObjectStrings(ev, 180, 0))
-  const allSlimNodes = Array.isArray(data.nodes) ? data.nodes.map(slimNodeForSession) : undefined
-  const baseOut = {}
-  for (const [key, value] of Object.entries(data)) {
-    if (key === 'nodes' || key === 'events' || BULKY_NODE_KEYS.has(key)) continue
-    if (key === 'session' && value && typeof value === 'object') {
-      baseOut.session = slimObjectStrings(value, 240, 0)
-    } else if (key === 'artifacts' && Array.isArray(value)) {
-      baseOut.artifacts = value.slice(-30).map((a) => ({
-        ...(a?.artifact_id ? { artifact_id: a.artifact_id } : {}),
-        ...(a?.id != null ? { id: a.id } : {}),
-        ...(a?.type ? { type: a.type } : {}),
-        ...(a?.title ? { title: clipShort(a.title, 80) } : {}),
-        ...(a?.status ? { status: a.status } : {}),
-        ...(a?.path ? { path: a.path } : {}),
-      }))
-    } else {
-      baseOut[key] = slimObjectStrings(value, 240, 0)
-    }
-  }
-
-  let nodeSlice = allSlimNodes
-  let eventSlice = recentEvents
-  for (const [maxNodes, maxEvents] of [
-    [nodeSlice ? nodeSlice.length : 0, 15],
-    [40, 15],
-    [25, 10],
-    [12, 5],
-  ]) {
-    const candidate = {
-      ...baseOut,
-      ...(nodeSlice ? { nodes: nodeSlice.slice(-maxNodes), total_nodes: allSlimNodes.length } : {}),
-      ...(Array.isArray(data.events) ? { events: eventSlice.slice(-maxEvents), total_events: data.events.length } : {}),
-      ...(artifactPaths.length ? { artifact_paths: artifactPaths.slice(-40) } : {}),
-      truncated: true,
-      truncation_note: `会话返回超过 ${maxChars} 字符安全上限，已自动裁剪旧 events 与节点冗余大字段（response_summary/pricing_snapshot/capability_snapshot），保留会话状态、节点最新状态、最近 ${Math.min(eventSlice.length, maxEvents)} 条事件与产物路径。`,
-    }
-    if (JSON.stringify(candidate, null, 2).length <= maxChars) return candidate
-  }
-
-  return {
-    session: baseOut.session || { id: data.id || data.session_id || null, status: data.status || null },
-    total_nodes: allSlimNodes ? allSlimNodes.length : 0,
-    nodes: (allSlimNodes || []).slice(-10).map((n) => ({
-      node_key: n?.node_key || n?.id,
-      status: n?.status,
-      progress: n?.progress ? { state: n.progress.state, message: clipShort(n.progress.message || '', 100) } : undefined,
-      output_refs: n?.output_refs,
-    })),
-    events: recentEvents.slice(-5),
-    artifact_paths: artifactPaths.slice(-25),
-    truncated: true,
-    truncation_note: `会话返回超过 ${maxChars} 字符安全上限，已压缩为精简摘要。`,
-  }
-}
 
 function isImageSizeParamError(error) {
   const status = Number(error?.details?.http_status) || 0
@@ -1298,15 +1112,13 @@ async function callTool(name, args = {}) {
     case 'record_media_experience': rejectSecrets(args); return api('POST', '/api/v1/media-experiences', args);
     case 'list_sessions': {
       const query = new URLSearchParams(Object.entries(args).filter(([, value]) => value != null).map(([key, value]) => [key, String(value)]))
-      const listData = await api('GET', `/api/v1/orchestration-sessions${query.size ? `?${query}` : ''}`)
-      return boundSessionResult('list_sessions', listData)
+      return api('GET', `/api/v1/orchestration-sessions${query.size ? `?${query}` : ''}`)
     }
     case 'get_session': {
       // 默认 event_limit 从 200 降为 25；显式传参时尊重调用方但最大不超过 80，杜绝单次吐出 200k token
       const rawLimit = args.event_limit == null || args.event_limit === '' ? DEFAULT_SESSION_EVENT_LIMIT : Number(args.event_limit)
       const eventLimit = Number.isFinite(rawLimit) && rawLimit > 0 ? Math.min(Math.trunc(rawLimit), MAX_SESSION_EVENT_LIMIT) : DEFAULT_SESSION_EVENT_LIMIT
-      const sessionData = await api('GET', `/api/v1/orchestration-sessions/${encodeURIComponent(args.session_id)}?include_inactive=${Boolean(args.include_inactive)}&event_limit=${eventLimit}`)
-      return boundSessionResult('get_session', sessionData)
+      return api('GET', `/api/v1/orchestration-sessions/${encodeURIComponent(args.session_id)}?include_inactive=${Boolean(args.include_inactive)}&event_limit=${eventLimit}`)
     }
     case 'create_session': return api('POST', '/api/v1/orchestration-sessions', { ...args, actor: 'codex' })
     case 'submit_plan': {
@@ -1360,8 +1172,15 @@ rl.on('line', async (line) => {
     } else if (request.method === 'tools/list') {
       send({ jsonrpc: '2.0', id: request.id, result: { tools } })
     } else if (request.method === 'tools/call') {
-      try { send({ jsonrpc: '2.0', id: request.id, result: textResult(await callTool(request.params?.name, request.params?.arguments || {})) }) }
-      catch (error) { send({ jsonrpc: '2.0', id: request.id, result: textResult({ message: redactString(error.message), ...(error.details || {}) }, true) }) }
+      const toolName = request.params?.name
+      const toolArgs = request.params?.arguments || {}
+      try {
+        const raw = await callTool(toolName, toolArgs)
+        send({ jsonrpc: '2.0', id: request.id, result: textResult(slimToolResult(toolName, raw, toolArgs)) })
+      } catch (error) {
+        const errPayload = slimToolResult(toolName, { message: redactString(error.message), ...(error.details || {}) }, toolArgs)
+        send({ jsonrpc: '2.0', id: request.id, result: textResult(errPayload, true) })
+      }
     } else {
       send({ jsonrpc: '2.0', id: request.id, error: { code: -32601, message: 'Method not found' } })
     }
